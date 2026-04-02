@@ -25,8 +25,9 @@ export async function GET() {
       }));
 
     return NextResponse.json(data);
-  } catch (err) {
-    console.error("sales-monthly error:", err);
-    return NextResponse.json({ error: "Failed to fetch data" }, { status: 500 });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("sales-monthly error:", msg);
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

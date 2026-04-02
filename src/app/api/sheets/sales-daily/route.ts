@@ -10,9 +10,9 @@ export async function GET() {
     const rows = await getSheetData(sheetId, "2026 Daily Sales!A2:I400");
 
     const data = rows
-      .filter((row) => row[0] && row[8])
+      .filter((row) => row[0] && (row[1] || row[8]))
       .map((row) => ({
-        date: row[0],
+        date: row[0], // MM/DD format e.g. "01/01"
         prhSales: parseCurrency(row[1]),
         ppSales: parseCurrency(row[2]),
         phoneSales: parseCurrency(row[3]),
@@ -22,11 +22,12 @@ export async function GET() {
         salesTax: parseCurrency(row[7]),
         netSales: parseCurrency(row[8]),
       }))
-      .filter((row) => row.netSales !== 0 || row.prhSales !== 0);
+      .filter((row) => row.prhSales !== 0 || row.phoneSales !== 0 || row.netSales !== 0);
 
     return NextResponse.json(data);
-  } catch (err) {
-    console.error("sales-daily error:", err);
-    return NextResponse.json({ error: "Failed to fetch data" }, { status: 500 });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("sales-daily error:", msg);
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
