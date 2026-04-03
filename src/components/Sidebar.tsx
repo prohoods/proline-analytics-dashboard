@@ -3,12 +3,16 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 
-const navSections = [
+interface NavItem { href: string; label: string; icon: string; }
+interface NavSection { label: string; items: NavItem[]; cfo?: boolean; }
+
+const navSections: NavSection[] = [
   {
     label: "Revenue",
     items: [
       { href: "/dashboard", label: "Overview", icon: "⬛" },
       { href: "/dashboard/sales", label: "Daily & Monthly Sales", icon: "📈" },
+      { href: "/dashboard/shopify", label: "Shopify Live Orders", icon: "🟢" },
       { href: "/dashboard/marketplace", label: "Marketplace Sales", icon: "🏪" },
     ],
   },
@@ -28,6 +32,15 @@ const navSections = [
       { href: "/dashboard/refunds", label: "Shopify Refunds", icon: "↩️" },
       { href: "/dashboard/products", label: "Product Profitability", icon: "📦" },
       { href: "/dashboard/shopping-feed", label: "Shopping Feed", icon: "📋" },
+    ],
+  },
+  {
+    label: "CFO — Restricted",
+    cfo: true,
+    items: [
+      { href: "/dashboard/cfo/overview", label: "Financial Overview", icon: "🏦" },
+      { href: "/dashboard/cfo/expenses", label: "Expenses", icon: "💳" },
+      { href: "/dashboard/cfo/payroll", label: "Payroll & Benefits", icon: "👥" },
     ],
   },
 ];
@@ -62,19 +75,22 @@ export default function Sidebar() {
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-6">
         {navSections.map((section) => (
           <div key={section.label}>
-            <div className="px-3 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+            <div className={`px-3 mb-2 text-xs font-semibold uppercase tracking-wider ${section.cfo ? "text-emerald-600" : "text-gray-500"}`}>
               {section.label}
             </div>
             <div className="space-y-0.5">
               {section.items.map((item) => {
                 const isActive = pathname === item.href;
+                const isCFO = section.cfo;
                 return (
                   <Link
                     key={item.href}
                     href={item.href}
                     className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
                       isActive
-                        ? "bg-blue-600/20 text-blue-400 font-medium"
+                        ? isCFO
+                          ? "bg-emerald-600/20 text-emerald-400 font-medium"
+                          : "bg-blue-600/20 text-blue-400 font-medium"
                         : "text-gray-400 hover:text-gray-100 hover:bg-gray-800"
                     }`}
                   >
