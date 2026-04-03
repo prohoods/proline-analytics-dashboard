@@ -1,7 +1,17 @@
 import { google } from "googleapis";
 
 function getAuth() {
-  const privateKey = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n");
+  let privateKey = process.env.GOOGLE_PRIVATE_KEY ?? "";
+
+  // Vercel sometimes escapes newlines — unescape them
+  if (privateKey.includes("\\n")) {
+    privateKey = privateKey.replace(/\\n/g, "\n");
+  }
+
+  // Strip surrounding quotes if Vercel wrapped the value in them
+  if (privateKey.startsWith('"') && privateKey.endsWith('"')) {
+    privateKey = privateKey.slice(1, -1);
+  }
 
   return new google.auth.GoogleAuth({
     credentials: {
