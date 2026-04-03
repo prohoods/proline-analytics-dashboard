@@ -10,7 +10,8 @@ export function middleware(request: NextRequest) {
     pathname.startsWith("/login") ||
     pathname.startsWith("/cfo-login") ||
     pathname.startsWith("/api/auth") ||
-    pathname.startsWith("/api/debug")
+    pathname.startsWith("/api/debug") ||
+    pathname.startsWith("/api/shopify/debug-refunds")
   ) {
     return NextResponse.next();
   }
