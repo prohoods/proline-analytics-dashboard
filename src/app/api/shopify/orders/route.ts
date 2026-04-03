@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Fetch all orders in range (Shopify max 250 per page)
-    const params = `created_at_min=${start}T00:00:00-07:00&created_at_max=${end}T23:59:59-07:00&financial_status=paid`;
+    const params = `created_at_min=${start}T00:00:00-07:00&created_at_max=${end}T23:59:59-07:00&financial_status=any`;
     const data = await getOrders(params);
     const orders = data.orders;
 
