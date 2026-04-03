@@ -51,7 +51,8 @@ export interface ShopifyOrder {
 export interface ShopifyRefund {
   id: number;
   created_at: string;
-  transactions: { amount: string }[];
+  transactions: { amount: string; kind: string; status: string }[];
+  refund_line_items: { subtotal: string; total_tax: string }[];
 }
 
 export interface ShopifyLineItem {

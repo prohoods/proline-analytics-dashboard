@@ -37,9 +37,16 @@ export async function GET(request: NextRequest) {
       }
       const gross = parseFloat(order.total_price);
       const tax = parseFloat(order.total_tax);
-      const refundAmount = order.refunds.reduce((sum, r) =>
-        sum + r.transactions.reduce((s, t) => s + parseFloat(t.amount), 0), 0
-      );
+      const refundAmount = order.refunds.reduce((sum, r) => {
+        // Try refund_line_items first (always present), fall back to transactions
+        const fromLineItems = r.refund_line_items?.reduce(
+          (s, li) => s + parseFloat(li.subtotal) + parseFloat(li.total_tax), 0
+        ) ?? 0;
+        const fromTransactions = r.transactions
+          ?.filter(t => t.kind === "refund" && t.status === "success")
+          .reduce((s, t) => s + parseFloat(t.amount), 0) ?? 0;
+        return sum + (fromLineItems > 0 ? fromLineItems : fromTransactions);
+      }, 0);
 
       dailyMap[date].orders += 1;
       dailyMap[date].grossRevenue += gross;
