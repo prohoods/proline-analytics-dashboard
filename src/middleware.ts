@@ -11,7 +11,8 @@ export function middleware(request: NextRequest) {
     pathname.startsWith("/cfo-login") ||
     pathname.startsWith("/api/auth") ||
     pathname.startsWith("/api/debug") ||
-    pathname.startsWith("/api/shopify/debug-refunds")
+    pathname.startsWith("/api/shopify/debug-refunds") ||
+    pathname.startsWith("/api/google-ads/debug")
   ) {
     return NextResponse.next();
   }
