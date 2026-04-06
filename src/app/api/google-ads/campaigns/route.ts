@@ -113,7 +113,7 @@ export async function GET(request: NextRequest) {
       .sort((a, b) => b.month.localeCompare(a.month));
 
     return NextResponse.json(months, {
-      headers: { "Cache-Control": "no-store" },
+      headers: { "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=60" },
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);

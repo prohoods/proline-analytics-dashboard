@@ -48,7 +48,7 @@ export async function googleAdsQuery<T = Record<string, unknown>[]>(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ query }),
-      cache: "no-store",
+      next: { revalidate: 3600 }, // Cache for 1 hour
     }
   );
 
