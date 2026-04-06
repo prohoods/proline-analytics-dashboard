@@ -1,14 +1,18 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getSheetData, parseCurrency, parsePercent } from "@/lib/google-sheets";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const sheetId = process.env.MAIN_REPORTING_SHEET_ID;
     if (!sheetId) return NextResponse.json({ error: "MAIN_REPORTING_SHEET_ID not set" }, { status: 500 });
 
-    // Google Monthly Performance tab
+    const year = new URL(request.url).searchParams.get("year") ?? "2026";
+    const tabName = year === "2025"
+      ? "2025 Google Monthly Performance!A2:J30"
+      : "Google Monthly Performance!A2:J30";
+
     // Month, Google Ad Shopping Cost, COGS+Tariffs, Company Refunds, Conv Value, Site+Phone, Reported Google ROAS, ROI, Net Revenue, Margin
-    const rows = await getSheetData(sheetId, "Google Monthly Performance!A2:J30");
+    const rows = await getSheetData(sheetId, tabName);
 
     const data = rows
       .filter((row) => row[0])
