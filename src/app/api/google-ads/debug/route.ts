@@ -33,12 +33,15 @@ export async function GET() {
       }
     );
 
-    const data = await res.json();
+    const raw = await res.text();
+    let parsed: unknown;
+    try { parsed = JSON.parse(raw); } catch { parsed = raw; }
 
     return NextResponse.json({
       status: res.status,
       configuredCustomerId: process.env.GOOGLE_ADS_CUSTOMER_ID,
-      accessibleCustomers: data,
+      developerTokenSet: !!(process.env.GOOGLE_ADS_DEVELOPER_TOKEN),
+      response: parsed,
     });
   } catch (err: unknown) {
     return NextResponse.json({ error: String(err) }, { status: 500 });
