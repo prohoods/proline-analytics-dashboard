@@ -32,6 +32,19 @@ export async function getOrders(params: string) {
   return shopifyFetch<{ orders: ShopifyOrder[] }>(`orders.json?${params}&limit=250&status=any`);
 }
 
+// Get full refund details for a specific order
+export async function getOrderRefunds(orderId: number) {
+  const data = await shopifyFetch<{ refunds: FullRefund[] }>(`orders/${orderId}/refunds.json`);
+  return data.refunds;
+}
+
+export interface FullRefund {
+  id: number;
+  created_at: string;
+  transactions: { amount: string; kind: string; status: string }[];
+  refund_line_items: { subtotal: string; total_tax: string }[];
+}
+
 export interface ShopifyOrder {
   id: number;
   name: string;

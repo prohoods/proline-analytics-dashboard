@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getOrders } from "@/lib/shopify";
+import { getOrders, getOrderRefunds } from "@/lib/shopify";
 
 export async function GET(request: NextRequest) {
   try {
@@ -11,10 +11,26 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "start and end date required" }, { status: 400 });
     }
 
-    // Fetch all orders in range (Shopify max 250 per page)
     const params = `created_at_min=${start}T00:00:00-07:00&created_at_max=${end}T23:59:59-07:00&financial_status=any`;
     const data = await getOrders(params);
     const orders = data.orders;
+
+    // Fetch real refund amounts for orders that have refunds
+    const refundMap: Record<number, number> = {};
+    const ordersWithRefunds = orders.filter(o => o.refunds && o.refunds.length > 0);
+
+    await Promise.all(
+      ordersWithRefunds.map(async (order) => {
+        const refunds = await getOrderRefunds(order.id);
+        // Sum successful refund transactions
+        const amount = refunds.reduce((sum, r) =>
+          sum + r.transactions
+            .filter(t => t.kind === "refund" && t.status === "success")
+            .reduce((s, t) => s + parseFloat(t.amount), 0),
+        0);
+        refundMap[order.id] = amount;
+      })
+    );
 
     // Aggregate daily totals
     const dailyMap: Record<string, {
@@ -37,16 +53,7 @@ export async function GET(request: NextRequest) {
       }
       const gross = parseFloat(order.total_price);
       const tax = parseFloat(order.total_tax);
-      const refundAmount = order.refunds.reduce((sum, r) => {
-        // Try refund_line_items first (always present), fall back to transactions
-        const fromLineItems = r.refund_line_items?.reduce(
-          (s, li) => s + parseFloat(li.subtotal) + parseFloat(li.total_tax), 0
-        ) ?? 0;
-        const fromTransactions = r.transactions
-          ?.filter(t => t.kind === "refund" && t.status === "success")
-          .reduce((s, t) => s + parseFloat(t.amount), 0) ?? 0;
-        return sum + (fromLineItems > 0 ? fromLineItems : fromTransactions);
-      }, 0);
+      const refundAmount = refundMap[order.id] ?? 0;
 
       dailyMap[date].orders += 1;
       dailyMap[date].grossRevenue += gross;
