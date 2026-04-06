@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
         segments.month
       FROM campaign
       WHERE
-        segments.date DURING ${year === new Date().getFullYear().toString() ? "THIS_YEAR" : `${year}-01-01 AND ${year}-12-31`}
+        segments.date BETWEEN '${year}-01-01' AND '${year}-12-31'
         AND campaign.status != 'REMOVED'
       ORDER BY segments.month DESC, metrics.cost_micros DESC
     `;
