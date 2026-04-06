@@ -2,11 +2,30 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useState } from "react";
 
 interface NavItem { href: string; label: string; icon: string; }
-interface NavSection { label: string; items: NavItem[]; cfo?: boolean; }
+interface NavSection {
+  label: string;
+  items: NavItem[];
+  cfo?: boolean;
+}
 
-const navSections: NavSection[] = [
+// Top-level sections with optional sub-items
+interface ExpandableItem {
+  href: string;
+  label: string;
+  icon: string;
+  children?: NavItem[];
+}
+
+interface ExpandableSection {
+  label: string;
+  items: ExpandableItem[];
+  cfo?: boolean;
+}
+
+const navSections: ExpandableSection[] = [
   {
     label: "Revenue",
     items: [
@@ -20,10 +39,32 @@ const navSections: NavSection[] = [
     label: "Advertising",
     items: [
       { href: "/dashboard/ad-spend", label: "All Ad Spend", icon: "💰" },
-      { href: "/dashboard/google-ads", label: "Google Ads", icon: "🔵" },
-      { href: "/dashboard/gclid", label: "GCLID Attribution", icon: "🔗" },
-      { href: "/dashboard/pmax", label: "PMAX & Shopping", icon: "🛒" },
-      { href: "/dashboard/search", label: "Search Campaigns", icon: "🔍" },
+      {
+        href: "/dashboard/google-ads",
+        label: "Google Ads",
+        icon: "🔵",
+        children: [
+          { href: "/dashboard/pmax", label: "PMAX Campaigns", icon: "⚡" },
+          { href: "/dashboard/shopping", label: "Shopping", icon: "🛒" },
+          { href: "/dashboard/search", label: "Search Campaigns", icon: "🔍" },
+          { href: "/dashboard/demand-gen", label: "Demand Gen", icon: "📣" },
+          { href: "/dashboard/gclid", label: "GCLID Attribution", icon: "🔗" },
+        ],
+      },
+      {
+        href: "/dashboard/bing",
+        label: "Bing / Microsoft",
+        icon: "🪟",
+        children: [
+          { href: "/dashboard/bing/pmax", label: "PMAX", icon: "⚡" },
+          { href: "/dashboard/bing/shopping", label: "Shopping", icon: "🛒" },
+          { href: "/dashboard/bing/search", label: "Branded & Search", icon: "🔍" },
+        ],
+      },
+      { href: "/dashboard/connexity", label: "Connexity", icon: "🟣" },
+      { href: "/dashboard/meta", label: "Meta", icon: "📘" },
+      { href: "/dashboard/pinterest", label: "Pinterest", icon: "📌" },
+      { href: "/dashboard/amazon-ads", label: "Amazon Ads", icon: "🟠" },
     ],
   },
   {
@@ -48,6 +89,19 @@ const navSections: NavSection[] = [
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
+
+  // Track which expandable items are open
+  // Auto-open Google Ads if on a Google Ads sub-page, Bing if on Bing sub-page
+  const googleAdsSubPaths = ["/dashboard/pmax", "/dashboard/shopping", "/dashboard/search", "/dashboard/demand-gen", "/dashboard/gclid"];
+  const bingSubPaths = ["/dashboard/bing/"];
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
+    "/dashboard/google-ads": googleAdsSubPaths.some(p => pathname.startsWith(p)),
+    "/dashboard/bing": bingSubPaths.some(p => pathname.startsWith(p)),
+  });
+
+  function toggleGroup(href: string) {
+    setOpenGroups(prev => ({ ...prev, [href]: !prev[href] }));
+  }
 
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -81,22 +135,83 @@ export default function Sidebar() {
             <div className="space-y-0.5">
               {section.items.map((item) => {
                 const isActive = pathname === item.href;
+                const hasChildren = item.children && item.children.length > 0;
+                const isOpen = openGroups[item.href];
+                const isChildActive = hasChildren && item.children!.some(c => pathname === c.href);
                 const isCFO = section.cfo;
+
                 return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
-                      isActive
-                        ? isCFO
-                          ? "bg-emerald-600/20 text-emerald-400 font-medium"
-                          : "bg-blue-600/20 text-blue-400 font-medium"
-                        : "text-gray-400 hover:text-gray-100 hover:bg-gray-800"
-                    }`}
-                  >
-                    <span className="text-base">{item.icon}</span>
-                    {item.label}
-                  </Link>
+                  <div key={item.href}>
+                    {hasChildren ? (
+                      // Expandable group header
+                      <button
+                        onClick={() => toggleGroup(item.href)}
+                        className={`flex items-center gap-3 w-full px-3 py-2 rounded-lg text-sm transition-colors ${
+                          isChildActive || isActive
+                            ? "bg-blue-600/20 text-blue-400 font-medium"
+                            : "text-gray-400 hover:text-gray-100 hover:bg-gray-800"
+                        }`}
+                      >
+                        <span className="text-base">{item.icon}</span>
+                        <span className="flex-1 text-left">{item.label}</span>
+                        <svg
+                          className={`w-3 h-3 transition-transform ${isOpen ? "rotate-180" : ""}`}
+                          fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </button>
+                    ) : (
+                      // Regular link
+                      <Link
+                        href={item.href}
+                        className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                          isActive
+                            ? isCFO
+                              ? "bg-emerald-600/20 text-emerald-400 font-medium"
+                              : "bg-blue-600/20 text-blue-400 font-medium"
+                            : "text-gray-400 hover:text-gray-100 hover:bg-gray-800"
+                        }`}
+                      >
+                        <span className="text-base">{item.icon}</span>
+                        {item.label}
+                      </Link>
+                    )}
+
+                    {/* Sub-items */}
+                    {hasChildren && isOpen && (
+                      <div className="mt-0.5 ml-3 pl-3 border-l border-gray-800 space-y-0.5">
+                        {/* Link to parent page too */}
+                        <Link
+                          href={item.href}
+                          className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs transition-colors ${
+                            isActive
+                              ? "text-blue-400 font-medium"
+                              : "text-gray-500 hover:text-gray-300 hover:bg-gray-800"
+                          }`}
+                        >
+                          Overview
+                        </Link>
+                        {item.children!.map((child) => {
+                          const childActive = pathname === child.href;
+                          return (
+                            <Link
+                              key={child.href}
+                              href={child.href}
+                              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs transition-colors ${
+                                childActive
+                                  ? "bg-blue-600/20 text-blue-400 font-medium"
+                                  : "text-gray-500 hover:text-gray-300 hover:bg-gray-800"
+                              }`}
+                            >
+                              <span>{child.icon}</span>
+                              {child.label}
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 );
               })}
             </div>
