@@ -17,7 +17,13 @@ export async function GET(request: NextRequest) {
 
     // Fetch real refund amounts for orders that have refunds
     const refundMap: Record<number, number> = {};
-    const ordersWithRefunds = orders.filter(o => o.refunds && o.refunds.length > 0);
+    // Bulk orders API often returns refunds:[] even for refunded orders
+    // Use financial_status as the reliable indicator
+    const ordersWithRefunds = orders.filter(o =>
+      (o.refunds && o.refunds.length > 0) ||
+      o.financial_status === "refunded" ||
+      o.financial_status === "partially_refunded"
+    );
 
     console.log(`Found ${ordersWithRefunds.length} orders with refunds`);
 
