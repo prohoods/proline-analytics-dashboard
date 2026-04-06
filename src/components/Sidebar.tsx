@@ -72,7 +72,9 @@ const navSections: ExpandableSection[] = [
     items: [
       { href: "/dashboard/refunds", label: "Shopify Refunds", icon: "↩️" },
       { href: "/dashboard/products", label: "Product Profitability", icon: "📦" },
-      { href: "/dashboard/shopping-feed", label: "Shopping Feed", icon: "📋" },
+      { href: "/dashboard/fulfillment", label: "Order Fulfillment", icon: "🚚" },
+      { href: "/dashboard/customers", label: "Customer Insights", icon: "👤" },
+      { href: "/dashboard/shopping-feed", label: "Product Ad Performance", icon: "📋" },
     ],
   },
   {
