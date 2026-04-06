@@ -23,7 +23,7 @@ export async function GET() {
 
     // List all accessible customers
     // Try multiple API versions to find the right one
-    const versions = ["v17", "v16", "v15", "v14"];
+    const versions = ["v19", "v20", "v21", "v18"];
     const results: Record<string, unknown> = {};
 
     for (const version of versions) {
