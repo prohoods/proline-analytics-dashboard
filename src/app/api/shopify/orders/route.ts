@@ -96,7 +96,7 @@ export async function GET(request: NextRequest) {
         dateRange: { start, end },
       },
     }, {
-      headers: { "Cache-Control": "no-store" },
+      headers: { "Cache-Control": "public, s-maxage=900, stale-while-revalidate=60" },
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);

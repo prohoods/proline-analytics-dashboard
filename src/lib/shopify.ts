@@ -9,7 +9,7 @@ export async function shopifyFetch<T>(endpoint: string): Promise<T> {
       "X-Shopify-Access-Token": SHOPIFY_TOKEN,
       "Content-Type": "application/json",
     },
-    cache: "no-store",
+    next: { revalidate: 900 }, // Cache for 15 minutes
   });
 
   if (!res.ok) {
