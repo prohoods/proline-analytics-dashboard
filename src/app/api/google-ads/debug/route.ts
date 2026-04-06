@@ -22,26 +22,32 @@ export async function GET() {
     const accessToken = await getAccessToken();
 
     // List all accessible customers
-    const res = await fetch(
-      "https://googleads.googleapis.com/v18/customers:listAccessibleCustomers",
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "developer-token": process.env.GOOGLE_ADS_DEVELOPER_TOKEN ?? "",
-        },
-        cache: "no-store",
-      }
-    );
+    // Try multiple API versions to find the right one
+    const versions = ["v17", "v16", "v15", "v14"];
+    const results: Record<string, unknown> = {};
 
-    const raw = await res.text();
-    let parsed: unknown;
-    try { parsed = JSON.parse(raw); } catch { parsed = raw; }
+    for (const version of versions) {
+      const res = await fetch(
+        `https://googleads.googleapis.com/${version}/customers:listAccessibleCustomers`,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "developer-token": process.env.GOOGLE_ADS_DEVELOPER_TOKEN ?? "",
+          },
+          cache: "no-store",
+        }
+      );
+      const raw = await res.text();
+      let parsed: unknown;
+      try { parsed = JSON.parse(raw); } catch { parsed = raw.substring(0, 200); }
+      results[version] = { status: res.status, response: parsed };
+      if (res.ok) break; // Stop at first working version
+    }
 
     return NextResponse.json({
-      status: res.status,
       configuredCustomerId: process.env.GOOGLE_ADS_CUSTOMER_ID,
       developerTokenSet: !!(process.env.GOOGLE_ADS_DEVELOPER_TOKEN),
-      response: parsed,
+      versionResults: results,
     });
   } catch (err: unknown) {
     return NextResponse.json({ error: String(err) }, { status: 500 });
