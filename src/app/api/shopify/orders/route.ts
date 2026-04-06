@@ -89,6 +89,8 @@ export async function GET(request: NextRequest) {
         netRevenue: totalGross - totalRefunds,
         dateRange: { start, end },
       },
+    }, {
+      headers: { "Cache-Control": "no-store" },
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
