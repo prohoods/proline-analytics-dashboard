@@ -7,7 +7,7 @@ const CLIENT_ID = process.env.GOOGLE_ADS_CLIENT_ID ?? "";
 const CLIENT_SECRET = process.env.GOOGLE_ADS_CLIENT_SECRET ?? "";
 const REFRESH_TOKEN = process.env.GOOGLE_ADS_REFRESH_TOKEN ?? "";
 
-const API_VERSION = "v17";
+const API_VERSION = "v18";
 
 // Get a fresh access token using the refresh token
 async function getAccessToken(): Promise<string> {
