@@ -19,15 +19,27 @@ export async function GET(request: NextRequest) {
     const refundMap: Record<number, number> = {};
     const ordersWithRefunds = orders.filter(o => o.refunds && o.refunds.length > 0);
 
+    console.log(`Found ${ordersWithRefunds.length} orders with refunds`);
+
     await Promise.all(
       ordersWithRefunds.map(async (order) => {
         const refunds = await getOrderRefunds(order.id);
-        // Sum successful refund transactions
-        const amount = refunds.reduce((sum, r) =>
-          sum + r.transactions
-            .filter(t => t.kind === "refund" && t.status === "success")
-            .reduce((s, t) => s + parseFloat(t.amount), 0),
-        0);
+        console.log(`Order ${order.id} refunds:`, JSON.stringify(refunds.map(r => ({
+          txCount: r.transactions?.length,
+          txAmounts: r.transactions?.map(t => ({ kind: t.kind, status: t.status, amount: t.amount })),
+          lineItems: r.refund_line_items?.map(li => ({ subtotal: li.subtotal, tax: li.total_tax })),
+        }))));
+        // Sum all refund line items (subtotal + tax) — most reliable source
+        const amount = refunds.reduce((sum, r) => {
+          const lineItemTotal = r.refund_line_items?.reduce(
+            (s, li) => s + parseFloat(li.subtotal ?? "0") + parseFloat(li.total_tax ?? "0"), 0
+          ) ?? 0;
+          // Fall back to any transaction amount if no line items
+          const txTotal = lineItemTotal === 0
+            ? r.transactions?.reduce((s, t) => s + parseFloat(t.amount ?? "0"), 0) ?? 0
+            : 0;
+          return sum + (lineItemTotal > 0 ? lineItemTotal : txTotal);
+        }, 0);
         refundMap[order.id] = amount;
       })
     );
