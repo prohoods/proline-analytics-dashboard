@@ -3,6 +3,8 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 
+const PROFIT_MARGIN = 0.40;
+
 // ── helpers ────────────────────────────────────────────────────────────────
 const fmtC = (n: number) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n);
@@ -95,14 +97,6 @@ export default function DashboardOverview() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
 
-  // Filter sheet rows to months within the range
-  function sheetTotals(data: { rows: SheetRow[]; totals: { cost: number; revenue: number; roas: number } }): SheetData {
-    const rows = data.rows.filter(r => r.month >= range.startYM && r.month <= range.endYM);
-    const cost = rows.reduce((s, r) => s + r.cost, 0);
-    const revenue = rows.reduce((s, r) => s + r.revenue, 0);
-    return { totals: { cost, revenue, roas: cost > 0 ? revenue / cost : 0 }, rows };
-  }
-
   const fetchAll = useCallback(() => {
     setLoading(true);
     setShopify(null); setGoogleMonths([]); setBing(null); setMeta(null);
@@ -168,6 +162,8 @@ export default function DashboardOverview() {
   const totalAdRevenue = googleRevenue + bingRevenue + metaRevenue + amazonRevenue + connexityRevenue + pinterestRevenue;
   const blendedROAS = totalAdSpend > 0 ? totalAdRevenue / totalAdSpend : 0;
   const mer = totalAdSpend > 0 ? shopifyRevenue / totalAdSpend : 0;
+  const contributionMargin = (shopifyRevenue * PROFIT_MARGIN) - totalAdSpend;
+  const breakeven = totalAdSpend > 0 ? totalAdSpend / PROFIT_MARGIN : 0;
 
   const platforms: PlatformSummary[] = [
     { name: "Google Ads", spend: googleSpend, revenue: googleRevenue, roas: googleSpend > 0 ? googleRevenue / googleSpend : 0, hasError: !!errors.google, href: "/dashboard/google-ads", color: "bg-blue-500" },
@@ -225,7 +221,7 @@ export default function DashboardOverview() {
       </div>
 
       {/* Top KPI Row */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
           <div className="flex items-center justify-between mb-1">
             <span className="text-xs text-gray-500 uppercase tracking-wider">Net Revenue</span>
@@ -273,6 +269,36 @@ export default function DashboardOverview() {
             <>
               <div className={`text-2xl font-bold mt-1 ${roasColor(mer)}`}>{mer > 0 ? `${mer.toFixed(2)}x` : "—"}</div>
               <div className="text-xs text-gray-500 mt-1">{fmtN(shopifyOrders)} orders</div>
+            </>
+          )}
+        </div>
+
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs text-gray-500 uppercase tracking-wider">Contribution Margin</span>
+            <span className="text-xs text-gray-600">40% margin</span>
+          </div>
+          {loading ? <div className="h-8 bg-gray-800 rounded animate-pulse mt-1" /> : (
+            <>
+              <div className={`text-2xl font-bold mt-1 ${contributionMargin >= 0 ? "text-green-400" : "text-red-400"}`}>
+                {totalAdSpend > 0 ? fmtC(contributionMargin) : "—"}
+              </div>
+              <div className="text-xs text-gray-500 mt-1">Net rev × 40% − ad spend</div>
+            </>
+          )}
+        </div>
+
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs text-gray-500 uppercase tracking-wider">Breakeven Revenue</span>
+            <span className="text-xs text-gray-600">Ad spend ÷ 40%</span>
+          </div>
+          {loading ? <div className="h-8 bg-gray-800 rounded animate-pulse mt-1" /> : (
+            <>
+              <div className="text-2xl font-bold text-white mt-1">{breakeven > 0 ? fmtC(breakeven) : "—"}</div>
+              <div className={`text-xs mt-1 ${shopifyRevenue >= breakeven && breakeven > 0 ? "text-green-400" : "text-gray-500"}`}>
+                {breakeven > 0 ? (shopifyRevenue >= breakeven ? `+${fmtC(shopifyRevenue - breakeven)} above` : `${fmtC(shopifyRevenue - breakeven)} below`) : "No spend data"}
+              </div>
             </>
           )}
         </div>
