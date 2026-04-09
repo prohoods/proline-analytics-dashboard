@@ -43,17 +43,18 @@ export async function GET() {
       return NextResponse.json({ error: "SALES_REPORT_SHEET_ID not configured" }, { status: 500 });
     }
 
-    const rows = await getSheetData(sheetId, "Marketplace Sales!A2:F500");
+    // Sheet layout: A=Date, B=blank, C=Amazon, D=Wayfair, E=Home Depot, F-G=blank, H=Gross, I=Returns
+    const rows = await getSheetData(sheetId, "Marketplace Sales!A2:I500");
 
     const days: MarketplaceDay[] = rows
       .filter(row => row[0] && row[0].includes("/"))
       .map(row => {
         const date = toISO(row[0]);
-        const amazon = parseNum(row[1]);
-        const wayfair = parseNum(row[2]);
-        const homeDepot = parseNum(row[3]);
-        const gross = parseNum(row[4]) || (amazon + wayfair + homeDepot);
-        const returns = parseNum(row[5]);
+        const amazon = parseNum(row[2]);    // column C
+        const wayfair = parseNum(row[3]);   // column D
+        const homeDepot = parseNum(row[4]); // column E
+        const gross = parseNum(row[7]) || (amazon + wayfair + homeDepot); // column H
+        const returns = parseNum(row[8]);   // column I
         return { date, amazon, wayfair, homeDepot, gross, returns, net: gross - returns };
       })
       .filter(d => d.date);
