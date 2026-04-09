@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
+import DateRangeDropdown from "@/components/DateRangeDropdown";
+import { RangeKey, getRange } from "@/lib/date-ranges";
 
 interface MarketplaceDay {
   date: string;
@@ -32,16 +34,33 @@ const channels = [
 ];
 
 export default function MarketplacePage() {
-  const [data, setData] = useState<MarketplaceSummary | null>(null);
+  const [allData, setAllData] = useState<MarketplaceSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [rangeKey, setRangeKey] = useState<RangeKey>("ytd");
 
   useEffect(() => {
     fetch("/api/sheets/marketplace")
       .then(r => r.json())
-      .then(d => { if (d.error) throw new Error(d.error); setData(d); setLoading(false); })
+      .then(d => { if (d.error) throw new Error(d.error); setAllData(d); setLoading(false); })
       .catch(e => { setError(e.message); setLoading(false); });
   }, []);
+
+  // Filter days by selected date range
+  const data = useMemo((): MarketplaceSummary | null => {
+    if (!allData) return null;
+    const range = getRange(rangeKey);
+    const days = allData.days.filter(d => d.date >= range.start && d.date <= range.end);
+    return {
+      amazon: days.reduce((s, d) => s + d.amazon, 0),
+      wayfair: days.reduce((s, d) => s + d.wayfair, 0),
+      homeDepot: days.reduce((s, d) => s + d.homeDepot, 0),
+      gross: days.reduce((s, d) => s + d.gross, 0),
+      returns: days.reduce((s, d) => s + d.returns, 0),
+      net: days.reduce((s, d) => s + d.net, 0),
+      days,
+    };
+  }, [allData, rangeKey]);
 
   // Group days by month for the breakdown table
   const monthMap: Record<string, { amazon: number; wayfair: number; homeDepot: number; gross: number; returns: number; net: number }> = {};
@@ -63,13 +82,16 @@ export default function MarketplacePage() {
 
   return (
     <div className="p-8">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white">Marketplace Sales</h1>
-        <p className="text-gray-400 mt-1">Amazon, Wayfair & Home Depot — from 2026 Daily Sales Report</p>
-        <div className="mt-2 inline-flex items-center gap-2 bg-blue-900/20 border border-blue-700/30 rounded-lg px-3 py-1.5">
-          <div className="w-1.5 h-1.5 rounded-full bg-blue-400" />
-          <span className="text-blue-400 text-xs font-medium">Google Sheets — 15 min cache</span>
+      <div className="mb-6 flex items-start justify-between flex-wrap gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-white">Marketplace Sales</h1>
+          <p className="text-gray-400 mt-1">Amazon, Wayfair & Home Depot — from 2026 Daily Sales Report</p>
+          <div className="mt-2 inline-flex items-center gap-2 bg-blue-900/20 border border-blue-700/30 rounded-lg px-3 py-1.5">
+            <div className="w-1.5 h-1.5 rounded-full bg-blue-400" />
+            <span className="text-blue-400 text-xs font-medium">Google Sheets — 15 min cache</span>
+          </div>
         </div>
+        <DateRangeDropdown value={rangeKey} onChange={setRangeKey} />
       </div>
 
       {loading && <div className="text-gray-400">Loading...</div>}
