@@ -2,22 +2,25 @@
 
 import { useEffect, useState } from "react";
 import MetricCard from "@/components/MetricCard";
+import DateRangeDropdown from "@/components/DateRangeDropdown";
+import { RangeKey, getRange } from "@/lib/date-ranges";
 
 interface Campaign { name: string; type: string; spend: number; convValue: number; clicks: number; impressions: number; }
 interface MonthData { month: string; totalSpend: number; totalConvValue: number; totalClicks: number; totalImpressions: number; roas: number; campaigns: Campaign[]; }
 
-function fmt(n: number) { return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n); }
-function fmtNum(n: number) { return new Intl.NumberFormat("en-US").format(n); }
+const fmt = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n);
+const fmtNum = (n: number) => new Intl.NumberFormat("en-US").format(n);
 
 export default function ShoppingPage() {
-  const [year, setYear] = useState("2026");
+  const [rangeKey, setRangeKey] = useState<RangeKey>("ytd");
   const [data, setData] = useState<MonthData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    setLoading(true);
-    fetch(`/api/google-ads/campaigns?year=${year}`, { cache: "no-store" })
+    const range = getRange(rangeKey);
+    setLoading(true); setError("");
+    fetch(`/api/google-ads/campaigns?start=${range.start}&end=${range.end}`, { cache: "no-store" })
       .then(r => r.json())
       .then(d => {
         if (d.error) throw new Error(d.error);
@@ -28,12 +31,12 @@ export default function ShoppingPage() {
           totalConvValue: m.campaigns.filter((c: Campaign) => c.type === "Shopping").reduce((s: number, c: Campaign) => s + c.convValue, 0),
           totalClicks: m.campaigns.filter((c: Campaign) => c.type === "Shopping").reduce((s: number, c: Campaign) => s + c.clicks, 0),
         })).filter((m: MonthData) => m.totalSpend > 0);
-        setData(filtered);
-        setLoading(false);
+        setData(filtered); setLoading(false);
       })
       .catch(e => { setError(e.message); setLoading(false); });
-  }, [year]);
+  }, [rangeKey]);
 
+  const range = getRange(rangeKey);
   const totalSpend = data.reduce((s, m) => s + m.totalSpend, 0);
   const totalConvValue = data.reduce((s, m) => s + m.totalConvValue, 0);
   const totalClicks = data.reduce((s, m) => s + m.totalClicks, 0);
@@ -50,11 +53,7 @@ export default function ShoppingPage() {
             <span className="text-green-400 text-xs font-medium">Live — Google Ads API</span>
           </div>
         </div>
-        <div className="flex gap-2">
-          {["2025", "2026"].map(y => (
-            <button key={y} onClick={() => setYear(y)} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${year === y ? "bg-blue-600 text-white" : "bg-gray-800 text-gray-400 hover:text-white"}`}>{y}</button>
-          ))}
-        </div>
+        <DateRangeDropdown value={rangeKey} onChange={setRangeKey} />
       </div>
 
       {loading && <div className="text-gray-400">Loading...</div>}
@@ -63,14 +62,16 @@ export default function ShoppingPage() {
       {!loading && !error && (
         <>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-            <MetricCard label={`${year} Total Spend`} value={fmt(totalSpend)} subtext="Shopping campaigns" highlight />
+            <MetricCard label="Total Spend" value={fmt(totalSpend)} subtext={range.label} highlight />
             <MetricCard label="ROAS" value={`${avgRoas.toFixed(2)}x`} subtext="Conv value / spend" />
             <MetricCard label="Conv Value" value={fmt(totalConvValue)} subtext={`${data.length} months`} />
-            <MetricCard label="Total Clicks" value={fmtNum(totalClicks)} subtext={year} />
+            <MetricCard label="Total Clicks" value={fmtNum(totalClicks)} subtext={range.label} />
           </div>
 
           <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-800"><h2 className="text-sm font-semibold text-white">Monthly Breakdown</h2></div>
+            <div className="px-6 py-4 border-b border-gray-800">
+              <h2 className="text-sm font-semibold text-white">Monthly Breakdown — {range.label}</h2>
+            </div>
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-gray-500 text-xs uppercase tracking-wider bg-gray-800/50 border-b border-gray-800">
@@ -82,7 +83,9 @@ export default function ShoppingPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-800">
-                {data.map(row => (
+                {data.length === 0 ? (
+                  <tr><td colSpan={5} className="py-8 text-center text-gray-500">No Shopping campaigns found for {range.label}</td></tr>
+                ) : data.map(row => (
                   <tr key={row.month} className="text-gray-300 hover:bg-gray-800/40">
                     <td className="py-2.5 px-4 font-medium text-white">{row.month}</td>
                     <td className="py-2.5 px-4 text-right">{fmt(row.totalSpend)}</td>

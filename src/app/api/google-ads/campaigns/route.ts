@@ -19,7 +19,10 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
-    const year = searchParams.get("year") ?? new Date().getFullYear().toString();
+    const year = new Date().getFullYear().toString();
+    // Accept explicit start/end OR fall back to full year
+    const start = searchParams.get("start") ?? searchParams.get("year") ? `${searchParams.get("year") ?? year}-01-01` : `${year}-01-01`;
+    const end   = searchParams.get("end")   ?? searchParams.get("year") ? `${searchParams.get("year") ?? year}-12-31` : `${year}-12-31`;
 
     // Query monthly campaign performance
     const query = `
@@ -37,7 +40,7 @@ export async function GET(request: NextRequest) {
         segments.month
       FROM campaign
       WHERE
-        segments.date BETWEEN '${year}-01-01' AND '${year}-12-31'
+        segments.date BETWEEN '${start}' AND '${end}'
         AND campaign.status != 'REMOVED'
       ORDER BY segments.month DESC, metrics.cost_micros DESC
     `;
