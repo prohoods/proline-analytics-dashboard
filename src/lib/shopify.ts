@@ -2,21 +2,36 @@ const SHOPIFY_DOMAIN = process.env.SHOPIFY_STORE_DOMAIN ?? "861fdb.myshopify.com
 const SHOPIFY_TOKEN = process.env.SHOPIFY_ADMIN_API_TOKEN ?? "";
 const API_VERSION = "2025-01";
 
-export async function shopifyFetch<T>(endpoint: string): Promise<T> {
+// Internal fetch — returns data + Link header for pagination
+async function shopifyRaw<T>(endpoint: string): Promise<{ data: T; linkHeader: string | null }> {
   const url = `https://${SHOPIFY_DOMAIN}/admin/api/${API_VERSION}/${endpoint}`;
   const res = await fetch(url, {
     headers: {
       "X-Shopify-Access-Token": SHOPIFY_TOKEN,
       "Content-Type": "application/json",
     },
-    next: { revalidate: 900 }, // Cache for 15 minutes
+    cache: "no-store",
   });
 
   if (!res.ok) {
     throw new Error(`Shopify API error: ${res.status} ${res.statusText}`);
   }
 
-  return res.json();
+  const data = await res.json();
+  return { data, linkHeader: res.headers.get("link") };
+}
+
+// Public simple fetch — for routes that just need data, no pagination
+export async function shopifyFetch<T>(endpoint: string): Promise<T> {
+  const { data } = await shopifyRaw<T>(endpoint);
+  return data;
+}
+
+// Extract next page_info cursor from Shopify Link header
+function getNextPageInfo(linkHeader: string | null): string | null {
+  if (!linkHeader) return null;
+  const match = linkHeader.match(/<[^>]*[?&]page_info=([^&>]+)[^>]*>;\s*rel="next"/);
+  return match ? match[1] : null;
 }
 
 export function formatCurrency(n: number) {
@@ -27,9 +42,27 @@ export function formatCurrency(n: number) {
   }).format(n);
 }
 
-// Get orders for a date range
-export async function getOrders(params: string) {
-  return shopifyFetch<{ orders: ShopifyOrder[] }>(`orders.json?${params}&limit=250&status=any`);
+// Get ALL orders for a date range — auto-paginates through all Shopify pages
+export async function getOrders(params: string): Promise<{ orders: ShopifyOrder[] }> {
+  const allOrders: ShopifyOrder[] = [];
+
+  // First page — date filters only work on the first request
+  const first = await shopifyRaw<{ orders: ShopifyOrder[] }>(
+    `orders.json?${params}&limit=250&status=any`
+  );
+  allOrders.push(...first.data.orders);
+
+  // Keep fetching subsequent pages via cursor
+  let nextPageInfo = getNextPageInfo(first.linkHeader);
+  while (nextPageInfo) {
+    const next = await shopifyRaw<{ orders: ShopifyOrder[] }>(
+      `orders.json?page_info=${nextPageInfo}&limit=250`
+    );
+    allOrders.push(...next.data.orders);
+    nextPageInfo = getNextPageInfo(next.linkHeader);
+  }
+
+  return { orders: allOrders };
 }
 
 // Get full refund details for a specific order

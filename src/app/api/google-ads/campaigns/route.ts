@@ -21,8 +21,8 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const year = new Date().getFullYear().toString();
     // Accept explicit start/end OR fall back to full year
-    const start = searchParams.get("start") ?? searchParams.get("year") ? `${searchParams.get("year") ?? year}-01-01` : `${year}-01-01`;
-    const end   = searchParams.get("end")   ?? searchParams.get("year") ? `${searchParams.get("year") ?? year}-12-31` : `${year}-12-31`;
+    const start = searchParams.get("start") ?? `${searchParams.get("year") ?? year}-01-01`;
+    const end   = searchParams.get("end")   ?? `${searchParams.get("year") ?? year}-12-31`;
 
     // Query monthly campaign performance
     const query = `
