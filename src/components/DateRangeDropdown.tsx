@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { RangeKey, RANGE_OPTIONS } from "@/lib/date-ranges";
+import { RangeKey, RANGE_OPTIONS, getMonthOptions } from "@/lib/date-ranges";
 
 interface Props {
   value: RangeKey;
@@ -10,7 +10,15 @@ interface Props {
 
 export default function DateRangeDropdown({ value, onChange }: Props) {
   const [open, setOpen] = useState(false);
-  const label = RANGE_OPTIONS.find(o => o.key === value)?.label ?? value;
+
+  const monthOptions = getMonthOptions();
+  const allOptions = [...RANGE_OPTIONS, ...monthOptions];
+  const label = allOptions.find(o => o.key === value)?.label ?? value;
+
+  function select(key: RangeKey) {
+    onChange(key);
+    setOpen(false);
+  }
 
   return (
     <div className="relative">
@@ -28,12 +36,34 @@ export default function DateRangeDropdown({ value, onChange }: Props) {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-1 w-48 bg-gray-800 border border-gray-700 rounded-xl shadow-xl z-50 overflow-hidden">
+        <div className="absolute right-0 top-full mt-1 w-52 bg-gray-800 border border-gray-700 rounded-xl shadow-xl z-50 overflow-hidden">
+          {/* Rolling ranges */}
+          <div className="px-3 pt-2.5 pb-1 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+            Rolling
+          </div>
           {RANGE_OPTIONS.map(opt => (
             <button
               key={opt.key}
-              onClick={() => { onChange(opt.key); setOpen(false); }}
-              className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
+              onClick={() => select(opt.key)}
+              className={`w-full text-left px-4 py-2 text-sm transition-colors ${
+                value === opt.key
+                  ? "bg-blue-600/20 text-blue-400 font-medium"
+                  : "text-gray-300 hover:bg-gray-700 hover:text-white"
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+
+          {/* Month divider */}
+          <div className="px-3 pt-3 pb-1 text-xs font-semibold text-gray-500 uppercase tracking-wider border-t border-gray-700 mt-1">
+            {new Date().getFullYear()} — By Month
+          </div>
+          {monthOptions.map(opt => (
+            <button
+              key={opt.key}
+              onClick={() => select(opt.key)}
+              className={`w-full text-left px-4 py-2 text-sm transition-colors ${
                 value === opt.key
                   ? "bg-blue-600/20 text-blue-400 font-medium"
                   : "text-gray-300 hover:bg-gray-700 hover:text-white"

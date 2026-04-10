@@ -1,4 +1,8 @@
-export type RangeKey = "7d" | "15d" | "30d" | "60d" | "90d" | "quarter" | "ytd" | "prev_year";
+// Fixed range keys
+type FixedRangeKey = "7d" | "15d" | "30d" | "60d" | "90d" | "quarter" | "ytd" | "prev_year";
+
+// Also accept YYYY-MM month strings like "2026-01", "2026-04"
+export type RangeKey = FixedRangeKey | (string & {});
 
 export interface DateRange {
   start: string;   // YYYY-MM-DD
@@ -9,16 +13,38 @@ export interface DateRange {
   endYM: string;   // YYYY-MM
 }
 
+const MONTHS = ["January", "February", "March", "April", "May", "June",
+                "July", "August", "September", "October", "November", "December"];
+
 function pad(n: number) { return String(n).padStart(2, "0"); }
 function toDateStr(d: Date) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
 function toYM(d: Date) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`; }
+
+// Returns last day of a given YYYY-MM, capped at today
+function monthEnd(year: number, month: number): string {
+  const today = toDateStr(new Date());
+  const lastDay = new Date(year, month, 0); // day 0 of next month = last day of this month
+  const end = toDateStr(lastDay);
+  return end < today ? end : today;
+}
 
 export function getRange(key: RangeKey): DateRange {
   const now = new Date();
   const today = toDateStr(now);
   const year = now.getFullYear();
 
-  switch (key) {
+  // Handle YYYY-MM month keys
+  const monthMatch = key.match(/^(\d{4})-(\d{2})$/);
+  if (monthMatch) {
+    const y = parseInt(monthMatch[1]);
+    const m = parseInt(monthMatch[2]);
+    const ym = `${y}-${pad(m)}`;
+    const start = `${ym}-01`;
+    const end = monthEnd(y, m);
+    return { start, end, label: `${MONTHS[m - 1]} ${y}`, year: String(y), startYM: ym, endYM: ym };
+  }
+
+  switch (key as FixedRangeKey) {
     case "7d": {
       const s = new Date(now); s.setDate(s.getDate() - 6);
       return { start: toDateStr(s), end: today, label: "Last 7 Days", year: String(year), startYM: toYM(s), endYM: toYM(now) };
@@ -50,6 +76,10 @@ export function getRange(key: RangeKey): DateRange {
       const py = year - 1;
       return { start: `${py}-01-01`, end: `${py}-12-31`, label: `${py} Full Year`, year: String(py), startYM: `${py}-01`, endYM: `${py}-12` };
     }
+    default: {
+      // Fallback to YTD for unknown keys
+      return { start: `${year}-01-01`, end: today, label: "Year to Date", year: String(year), startYM: `${year}-01`, endYM: toYM(now) };
+    }
   }
 }
 
@@ -63,3 +93,18 @@ export const RANGE_OPTIONS: { key: RangeKey; label: string }[] = [
   { key: "ytd", label: "Year to Date" },
   { key: "prev_year", label: "Previous Year" },
 ];
+
+// Generate month options for the current year up to today
+export function getMonthOptions(): { key: string; label: string }[] {
+  const now = new Date();
+  const year = now.getFullYear();
+  const currentMonth = now.getMonth() + 1; // 1-based
+  const options = [];
+  for (let m = 1; m <= currentMonth; m++) {
+    options.push({
+      key: `${year}-${pad(m)}`,
+      label: MONTHS[m - 1],
+    });
+  }
+  return options.reverse(); // most recent first
+}
