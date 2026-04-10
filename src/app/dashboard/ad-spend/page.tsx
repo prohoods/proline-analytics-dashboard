@@ -103,25 +103,63 @@ export default function AdSpendPage() {
   const monthlyData = useMemo((): MonthRow[] => {
     const map: Record<string, MonthRow> = {};
 
-    function add(month: string, key: PlatformKey, spend: number, revenue: number) {
-      if (month < range.startYM || month > range.endYM) return;
+    function ensure(month: string) {
       if (!map[month]) {
         map[month] = { month, google: 0, bing: 0, meta: 0, amazon: 0, connexity: 0, pinterest: 0, total: 0, googleRevenue: 0, bingRevenue: 0, metaRevenue: 0, amazonRevenue: 0, connexityRevenue: 0, pinterestRevenue: 0, totalRevenue: 0 };
       }
-      map[month][key] += spend;
-      map[month][`${key}Revenue` as keyof MonthRow] = (map[month][`${key}Revenue` as keyof MonthRow] as number) + revenue;
-      map[month].total += spend;
-      map[month].totalRevenue += revenue;
+    }
+    function inRange(month: string) {
+      return month >= range.startYM && month <= range.endYM;
     }
 
     for (const m of googleRaw) {
-      add(m.month, "google", m.totalSpend, m.totalConvValue);
+      if (!inRange(m.month)) continue;
+      ensure(m.month);
+      map[m.month].google += m.totalSpend;
+      map[m.month].googleRevenue += m.totalConvValue;
+      map[m.month].total += m.totalSpend;
+      map[m.month].totalRevenue += m.totalConvValue;
     }
-    for (const r of bingRaw) { add(r.month, "bing", r.cost, r.revenue); }
-    for (const r of metaRaw) { add(r.month, "meta", r.cost, r.revenue); }
-    for (const r of amazonRaw) { add(r.month, "amazon", r.cost, r.revenue); }
-    for (const r of connexityRaw) { add(r.month, "connexity", r.cost, r.revenue); }
-    for (const r of pinterestRaw) { add(r.month, "pinterest", r.cost, r.revenue); }
+    for (const r of bingRaw) {
+      if (!inRange(r.month)) continue;
+      ensure(r.month);
+      map[r.month].bing += r.cost;
+      map[r.month].bingRevenue += r.revenue;
+      map[r.month].total += r.cost;
+      map[r.month].totalRevenue += r.revenue;
+    }
+    for (const r of metaRaw) {
+      if (!inRange(r.month)) continue;
+      ensure(r.month);
+      map[r.month].meta += r.cost;
+      map[r.month].metaRevenue += r.revenue;
+      map[r.month].total += r.cost;
+      map[r.month].totalRevenue += r.revenue;
+    }
+    for (const r of amazonRaw) {
+      if (!inRange(r.month)) continue;
+      ensure(r.month);
+      map[r.month].amazon += r.cost;
+      map[r.month].amazonRevenue += r.revenue;
+      map[r.month].total += r.cost;
+      map[r.month].totalRevenue += r.revenue;
+    }
+    for (const r of connexityRaw) {
+      if (!inRange(r.month)) continue;
+      ensure(r.month);
+      map[r.month].connexity += r.cost;
+      map[r.month].connexityRevenue += r.revenue;
+      map[r.month].total += r.cost;
+      map[r.month].totalRevenue += r.revenue;
+    }
+    for (const r of pinterestRaw) {
+      if (!inRange(r.month)) continue;
+      ensure(r.month);
+      map[r.month].pinterest += r.cost;
+      map[r.month].pinterestRevenue += r.revenue;
+      map[r.month].total += r.cost;
+      map[r.month].totalRevenue += r.revenue;
+    }
 
     return Object.values(map).sort((a, b) => b.month.localeCompare(a.month));
   }, [googleRaw, bingRaw, metaRaw, amazonRaw, connexityRaw, pinterestRaw, range.startYM, range.endYM]);
@@ -132,10 +170,14 @@ export default function AdSpendPage() {
   const blendedRoas = totalSpend > 0 ? totalRevenue / totalSpend : 0;
 
   // Platform totals for the bar chart
+  const revenueKey: Record<PlatformKey, keyof MonthRow> = {
+    google: "googleRevenue", bing: "bingRevenue", meta: "metaRevenue",
+    amazon: "amazonRevenue", connexity: "connexityRevenue", pinterest: "pinterestRevenue",
+  };
   const platformTotals = PLATFORMS.map(p => ({
     ...p,
     spend: monthlyData.reduce((s, m) => s + m[p.key], 0),
-    revenue: monthlyData.reduce((s, m) => s + (m[`${p.key}Revenue` as keyof MonthRow] as number), 0),
+    revenue: monthlyData.reduce((s, m) => s + (m[revenueKey[p.key]] as number), 0),
     hasError: !!errors[p.key],
   })).sort((a, b) => b.spend - a.spend);
 
