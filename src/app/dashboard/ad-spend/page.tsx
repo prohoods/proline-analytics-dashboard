@@ -1,188 +1,289 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import MetricCard from "@/components/MetricCard";
+import { useEffect, useState, useMemo } from "react";
+import DateRangeDropdown from "@/components/DateRangeDropdown";
+import { RangeKey, getRange } from "@/lib/date-ranges";
+import Link from "next/link";
 
-interface AdSpendRow {
-  month: string;
-  googleShopping: number;
-  connexity: number;
-  bing: number;
-  amazon: number;
-  meta: number;
-  pinterest: number;
-  totalAdSpend: number;
-  convValue: number;
-  netRevenue: number;
-  roi: number;
-  blendedRoas: number;
-}
-
-function fmt(n: number) {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n);
-}
+const fmt = (n: number) =>
+  new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n);
 
 const PLATFORMS = [
-  { key: "googleShopping", label: "Google Shopping", color: "bg-blue-500" },
-  { key: "bing", label: "Bing / Microsoft", color: "bg-teal-500" },
-  { key: "connexity", label: "Connexity", color: "bg-purple-500" },
-  { key: "meta", label: "Meta", color: "bg-indigo-500" },
-  { key: "pinterest", label: "Pinterest", color: "bg-pink-500" },
-  { key: "amazon", label: "Amazon Ads", color: "bg-orange-500" },
+  { key: "google",     label: "Google Ads",       color: "bg-blue-500",   href: "/dashboard/google-ads" },
+  { key: "bing",       label: "Bing / Microsoft",  color: "bg-teal-500",   href: "/dashboard/bing" },
+  { key: "meta",       label: "Meta",              color: "bg-indigo-500", href: "/dashboard/meta" },
+  { key: "amazon",     label: "Amazon Ads",        color: "bg-orange-500", href: "/dashboard/amazon-ads" },
+  { key: "connexity",  label: "Connexity",         color: "bg-purple-500", href: "/dashboard/connexity" },
+  { key: "pinterest",  label: "Pinterest",         color: "bg-pink-500",   href: "/dashboard/pinterest" },
 ] as const;
 
+type PlatformKey = typeof PLATFORMS[number]["key"];
+
+interface MonthRow {
+  month: string;
+  google: number;
+  bing: number;
+  meta: number;
+  amazon: number;
+  connexity: number;
+  pinterest: number;
+  total: number;
+  googleRevenue: number;
+  bingRevenue: number;
+  metaRevenue: number;
+  amazonRevenue: number;
+  connexityRevenue: number;
+  pinterestRevenue: number;
+  totalRevenue: number;
+}
+
+interface SheetRows { rows: { month: string; cost: number; revenue: number }[] }
+interface GoogleCampaignMonth { month: string; totalSpend: number; totalConvValue: number }
+
 export default function AdSpendPage() {
-  const [year, setYear] = useState("2026");
-  const [data, setData] = useState<AdSpendRow[]>([]);
+  const [rangeKey, setRangeKey] = useState<RangeKey>("ytd");
+
+  // Raw data from each platform — fetched once, filtered client-side
+  const [googleRaw, setGoogleRaw] = useState<GoogleCampaignMonth[]>([]);
+  const [bingRaw, setBingRaw] = useState<SheetRows["rows"]>([]);
+  const [metaRaw, setMetaRaw] = useState<SheetRows["rows"]>([]);
+  const [amazonRaw, setAmazonRaw] = useState<SheetRows["rows"]>([]);
+  const [connexityRaw, setConnexityRaw] = useState<SheetRows["rows"]>([]);
+  const [pinterestRaw, setPinterestRaw] = useState<SheetRows["rows"]>([]);
+  const [errors, setErrors] = useState<Partial<Record<PlatformKey, string>>>({});
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
 
   useEffect(() => {
-    setLoading(true);
-    setError("");
-    fetch(`/api/sheets/ad-spend?year=${year}`)
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.error) { setError(d.error); } else { setData(d); }
-        setLoading(false);
-      })
-      .catch((e) => { setError(e.message); setLoading(false); });
-  }, [year]);
+    const year = new Date().getFullYear();
+    const prevYear = year - 1;
 
-  // Summary: use most recent month for spotlight, all months for totals
-  const latest = data[data.length - 1];
-  const totalSpend = data.reduce((s, r) => s + r.totalAdSpend, 0);
-  const totalConvValue = data.reduce((s, r) => s + r.convValue, 0);
-  const avgRoas = totalSpend > 0 ? totalConvValue / totalSpend : 0;
+    // Fetch both years for Google so date range filtering works fully
+    const errs: Partial<Record<PlatformKey, string>> = {};
 
-  // Platform totals across selected year
-  const platformTotals = PLATFORMS.map((p) => ({
+    Promise.allSettled([
+      Promise.all([
+        fetch(`/api/google-ads/campaigns?start=${prevYear}-01-01&end=${year}-12-31`).then(r => r.json()),
+      ]).then(([d]) => {
+        if (d.error) throw new Error(d.error);
+        setGoogleRaw(Array.isArray(d) ? d : []);
+      }),
+      fetch("/api/sheets/bing").then(r => r.json()).then(d => {
+        if (d.error) throw new Error(d.error);
+        setBingRaw((d.rows ?? []).map((r: { month: string; cost: number; revenue: number }) => ({ month: r.month, cost: r.cost, revenue: r.revenue })));
+      }),
+      fetch("/api/sheets/meta").then(r => r.json()).then(d => {
+        if (d.error) throw new Error(d.error);
+        setMetaRaw((d.rows ?? []).map((r: { month: string; cost: number; revenue: number }) => ({ month: r.month, cost: r.cost, revenue: r.revenue })));
+      }),
+      fetch("/api/sheets/amazon-ads").then(r => r.json()).then(d => {
+        if (d.error) throw new Error(d.error);
+        setAmazonRaw((d.rows ?? []).map((r: { month: string; cost: number; revenue: number }) => ({ month: r.month, cost: r.cost, revenue: r.revenue })));
+      }),
+      fetch("/api/sheets/connexity").then(r => r.json()).then(d => {
+        if (d.error) throw new Error(d.error);
+        setConnexityRaw((d.rows ?? []).map((r: { month: string; cost: number; revenue: number }) => ({ month: r.month, cost: r.cost, revenue: r.revenue })));
+      }),
+      fetch("/api/sheets/pinterest").then(r => r.json()).then(d => {
+        if (d.error) throw new Error(d.error);
+        setPinterestRaw((d.rows ?? []).map((r: { month: string; cost: number; revenue: number }) => ({ month: r.month, cost: r.cost, revenue: r.revenue })));
+      }),
+    ]).then(results => {
+      const keys: PlatformKey[] = ["google", "bing", "meta", "amazon", "connexity", "pinterest"];
+      results.forEach((res, i) => {
+        if (res.status === "rejected") errs[keys[i]] = res.reason?.message ?? "Failed";
+      });
+      setErrors(errs);
+      setLoading(false);
+    });
+  }, []);
+
+  const range = getRange(rangeKey);
+
+  // Aggregate all platforms into monthly rows, filtered by range
+  const monthlyData = useMemo((): MonthRow[] => {
+    const map: Record<string, MonthRow> = {};
+
+    function add(month: string, key: PlatformKey, spend: number, revenue: number) {
+      if (month < range.startYM || month > range.endYM) return;
+      if (!map[month]) {
+        map[month] = { month, google: 0, bing: 0, meta: 0, amazon: 0, connexity: 0, pinterest: 0, total: 0, googleRevenue: 0, bingRevenue: 0, metaRevenue: 0, amazonRevenue: 0, connexityRevenue: 0, pinterestRevenue: 0, totalRevenue: 0 };
+      }
+      map[month][key] += spend;
+      map[month][`${key}Revenue` as keyof MonthRow] = (map[month][`${key}Revenue` as keyof MonthRow] as number) + revenue;
+      map[month].total += spend;
+      map[month].totalRevenue += revenue;
+    }
+
+    for (const m of googleRaw) {
+      add(m.month, "google", m.totalSpend, m.totalConvValue);
+    }
+    for (const r of bingRaw) { add(r.month, "bing", r.cost, r.revenue); }
+    for (const r of metaRaw) { add(r.month, "meta", r.cost, r.revenue); }
+    for (const r of amazonRaw) { add(r.month, "amazon", r.cost, r.revenue); }
+    for (const r of connexityRaw) { add(r.month, "connexity", r.cost, r.revenue); }
+    for (const r of pinterestRaw) { add(r.month, "pinterest", r.cost, r.revenue); }
+
+    return Object.values(map).sort((a, b) => b.month.localeCompare(a.month));
+  }, [googleRaw, bingRaw, metaRaw, amazonRaw, connexityRaw, pinterestRaw, range.startYM, range.endYM]);
+
+  // Summary totals
+  const totalSpend = monthlyData.reduce((s, m) => s + m.total, 0);
+  const totalRevenue = monthlyData.reduce((s, m) => s + m.totalRevenue, 0);
+  const blendedRoas = totalSpend > 0 ? totalRevenue / totalSpend : 0;
+
+  // Platform totals for the bar chart
+  const platformTotals = PLATFORMS.map(p => ({
     ...p,
-    total: data.reduce((s, r) => s + (r[p.key] as number), 0),
-  })).sort((a, b) => b.total - a.total);
-  const topSpend = platformTotals[0]?.total ?? 1;
+    spend: monthlyData.reduce((s, m) => s + m[p.key], 0),
+    revenue: monthlyData.reduce((s, m) => s + (m[`${p.key}Revenue` as keyof MonthRow] as number), 0),
+    hasError: !!errors[p.key],
+  })).sort((a, b) => b.spend - a.spend);
+
+  const topSpend = platformTotals[0]?.spend ?? 1;
+
+  const roasColor = (r: number) => r >= 5 ? "text-green-400" : r >= 3 ? "text-yellow-400" : r > 0 ? "text-red-400" : "text-gray-600";
 
   return (
     <div className="p-8">
-      {/* Header */}
-      <div className="mb-8 flex items-start justify-between">
+      <div className="mb-6 flex items-start justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-white">All Ad Spend</h1>
-          <p className="text-gray-400 mt-1">All platforms — monthly breakdown from Google Sheets</p>
+          <p className="text-gray-400 mt-1">Aggregated from all platform sources — Google Ads API + manual sheets</p>
         </div>
-        {/* Year selector */}
-        <div className="flex gap-2">
-          {["2025", "2026"].map((y) => (
-            <button
-              key={y}
-              onClick={() => setYear(y)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                year === y ? "bg-blue-600 text-white" : "bg-gray-800 text-gray-400 hover:text-white"
-              }`}
-            >
-              {y}
-            </button>
-          ))}
-        </div>
+        <DateRangeDropdown value={rangeKey} onChange={setRangeKey} />
       </div>
 
-      {loading && <div className="text-gray-400">Loading...</div>}
-      {error && <div className="text-red-400 bg-red-900/20 rounded-lg p-4 mb-6">{error}</div>}
+      {Object.keys(errors).length > 0 && (
+        <div className="bg-yellow-900/20 border border-yellow-700/30 rounded-lg p-4 mb-6 text-sm text-yellow-400">
+          Data missing from: {Object.keys(errors).join(", ")} — check sheet entries
+        </div>
+      )}
 
-      {!loading && !error && (
+      {loading && <div className="text-gray-400 mb-8">Loading...</div>}
+
+      {!loading && (
         <>
           {/* KPI cards */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-            <MetricCard label={`${year} Total Ad Spend`} value={fmt(totalSpend)} subtext="All platforms" highlight />
-            <MetricCard label="Blended ROAS" value={`${avgRoas.toFixed(2)}x`} subtext="Conv value / spend" />
-            <MetricCard label="Total Conv Value" value={fmt(totalConvValue)} subtext={`${data.length} months`} />
-            {latest && (
-              <MetricCard label={`${latest.month} Spend`} value={fmt(latest.totalAdSpend)} subtext="Most recent month" />
-            )}
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+              <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">Total Ad Spend</div>
+              <div className="text-2xl font-bold text-white">{fmt(totalSpend)}</div>
+              <div className="text-xs text-gray-500 mt-1">{range.label} · {platformTotals.filter(p => p.spend > 0).length} platforms</div>
+            </div>
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+              <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">Attributed Revenue</div>
+              <div className="text-2xl font-bold text-white">{fmt(totalRevenue)}</div>
+              <div className="text-xs text-gray-500 mt-1">platform-reported conv value</div>
+            </div>
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+              <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">Blended ROAS</div>
+              <div className={`text-2xl font-bold mt-1 ${roasColor(blendedRoas)}`}>
+                {blendedRoas > 0 ? `${blendedRoas.toFixed(2)}x` : "—"}
+              </div>
+              <div className="text-xs text-gray-500 mt-1">attributed rev ÷ spend</div>
+            </div>
           </div>
 
-          {/* Platform breakdown bar chart */}
+          {/* Platform spend bars */}
           <div className="bg-gray-900 rounded-xl border border-gray-800 p-6 mb-6">
-            <h2 className="text-base font-semibold text-white mb-4">Spend by Platform — {year} YTD</h2>
+            <h2 className="text-sm font-semibold text-white mb-5">Spend by Platform — {range.label}</h2>
             <div className="space-y-4">
-              {platformTotals.map((p) => (
-                <div key={p.key} className="flex items-center gap-4">
-                  <div className="w-36 text-sm text-gray-300 flex-shrink-0">{p.label}</div>
-                  <div className="flex-1 bg-gray-800 rounded-full h-2">
-                    <div
-                      className={`${p.color} rounded-full h-2 transition-all`}
-                      style={{ width: `${topSpend > 0 ? (p.total / topSpend) * 100 : 0}%` }}
-                    />
-                  </div>
-                  <div className="w-24 text-right text-sm text-white font-medium">{fmt(p.total)}</div>
-                  <div className="w-14 text-right text-xs text-gray-500">
-                    {totalSpend > 0 ? ((p.total / totalSpend) * 100).toFixed(1) : 0}%
-                  </div>
-                </div>
-              ))}
+              {platformTotals.map(p => {
+                const pct = totalSpend > 0 ? (p.spend / totalSpend) * 100 : 0;
+                const pRoas = p.spend > 0 ? p.revenue / p.spend : 0;
+                return (
+                  <Link key={p.key} href={p.href} className="flex items-center gap-4 group">
+                    <div className="w-36 text-sm text-gray-400 group-hover:text-gray-200 flex items-center gap-2 flex-shrink-0">
+                      <span className={`w-2 h-2 rounded-full ${p.color}`} />
+                      {p.label}
+                      {p.hasError && <span className="text-xs text-red-400">err</span>}
+                    </div>
+                    <div className="flex-1 bg-gray-800 rounded-full h-2">
+                      <div
+                        className={`${p.color} rounded-full h-2 transition-all`}
+                        style={{ width: `${topSpend > 0 ? (p.spend / topSpend) * 100 : 0}%` }}
+                      />
+                    </div>
+                    <div className="w-24 text-right text-sm font-medium text-white">{fmt(p.spend)}</div>
+                    <div className="w-10 text-right text-xs text-gray-500">{pct.toFixed(1)}%</div>
+                    <div className={`w-16 text-right text-xs font-semibold ${roasColor(pRoas)}`}>
+                      {pRoas > 0 ? `${pRoas.toFixed(2)}x` : "—"}
+                    </div>
+                  </Link>
+                );
+              })}
             </div>
-            <div className="mt-4 pt-4 border-t border-gray-800 flex justify-between">
-              <span className="text-sm text-gray-400">Total</span>
-              <span className="text-sm font-bold text-white">{fmt(totalSpend)}</span>
+            <div className="mt-5 pt-4 border-t border-gray-800 flex justify-between text-sm font-semibold text-white">
+              <span className="text-gray-400">Total</span>
+              <span>{fmt(totalSpend)}</span>
             </div>
           </div>
 
-          {/* Monthly trend table */}
-          <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-800">
-              <h2 className="text-sm font-semibold text-white">Monthly Breakdown — {year}</h2>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-gray-500 text-xs uppercase tracking-wider bg-gray-800/50 border-b border-gray-800">
-                    <th className="py-3 px-4 text-left">Month</th>
-                    <th className="py-3 px-4 text-right">Google</th>
-                    <th className="py-3 px-4 text-right">Bing</th>
-                    <th className="py-3 px-4 text-right">Connexity</th>
-                    <th className="py-3 px-4 text-right">Meta</th>
-                    <th className="py-3 px-4 text-right">Pinterest</th>
-                    <th className="py-3 px-4 text-right">Amazon</th>
-                    <th className="py-3 px-4 text-right font-semibold text-gray-300">Total</th>
-                    <th className="py-3 px-4 text-right">Conv Value</th>
-                    <th className="py-3 px-4 text-right">ROAS</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-800">
-                  {data.map((row) => (
-                    <tr key={row.month} className="text-gray-300 hover:bg-gray-800/40">
-                      <td className="py-2.5 px-4 font-medium text-white">{row.month}</td>
-                      <td className="py-2.5 px-4 text-right">{fmt(row.googleShopping)}</td>
-                      <td className="py-2.5 px-4 text-right">{fmt(row.bing)}</td>
-                      <td className="py-2.5 px-4 text-right">{fmt(row.connexity)}</td>
-                      <td className="py-2.5 px-4 text-right">{fmt(row.meta)}</td>
-                      <td className="py-2.5 px-4 text-right">{fmt(row.pinterest)}</td>
-                      <td className="py-2.5 px-4 text-right">{fmt(row.amazon)}</td>
-                      <td className="py-2.5 px-4 text-right font-semibold text-white">{fmt(row.totalAdSpend)}</td>
-                      <td className="py-2.5 px-4 text-right text-green-400">{fmt(row.convValue)}</td>
-                      <td className="py-2.5 px-4 text-right text-blue-400">
-                        {row.blendedRoas > 0 ? `${row.blendedRoas.toFixed(2)}x` : row.convValue > 0 ? `${(row.convValue / row.totalAdSpend).toFixed(2)}x` : "—"}
-                      </td>
+          {/* Monthly breakdown table */}
+          {monthlyData.length > 0 && (
+            <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-800">
+                <h2 className="text-sm font-semibold text-white">Monthly Breakdown</h2>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-gray-500 text-xs uppercase tracking-wider bg-gray-800/50 border-b border-gray-800">
+                      <th className="py-3 px-4 text-left">Month</th>
+                      <th className="py-3 px-4 text-right text-blue-400">Google</th>
+                      <th className="py-3 px-4 text-right text-teal-400">Bing</th>
+                      <th className="py-3 px-4 text-right text-indigo-400">Meta</th>
+                      <th className="py-3 px-4 text-right text-orange-400">Amazon</th>
+                      <th className="py-3 px-4 text-right text-purple-400">Connexity</th>
+                      <th className="py-3 px-4 text-right text-pink-400">Pinterest</th>
+                      <th className="py-3 px-4 text-right font-semibold text-white">Total</th>
+                      <th className="py-3 px-4 text-right text-green-400">Conv Value</th>
+                      <th className="py-3 px-4 text-right">ROAS</th>
                     </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr className="border-t-2 border-gray-700 bg-gray-800/50 font-semibold text-white">
-                    <td className="py-3 px-4">Total</td>
-                    <td className="py-3 px-4 text-right">{fmt(data.reduce((s, r) => s + r.googleShopping, 0))}</td>
-                    <td className="py-3 px-4 text-right">{fmt(data.reduce((s, r) => s + r.bing, 0))}</td>
-                    <td className="py-3 px-4 text-right">{fmt(data.reduce((s, r) => s + r.connexity, 0))}</td>
-                    <td className="py-3 px-4 text-right">{fmt(data.reduce((s, r) => s + r.meta, 0))}</td>
-                    <td className="py-3 px-4 text-right">{fmt(data.reduce((s, r) => s + r.pinterest, 0))}</td>
-                    <td className="py-3 px-4 text-right">{fmt(data.reduce((s, r) => s + r.amazon, 0))}</td>
-                    <td className="py-3 px-4 text-right">{fmt(totalSpend)}</td>
-                    <td className="py-3 px-4 text-right text-green-400">{fmt(totalConvValue)}</td>
-                    <td className="py-3 px-4 text-right text-blue-400">{avgRoas.toFixed(2)}x</td>
-                  </tr>
-                </tfoot>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-gray-800">
+                    {monthlyData.map(m => {
+                      const mRoas = m.total > 0 ? m.totalRevenue / m.total : 0;
+                      return (
+                        <tr key={m.month} className="text-gray-300 hover:bg-gray-800/40">
+                          <td className="py-2.5 px-4 font-medium text-white">{m.month}</td>
+                          <td className="py-2.5 px-4 text-right">{m.google > 0 ? fmt(m.google) : <span className="text-gray-700">—</span>}</td>
+                          <td className="py-2.5 px-4 text-right">{m.bing > 0 ? fmt(m.bing) : <span className="text-gray-700">—</span>}</td>
+                          <td className="py-2.5 px-4 text-right">{m.meta > 0 ? fmt(m.meta) : <span className="text-gray-700">—</span>}</td>
+                          <td className="py-2.5 px-4 text-right">{m.amazon > 0 ? fmt(m.amazon) : <span className="text-gray-700">—</span>}</td>
+                          <td className="py-2.5 px-4 text-right">{m.connexity > 0 ? fmt(m.connexity) : <span className="text-gray-700">—</span>}</td>
+                          <td className="py-2.5 px-4 text-right">{m.pinterest > 0 ? fmt(m.pinterest) : <span className="text-gray-700">—</span>}</td>
+                          <td className="py-2.5 px-4 text-right font-semibold text-white">{fmt(m.total)}</td>
+                          <td className="py-2.5 px-4 text-right text-green-400">{m.totalRevenue > 0 ? fmt(m.totalRevenue) : <span className="text-gray-700">—</span>}</td>
+                          <td className={`py-2.5 px-4 text-right font-semibold ${roasColor(mRoas)}`}>
+                            {mRoas > 0 ? `${mRoas.toFixed(2)}x` : "—"}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-gray-800/50 border-t border-gray-700 font-semibold text-white text-xs">
+                      <td className="py-3 px-4">Total</td>
+                      <td className="py-3 px-4 text-right">{fmt(monthlyData.reduce((s, m) => s + m.google, 0))}</td>
+                      <td className="py-3 px-4 text-right">{fmt(monthlyData.reduce((s, m) => s + m.bing, 0))}</td>
+                      <td className="py-3 px-4 text-right">{fmt(monthlyData.reduce((s, m) => s + m.meta, 0))}</td>
+                      <td className="py-3 px-4 text-right">{fmt(monthlyData.reduce((s, m) => s + m.amazon, 0))}</td>
+                      <td className="py-3 px-4 text-right">{fmt(monthlyData.reduce((s, m) => s + m.connexity, 0))}</td>
+                      <td className="py-3 px-4 text-right">{fmt(monthlyData.reduce((s, m) => s + m.pinterest, 0))}</td>
+                      <td className="py-3 px-4 text-right">{fmt(totalSpend)}</td>
+                      <td className="py-3 px-4 text-right text-green-400">{fmt(totalRevenue)}</td>
+                      <td className={`py-3 px-4 text-right ${roasColor(blendedRoas)}`}>{blendedRoas > 0 ? `${blendedRoas.toFixed(2)}x` : "—"}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
             </div>
-          </div>
+          )}
+
+          {!loading && monthlyData.length === 0 && (
+            <div className="text-gray-500 text-sm text-center py-12">No spend data for this period.</div>
+          )}
         </>
       )}
     </div>
