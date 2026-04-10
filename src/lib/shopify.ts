@@ -89,9 +89,10 @@ export interface ShopifyOrder {
   fulfillment_status: string | null;
   tags: string;
   source_name: string;
+  note_attributes: { name: string; value: string }[];
   refunds: ShopifyRefund[];
   line_items: ShopifyLineItem[];
-  customer: { email: string; first_name: string; last_name: string } | null;
+  customer: { email: string; first_name: string; last_name: string; orders_count?: number } | null;
 }
 
 export interface ShopifyRefund {
