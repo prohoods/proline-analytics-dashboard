@@ -2,72 +2,14 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
+import DateRangeDropdown from "@/components/DateRangeDropdown";
+import { RangeKey, getRange } from "@/lib/date-ranges";
 
 const PROFIT_MARGIN = 0.40;
 
-// ── helpers ────────────────────────────────────────────────────────────────
 const fmtC = (n: number) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n);
 const fmtN = (n: number) => new Intl.NumberFormat("en-US").format(Math.round(n));
-
-function pad(n: number) { return String(n).padStart(2, "0"); }
-function toDateStr(d: Date) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
-function toYM(d: Date) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`; }
-
-type RangeKey = "7d" | "15d" | "30d" | "60d" | "90d" | "quarter" | "ytd" | "prev_year";
-
-interface DateRange { start: string; end: string; label: string; year: string; startYM: string; endYM: string; }
-
-function getRange(key: RangeKey): DateRange {
-  const now = new Date();
-  const today = toDateStr(now);
-  const year = now.getFullYear();
-
-  switch (key) {
-    case "7d": {
-      const s = new Date(now); s.setDate(s.getDate() - 6);
-      return { start: toDateStr(s), end: today, label: "Last 7 Days", year: String(year), startYM: toYM(s), endYM: toYM(now) };
-    }
-    case "15d": {
-      const s = new Date(now); s.setDate(s.getDate() - 14);
-      return { start: toDateStr(s), end: today, label: "Last 15 Days", year: String(year), startYM: toYM(s), endYM: toYM(now) };
-    }
-    case "30d": {
-      const s = new Date(now); s.setDate(s.getDate() - 29);
-      return { start: toDateStr(s), end: today, label: "Last 30 Days", year: String(year), startYM: toYM(s), endYM: toYM(now) };
-    }
-    case "60d": {
-      const s = new Date(now); s.setDate(s.getDate() - 59);
-      return { start: toDateStr(s), end: today, label: "Last 60 Days", year: String(year), startYM: toYM(s), endYM: toYM(now) };
-    }
-    case "90d": {
-      const s = new Date(now); s.setDate(s.getDate() - 89);
-      return { start: toDateStr(s), end: today, label: "Last 90 Days", year: String(year), startYM: toYM(s), endYM: toYM(now) };
-    }
-    case "quarter": {
-      const qStart = new Date(year, Math.floor(now.getMonth() / 3) * 3, 1);
-      return { start: toDateStr(qStart), end: today, label: "This Quarter", year: String(year), startYM: toYM(qStart), endYM: toYM(now) };
-    }
-    case "ytd": {
-      return { start: `${year}-01-01`, end: today, label: "Year to Date", year: String(year), startYM: `${year}-01`, endYM: toYM(now) };
-    }
-    case "prev_year": {
-      const py = year - 1;
-      return { start: `${py}-01-01`, end: `${py}-12-31`, label: `${py} Full Year`, year: String(py), startYM: `${py}-01`, endYM: `${py}-12` };
-    }
-  }
-}
-
-const RANGE_OPTIONS: { key: RangeKey; label: string }[] = [
-  { key: "7d", label: "Last 7 Days" },
-  { key: "15d", label: "Last 15 Days" },
-  { key: "30d", label: "Last 30 Days" },
-  { key: "60d", label: "Last 60 Days" },
-  { key: "90d", label: "Last 90 Days" },
-  { key: "quarter", label: "This Quarter" },
-  { key: "ytd", label: "Year to Date" },
-  { key: "prev_year", label: "Previous Year" },
-];
 
 // ── types ──────────────────────────────────────────────────────────────────
 interface PlatformSummary {
@@ -84,7 +26,6 @@ interface SheetData { totals: { cost: number; revenue: number; roas: number }; r
 // ── component ──────────────────────────────────────────────────────────────
 export default function DashboardOverview() {
   const [rangeKey, setRangeKey] = useState<RangeKey>("30d");
-  const [dropdownOpen, setDropdownOpen] = useState(false);
   const range = getRange(rangeKey);
 
   const [shopify, setShopify] = useState<ShopifyData | null>(null);
@@ -185,39 +126,7 @@ export default function DashboardOverview() {
           <p className="text-gray-400 mt-1">Proline Range Hoods — {range.label}</p>
         </div>
 
-        {/* Date range dropdown */}
-        <div className="relative">
-          <button
-            onClick={() => setDropdownOpen(o => !o)}
-            className="flex items-center gap-2 bg-gray-800 border border-gray-700 hover:border-gray-600 rounded-lg px-4 py-2 text-sm text-white transition-colors"
-          >
-            <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-            {range.label}
-            <svg className={`w-3.5 h-3.5 text-gray-400 transition-transform ${dropdownOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
-          </button>
-
-          {dropdownOpen && (
-            <div className="absolute right-0 top-full mt-1 w-48 bg-gray-800 border border-gray-700 rounded-xl shadow-xl z-50 overflow-hidden">
-              {RANGE_OPTIONS.map(opt => (
-                <button
-                  key={opt.key}
-                  onClick={() => { setRangeKey(opt.key); setDropdownOpen(false); }}
-                  className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
-                    rangeKey === opt.key
-                      ? "bg-blue-600/20 text-blue-400 font-medium"
-                      : "text-gray-300 hover:bg-gray-700 hover:text-white"
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        <DateRangeDropdown value={rangeKey} onChange={setRangeKey} />
       </div>
 
       {/* Top KPI Row */}
