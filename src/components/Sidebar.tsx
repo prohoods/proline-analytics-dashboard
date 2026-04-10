@@ -5,12 +5,6 @@ import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 
 interface NavItem { href: string; label: string; icon: string; }
-interface NavSection {
-  label: string;
-  items: NavItem[];
-  cfo?: boolean;
-}
-
 // Top-level sections with optional sub-items
 interface ExpandableItem {
   href: string;
@@ -74,7 +68,15 @@ const navSections: ExpandableSection[] = [
       { href: "/dashboard/refunds", label: "Shopify Refunds", icon: "↩️" },
       { href: "/dashboard/products", label: "Product Profitability", icon: "📦" },
       { href: "/dashboard/fulfillment", label: "Order Fulfillment", icon: "🚚" },
-      { href: "/dashboard/customers", label: "Customer Insights", icon: "👤" },
+      {
+        href: "/dashboard/customers",
+        label: "Customers",
+        icon: "👤",
+        children: [
+          { href: "/dashboard/customers", label: "Customer Insights", icon: "👤" },
+          { href: "/dashboard/customers/acquisition", label: "Acquisition & Retention", icon: "🎯" },
+        ],
+      },
       { href: "/dashboard/shopping-feed", label: "Product Ad Performance", icon: "📋" },
     ],
   },
@@ -97,9 +99,11 @@ export default function Sidebar() {
   // Auto-open Google Ads if on a Google Ads sub-page, Bing if on Bing sub-page
   const googleAdsSubPaths = ["/dashboard/pmax", "/dashboard/shopping", "/dashboard/search", "/dashboard/demand-gen", "/dashboard/gclid"];
   const bingSubPaths = ["/dashboard/bing/"];
+  const customersSubPaths = ["/dashboard/customers"];
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
     "/dashboard/google-ads": googleAdsSubPaths.some(p => pathname.startsWith(p)),
     "/dashboard/bing": bingSubPaths.some(p => pathname.startsWith(p)),
+    "/dashboard/customers": customersSubPaths.some(p => pathname.startsWith(p)),
   });
 
   function toggleGroup(href: string) {
