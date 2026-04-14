@@ -75,8 +75,9 @@ export async function GET(request: NextRequest) {
     const params = `created_at_min=${start}T00:00:00-07:00&created_at_max=${end}T23:59:59-07:00`;
     const { orders } = await getOrders(params);
 
-    // Fetch refund amounts
-    const refundMap: Record<number, number> = {};
+    // Fetch refunds and bucket by the refund's own created_at date
+    // (matches Shopify Analytics which attributes returns to when the refund was processed)
+    const returnsByDate: Record<string, number> = {};
     const ordersWithRefunds = orders.filter(o =>
       (o.refunds && o.refunds.length > 0) ||
       o.financial_status === "refunded" ||
@@ -86,16 +87,19 @@ export async function GET(request: NextRequest) {
     await Promise.all(
       ordersWithRefunds.map(async (order) => {
         const refunds = await getOrderRefunds(order.id);
-        const amount = refunds.reduce((sum, r) => {
+        for (const r of refunds) {
+          const refundDate = r.created_at.substring(0, 10);
+          // Only attribute to dates within the requested range
+          if (refundDate < start || refundDate > end) continue;
           const lineItemTotal = r.refund_line_items?.reduce(
             (s, li) => s + parseFloat(li.subtotal ?? "0") + parseFloat(li.total_tax ?? "0"), 0
           ) ?? 0;
           const txTotal = lineItemTotal === 0
             ? r.transactions?.reduce((s, t) => s + parseFloat(t.amount ?? "0"), 0) ?? 0
             : 0;
-          return sum + (lineItemTotal > 0 ? lineItemTotal : txTotal);
-        }, 0);
-        refundMap[order.id] = amount;
+          const amount = lineItemTotal > 0 ? lineItemTotal : txTotal;
+          returnsByDate[refundDate] = (returnsByDate[refundDate] ?? 0) + amount;
+        }
       })
     );
 
@@ -111,21 +115,27 @@ export async function GET(request: NextRequest) {
       const tax        = parseFloat(order.total_tax);
       const discounts  = parseFloat(order.total_discounts ?? "0");
       const shipping   = Math.max(0, totalPrice - subtotal - tax);
-      const refund     = refundMap[order.id] ?? 0;
       const channel    = classifyOrder(order);
 
       // Gross = subtotal + discounts (line items before discount)
       const gross = subtotal + discounts;
-      const net   = gross - discounts - refund; // = subtotal - refund
+      const net   = gross - discounts; // returns applied separately below
 
       dailyMap[date][channel]      += subtotal; // channel columns show post-discount subtotal
       dailyMap[date].grossSales    += gross;
       dailyMap[date].discounts     += discounts;
-      dailyMap[date].returns       += refund;
       dailyMap[date].netSales      += net;
       dailyMap[date].shipping      += shipping;
       dailyMap[date].salesTax      += tax;
       dailyMap[date].totalSales    += net + shipping + tax;
+    }
+
+    // Apply returns to the date the refund was actually processed
+    for (const [date, amount] of Object.entries(returnsByDate)) {
+      if (!dailyMap[date]) dailyMap[date] = emptyBucket(date);
+      dailyMap[date].returns    += amount;
+      dailyMap[date].netSales   -= amount;
+      dailyMap[date].totalSales -= amount;
     }
 
     const daily = Object.values(dailyMap).sort((a, b) => b.date.localeCompare(a.date));
