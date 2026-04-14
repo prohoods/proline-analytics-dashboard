@@ -85,6 +85,7 @@ export interface ShopifyOrder {
   total_price: string;
   subtotal_price: string;
   total_tax: string;
+  total_discounts: string;
   financial_status: string;
   fulfillment_status: string | null;
   tags: string;
