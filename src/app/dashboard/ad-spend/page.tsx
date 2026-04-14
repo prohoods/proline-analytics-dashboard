@@ -37,7 +37,6 @@ interface MonthRow {
   totalRevenue: number;
 }
 
-interface SheetRows { rows: { month: string; cost: number; revenue: number }[] }
 interface GoogleCampaignMonth { month: string; totalSpend: number; totalConvValue: number }
 
 export default function AdSpendPage() {
@@ -45,11 +44,11 @@ export default function AdSpendPage() {
 
   // Raw data from each platform — fetched once, filtered client-side
   const [googleRaw, setGoogleRaw] = useState<GoogleCampaignMonth[]>([]);
-  const [bingRaw, setBingRaw] = useState<SheetRows["rows"]>([]);
-  const [metaRaw, setMetaRaw] = useState<SheetRows["rows"]>([]);
-  const [amazonRaw, setAmazonRaw] = useState<SheetRows["rows"]>([]);
-  const [connexityRaw, setConnexityRaw] = useState<SheetRows["rows"]>([]);
-  const [pinterestRaw, setPinterestRaw] = useState<SheetRows["rows"]>([]);
+  const [bingRaw, setBingRaw] = useState<{ month: string; cost: number }[]>([]);
+  const [metaRaw, setMetaRaw] = useState<{ month: string; cost: number }[]>([]);
+  const [amazonRaw, setAmazonRaw] = useState<{ month: string; cost: number }[]>([]);
+  const [connexityRaw, setConnexityRaw] = useState<{ month: string; cost: number }[]>([]);
+  const [pinterestRaw, setPinterestRaw] = useState<{ month: string; cost: number }[]>([]);
   const [errors, setErrors] = useState<Partial<Record<PlatformKey, string>>>({});
   const [loading, setLoading] = useState(true);
 
@@ -69,23 +68,23 @@ export default function AdSpendPage() {
       }),
       fetch("/api/sheets/bing").then(r => r.json()).then(d => {
         if (d.error) throw new Error(d.error);
-        setBingRaw((d.rows ?? []).map((r: { month: string; cost: number; revenue: number }) => ({ month: r.month, cost: r.cost, revenue: r.revenue })));
+        setBingRaw(d.rows ?? []);
       }),
       fetch("/api/sheets/meta").then(r => r.json()).then(d => {
         if (d.error) throw new Error(d.error);
-        setMetaRaw((d.rows ?? []).map((r: { month: string; cost: number; revenue: number }) => ({ month: r.month, cost: r.cost, revenue: r.revenue })));
+        setMetaRaw(d.rows ?? []);
       }),
       fetch("/api/sheets/amazon-ads").then(r => r.json()).then(d => {
         if (d.error) throw new Error(d.error);
-        setAmazonRaw((d.rows ?? []).map((r: { month: string; cost: number; revenue: number }) => ({ month: r.month, cost: r.cost, revenue: r.revenue })));
+        setAmazonRaw(d.rows ?? []);
       }),
       fetch("/api/sheets/connexity").then(r => r.json()).then(d => {
         if (d.error) throw new Error(d.error);
-        setConnexityRaw((d.rows ?? []).map((r: { month: string; cost: number; revenue: number }) => ({ month: r.month, cost: r.cost, revenue: r.revenue })));
+        setConnexityRaw(d.rows ?? []);
       }),
       fetch("/api/sheets/pinterest").then(r => r.json()).then(d => {
         if (d.error) throw new Error(d.error);
-        setPinterestRaw((d.rows ?? []).map((r: { month: string; cost: number; revenue: number }) => ({ month: r.month, cost: r.cost, revenue: r.revenue })));
+        setPinterestRaw(d.rows ?? []);
       }),
     ]).then(results => {
       const keys: PlatformKey[] = ["google", "bing", "meta", "amazon", "connexity", "pinterest"];
@@ -124,41 +123,31 @@ export default function AdSpendPage() {
       if (!inRange(r.month)) continue;
       ensure(r.month);
       map[r.month].bing += r.cost;
-      map[r.month].bingRevenue += r.revenue;
       map[r.month].total += r.cost;
-      map[r.month].totalRevenue += r.revenue;
     }
     for (const r of metaRaw) {
       if (!inRange(r.month)) continue;
       ensure(r.month);
       map[r.month].meta += r.cost;
-      map[r.month].metaRevenue += r.revenue;
       map[r.month].total += r.cost;
-      map[r.month].totalRevenue += r.revenue;
     }
     for (const r of amazonRaw) {
       if (!inRange(r.month)) continue;
       ensure(r.month);
       map[r.month].amazon += r.cost;
-      map[r.month].amazonRevenue += r.revenue;
       map[r.month].total += r.cost;
-      map[r.month].totalRevenue += r.revenue;
     }
     for (const r of connexityRaw) {
       if (!inRange(r.month)) continue;
       ensure(r.month);
       map[r.month].connexity += r.cost;
-      map[r.month].connexityRevenue += r.revenue;
       map[r.month].total += r.cost;
-      map[r.month].totalRevenue += r.revenue;
     }
     for (const r of pinterestRaw) {
       if (!inRange(r.month)) continue;
       ensure(r.month);
       map[r.month].pinterest += r.cost;
-      map[r.month].pinterestRevenue += r.revenue;
       map[r.month].total += r.cost;
-      map[r.month].totalRevenue += r.revenue;
     }
 
     return Object.values(map).sort((a, b) => b.month.localeCompare(a.month));
