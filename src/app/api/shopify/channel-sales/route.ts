@@ -165,8 +165,12 @@ export async function GET(request: NextRequest) {
       .map(([ym, days]) => rollup(days, ym))
       .sort((a, b) => b.date.localeCompare(a.date));
 
+    const today = new Date().toISOString().substring(0, 10);
+    const includesLive = end >= today;
+    const ttl = includesLive ? 60 : 900;
+
     return NextResponse.json({ daily, weekly, monthly }, {
-      headers: { "Cache-Control": "public, s-maxage=900, stale-while-revalidate=60" },
+      headers: { "Cache-Control": `public, s-maxage=${ttl}, stale-while-revalidate=30` },
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);

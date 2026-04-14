@@ -86,6 +86,7 @@ export default function SalesPage() {
   const [rangeKey, setRangeKey] = useState<RangeKey>("ytd");
   const [view, setView] = useState<ViewTab>("monthly");
   const [selectedWeek, setSelectedWeek] = useState<string>("");
+  const [refreshKey, setRefreshKey] = useState(0);
 
   // Range-scoped data (drives the table)
   const [shopifyData, setShopifyData] = useState<{ daily: SalesBucket[]; weekly: SalesBucket[]; monthly: SalesBucket[] } | null>(null);
@@ -106,23 +107,23 @@ export default function SalesPage() {
       .catch(() => {});
   }, []);
 
-  // Fetch YTD once for persistent header
+  // Fetch YTD once for persistent header (re-runs on manual refresh)
   useEffect(() => {
     const now = new Date();
     const year = now.getFullYear();
     const today = now.toISOString().substring(0, 10);
-    fetch(`/api/shopify/channel-sales?start=${year}-01-01&end=${today}`)
+    fetch(`/api/shopify/channel-sales?start=${year}-01-01&end=${today}&_=${refreshKey}`)
       .then(r => r.json())
       .then(d => { if (!d.error) setYtdData(d); })
       .catch(() => {});
-  }, []);
+  }, [refreshKey]);
 
-  // Fetch range data for the table
+  // Fetch range data for the table (re-runs on range change or manual refresh)
   useEffect(() => {
     const { start, end } = getRange(rangeKey);
     setLoading(true);
     setError("");
-    fetch(`/api/shopify/channel-sales?start=${start}&end=${end}`)
+    fetch(`/api/shopify/channel-sales?start=${start}&end=${end}&_=${refreshKey}`)
       .then(r => r.json())
       .then(d => {
         if (d.error) throw new Error(d.error);
@@ -132,7 +133,7 @@ export default function SalesPage() {
       })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
-  }, [rangeKey]);
+  }, [rangeKey, refreshKey]);
 
   const range = getRange(rangeKey);
   const today = new Date().toISOString().substring(0, 10);
@@ -221,7 +222,20 @@ export default function SalesPage() {
           <h1 className="text-2xl font-bold text-white">Sales by Channel</h1>
           <p className="text-gray-400 mt-1">Gross → Discounts → Returns → Net → Shipping → Tax → Total</p>
         </div>
-        <DateRangeDropdown value={rangeKey} onChange={setRangeKey} />
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setRefreshKey(k => k + 1)}
+            disabled={loading}
+            className="flex items-center gap-1.5 px-3 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-sm text-gray-300 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Force refresh — bypasses cache"
+          >
+            <svg className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            Refresh
+          </button>
+          <DateRangeDropdown value={rangeKey} onChange={setRangeKey} />
+        </div>
       </div>
 
       {error && <div className="text-red-400 bg-red-900/20 rounded-lg p-4 mb-6 text-sm">{error}</div>}
