@@ -52,6 +52,10 @@ export default function AdSpendPage() {
   const [errors, setErrors] = useState<Partial<Record<PlatformKey, string>>>({});
   const [loading, setLoading] = useState(true);
 
+  // Shopify revenue — re-fetched on range change for MER calculation
+  const [shopifyRevenue, setShopifyRevenue] = useState<{ month: string; netSales: number; totalSales: number }[]>([]);
+  const [revenueLoading, setRevenueLoading] = useState(false);
+
   useEffect(() => {
     const year = new Date().getFullYear();
     const prevYear = year - 1;
@@ -95,6 +99,25 @@ export default function AdSpendPage() {
       setLoading(false);
     });
   }, []);
+
+  // Fetch Shopify revenue for MER — re-fetches on range change
+  useEffect(() => {
+    const { start, end } = getRange(rangeKey);
+    setRevenueLoading(true);
+    fetch(`/api/shopify/channel-sales?start=${start}&end=${end}`)
+      .then(r => r.json())
+      .then(d => {
+        if (!d.error && d.monthly) {
+          setShopifyRevenue(d.monthly.map((m: { date: string; netSales: number; totalSales: number }) => ({
+            month: m.date,
+            netSales: m.netSales,
+            totalSales: m.totalSales,
+          })));
+        }
+      })
+      .catch(() => {})
+      .finally(() => setRevenueLoading(false));
+  }, [rangeKey]);
 
   const range = getRange(rangeKey);
 
@@ -158,6 +181,27 @@ export default function AdSpendPage() {
   const totalRevenue = monthlyData.reduce((s, m) => s + m.totalRevenue, 0);
   const blendedRoas = totalSpend > 0 ? totalRevenue / totalSpend : 0;
 
+  // MER = Shopify net revenue / total ad spend
+  const MARGIN = 0.40;
+  const totalShopifyRevenue = shopifyRevenue.reduce((s, r) => s + r.netSales, 0);
+  const blendedMER = totalSpend > 0 ? totalShopifyRevenue / totalSpend : 0;
+  const contributionMargin = (totalShopifyRevenue * MARGIN) - totalSpend;
+  const breakeven = totalSpend > 0 ? totalSpend / MARGIN : 0;
+  const merColor = (m: number) => m >= 3 ? "text-green-400" : m >= 2 ? "text-yellow-400" : m > 0 ? "text-red-400" : "text-gray-500";
+
+  // Per-month MER rows (join spend + shopify revenue by month)
+  const merRows = useMemo(() => {
+    const revenueByMonth: Record<string, number> = {};
+    for (const r of shopifyRevenue) revenueByMonth[r.month] = r.netSales;
+    return monthlyData.map(m => ({
+      month: m.month,
+      spend: m.total,
+      revenue: revenueByMonth[m.month] ?? 0,
+      mer: m.total > 0 ? (revenueByMonth[m.month] ?? 0) / m.total : 0,
+      cm: ((revenueByMonth[m.month] ?? 0) * MARGIN) - m.total,
+    }));
+  }, [monthlyData, shopifyRevenue]);
+
   // Platform totals for the bar chart
   const revenueKey: Record<PlatformKey, keyof MonthRow> = {
     google: "googleRevenue", bing: "bingRevenue", meta: "metaRevenue",
@@ -195,23 +239,35 @@ export default function AdSpendPage() {
       {!loading && (
         <>
           {/* KPI cards */}
-          <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
               <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">Total Ad Spend</div>
               <div className="text-2xl font-bold text-white">{fmt(totalSpend)}</div>
-              <div className="text-xs text-gray-500 mt-1">{range.label} · {platformTotals.filter(p => p.spend > 0).length} platforms</div>
+              <div className="text-xs text-gray-500 mt-1">{platformTotals.filter(p => p.spend > 0).length} platforms</div>
             </div>
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-              <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">Attributed Revenue</div>
-              <div className="text-2xl font-bold text-white">{fmt(totalRevenue)}</div>
-              <div className="text-xs text-gray-500 mt-1">platform-reported conv value</div>
+              <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">Shopify Revenue</div>
+              <div className="text-2xl font-bold text-white">{revenueLoading ? "…" : fmt(totalShopifyRevenue)}</div>
+              <div className="text-xs text-gray-500 mt-1">net sales</div>
             </div>
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-              <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">Blended ROAS</div>
-              <div className={`text-2xl font-bold mt-1 ${roasColor(blendedRoas)}`}>
-                {blendedRoas > 0 ? `${blendedRoas.toFixed(2)}x` : "—"}
+              <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">Blended MER</div>
+              <div className={`text-2xl font-bold ${merColor(blendedMER)}`}>
+                {blendedMER > 0 ? `${blendedMER.toFixed(2)}x` : "—"}
               </div>
-              <div className="text-xs text-gray-500 mt-1">attributed rev ÷ spend</div>
+              <div className="text-xs text-gray-500 mt-1">revenue ÷ spend</div>
+            </div>
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+              <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">Contribution Margin</div>
+              <div className={`text-2xl font-bold ${contributionMargin >= 0 ? "text-green-400" : "text-red-400"}`}>
+                {fmt(contributionMargin)}
+              </div>
+              <div className="text-xs text-gray-500 mt-1">rev × 40% − spend</div>
+            </div>
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+              <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">Breakeven Revenue</div>
+              <div className="text-2xl font-bold text-white">{fmt(breakeven)}</div>
+              <div className="text-xs text-gray-500 mt-1">spend ÷ 40%</div>
             </div>
           </div>
 
@@ -249,6 +305,57 @@ export default function AdSpendPage() {
               <span>{fmt(totalSpend)}</span>
             </div>
           </div>
+
+          {/* Blended MER table */}
+          {merRows.length > 0 && (
+            <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden mb-6">
+              <div className="px-6 py-4 border-b border-gray-800 flex items-center justify-between">
+                <div>
+                  <h2 className="text-sm font-semibold text-white">Blended MER — Spend vs Shopify Revenue</h2>
+                  <p className="text-xs text-gray-500 mt-0.5">MER = Shopify Net Sales ÷ Total Ad Spend · 40% margin assumption</p>
+                </div>
+              </div>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-gray-500 text-xs uppercase tracking-wider bg-gray-800/50 border-b border-gray-800">
+                    <th className="py-3 px-4 text-left">Month</th>
+                    <th className="py-3 px-4 text-right">Ad Spend</th>
+                    <th className="py-3 px-4 text-right text-blue-300">Shopify Revenue</th>
+                    <th className="py-3 px-4 text-right">MER</th>
+                    <th className="py-3 px-4 text-right">Breakeven Rev</th>
+                    <th className="py-3 px-4 text-right">Contribution Margin</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-800">
+                  {merRows.map(r => {
+                    const be = r.spend > 0 ? r.spend / MARGIN : 0;
+                    return (
+                      <tr key={r.month} className="text-gray-300 hover:bg-gray-800/40">
+                        <td className="py-2.5 px-4 font-medium text-white">{r.month}</td>
+                        <td className="py-2.5 px-4 text-right">{fmt(r.spend)}</td>
+                        <td className="py-2.5 px-4 text-right text-blue-300">{r.revenue > 0 ? fmt(r.revenue) : <span className="text-gray-600">—</span>}</td>
+                        <td className={`py-2.5 px-4 text-right font-semibold ${merColor(r.mer)}`}>{r.mer > 0 ? `${r.mer.toFixed(2)}x` : "—"}</td>
+                        <td className="py-2.5 px-4 text-right text-gray-400">{be > 0 ? fmt(be) : "—"}</td>
+                        <td className={`py-2.5 px-4 text-right font-semibold ${r.cm >= 0 ? "text-green-400" : "text-red-400"}`}>
+                          {r.spend > 0 ? fmt(r.cm) : "—"}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-gray-800/50 border-t border-gray-700 font-semibold text-xs text-white">
+                    <td className="py-3 px-4 text-gray-400">Total</td>
+                    <td className="py-3 px-4 text-right">{fmt(totalSpend)}</td>
+                    <td className="py-3 px-4 text-right text-blue-300">{fmt(totalShopifyRevenue)}</td>
+                    <td className={`py-3 px-4 text-right ${merColor(blendedMER)}`}>{blendedMER > 0 ? `${blendedMER.toFixed(2)}x` : "—"}</td>
+                    <td className="py-3 px-4 text-right text-gray-400">{fmt(breakeven)}</td>
+                    <td className={`py-3 px-4 text-right ${contributionMargin >= 0 ? "text-green-400" : "text-red-400"}`}>{fmt(contributionMargin)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
 
           {/* Monthly breakdown table */}
           {monthlyData.length > 0 && (

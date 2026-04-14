@@ -46,16 +46,7 @@ const navSections: ExpandableSection[] = [
           { href: "/dashboard/google-mer", label: "Google MER", icon: "📊" },
         ],
       },
-      {
-        href: "/dashboard/bing",
-        label: "Bing / Microsoft",
-        icon: "🪟",
-        children: [
-          { href: "/dashboard/bing/pmax", label: "PMAX", icon: "⚡" },
-          { href: "/dashboard/bing/shopping", label: "Shopping", icon: "🛒" },
-          { href: "/dashboard/bing/search", label: "Branded & Search", icon: "🔍" },
-        ],
-      },
+      { href: "/dashboard/bing", label: "Bing / Microsoft", icon: "🪟" },
       { href: "/dashboard/connexity", label: "Connexity", icon: "🟣" },
       { href: "/dashboard/meta", label: "Meta", icon: "📘" },
       { href: "/dashboard/pinterest", label: "Pinterest", icon: "📌" },
@@ -98,11 +89,9 @@ export default function Sidebar() {
   // Track which expandable items are open
   // Auto-open Google Ads if on a Google Ads sub-page, Bing if on Bing sub-page
   const googleAdsSubPaths = ["/dashboard/pmax", "/dashboard/shopping", "/dashboard/search", "/dashboard/demand-gen", "/dashboard/gclid"];
-  const bingSubPaths = ["/dashboard/bing/"];
   const customersSubPaths = ["/dashboard/customers"];
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
     "/dashboard/google-ads": googleAdsSubPaths.some(p => pathname.startsWith(p)),
-    "/dashboard/bing": bingSubPaths.some(p => pathname.startsWith(p)),
     "/dashboard/customers": customersSubPaths.some(p => pathname.startsWith(p)),
   });
 
