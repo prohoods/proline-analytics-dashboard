@@ -1,16 +1,92 @@
 @import "tailwindcss";
 
-:root {
-  --background: #030712;
-  --foreground: #f9fafb;
-}
-
+/* ── Body defaults ──────────────────────────────────────────────────── */
 body {
-  background: var(--background);
-  color: var(--foreground);
+  background-color: #030712;  /* gray-950 */
+  color: #f9fafb;             /* gray-100 */
 }
 
+/* ── Scrollbar (dark) ───────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: #111827; }
 ::-webkit-scrollbar-thumb { background: #374151; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #4b5563; }
+
+/* ══════════════════════════════════════════════════════════════════════
+   LIGHT MODE OVERRIDES
+   Applied when <html> does NOT have the `dark` class.
+   html:not(.dark) + class has higher specificity than a bare class,
+   so these win without needing !important.
+   ══════════════════════════════════════════════════════════════════════ */
+
+html:not(.dark) {
+  color-scheme: light;
+}
+
+/* Body & page-level backgrounds */
+html:not(.dark) body { background-color: #f8fafc; color: #0f172a; }
+html:not(.dark) .bg-gray-950 { background-color: #f1f5f9; }
+
+/* Cards / panels */
+html:not(.dark) .bg-gray-900 { background-color: #ffffff; }
+html:not(.dark) .bg-gray-900\/20 { background-color: rgb(255 255 255 / 0.2); }
+
+/* Elevated surfaces, inputs, table headers */
+html:not(.dark) .bg-gray-800 { background-color: #f1f5f9; }
+html:not(.dark) .bg-gray-800\/50 { background-color: rgb(241 245 249 / 0.7); }
+html:not(.dark) .bg-gray-800\/40 { background-color: rgb(241 245 249 / 0.6); }
+html:not(.dark) .bg-gray-800\/20 { background-color: rgb(241 245 249 / 0.4); }
+html:not(.dark) .bg-gray-700 { background-color: #e2e8f0; }
+
+/* Hover states */
+html:not(.dark) .hover\:bg-gray-800:hover { background-color: #e2e8f0; }
+html:not(.dark) .hover\:bg-gray-800\/40:hover { background-color: rgb(226 232 240 / 0.6); }
+html:not(.dark) .hover\:bg-gray-700:hover { background-color: #cbd5e1; }
+html:not(.dark) .hover\:bg-gray-800\/20:hover { background-color: rgb(226 232 240 / 0.4); }
+
+/* Borders */
+html:not(.dark) .border-gray-800 { border-color: #e2e8f0; }
+html:not(.dark) .border-gray-700 { border-color: #cbd5e1; }
+
+/* Dividers (divide-gray-800 targets the generated CSS borders) */
+html:not(.dark) .divide-gray-800 > :not([hidden]) ~ :not([hidden]) { border-color: #e2e8f0; }
+
+/* Text */
+html:not(.dark) .text-white  { color: #0f172a; }
+html:not(.dark) .text-gray-100 { color: #1e293b; }
+html:not(.dark) .text-gray-300 { color: #334155; }
+html:not(.dark) .text-gray-400 { color: #64748b; }
+html:not(.dark) .text-gray-600 { color: #94a3b8; }
+/* gray-500 is neutral — no override needed */
+
+/* Coloured accent text — darken for readability on light bg */
+html:not(.dark) .text-green-400 { color: #16a34a; }
+html:not(.dark) .text-red-400   { color: #dc2626; }
+html:not(.dark) .text-blue-400  { color: #2563eb; }
+html:not(.dark) .text-blue-300  { color: #1d4ed8; }
+html:not(.dark) .text-yellow-400 { color: #ca8a04; }
+html:not(.dark) .text-orange-400 { color: #ea580c; }
+html:not(.dark) .text-teal-400  { color: #0d9488; }
+html:not(.dark) .text-pink-400  { color: #db2777; }
+html:not(.dark) .text-indigo-400 { color: #4f46e5; }
+html:not(.dark) .text-purple-400 { color: #7c3aed; }
+html:not(.dark) .text-emerald-400 { color: #059669; }
+html:not(.dark) .text-emerald-600 { color: #047857; }
+
+/* Coloured backgrounds used in alert/badge boxes */
+html:not(.dark) .bg-red-900\/20    { background-color: #fef2f2; }
+html:not(.dark) .bg-yellow-900\/20 { background-color: #fefce8; }
+html:not(.dark) .bg-blue-900\/20   { background-color: #eff6ff; }
+html:not(.dark) .bg-green-900\/20  { background-color: #f0fdf4; }
+html:not(.dark) .bg-emerald-600\/20 { background-color: #ecfdf5; }
+
+/* Coloured borders used in alerts */
+html:not(.dark) .border-red-700\/30    { border-color: #fca5a5; }
+html:not(.dark) .border-yellow-700\/30 { border-color: #fde047; }
+html:not(.dark) .border-blue-800\/40   { border-color: #93c5fd; }
+html:not(.dark) .border-blue-700\/50   { border-color: #3b82f6; }
+
+/* Scrollbar (light) */
+html:not(.dark) ::-webkit-scrollbar-track { background: #f1f5f9; }
+html:not(.dark) ::-webkit-scrollbar-thumb { background: #94a3b8; }
+html:not(.dark) ::-webkit-scrollbar-thumb:hover { background: #64748b; }
