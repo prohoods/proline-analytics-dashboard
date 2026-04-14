@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import DateRangeDropdown from "@/components/DateRangeDropdown";
+import { RangeKey, getRange } from "@/lib/date-ranges";
 
 const PROFIT_MARGIN = 0.40;
 
@@ -29,32 +31,36 @@ interface MonthRow {
 }
 
 export default function GoogleMerPage() {
+  const [rangeKey, setRangeKey] = useState<RangeKey>("ytd");
   const [months, setMonths] = useState<MonthRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [year, setYear] = useState(new Date().getFullYear().toString());
 
   useEffect(() => {
+    const range = getRange(rangeKey);
     setLoading(true);
-    fetch(`/api/google-ads/campaigns?year=${year}`)
+    fetch(`/api/google-ads/campaigns?start=${range.start}&end=${range.end}`)
       .then(r => r.json())
       .then((data: unknown) => {
         const d = data as { error?: string } & GoogleMonth[];
         if (d.error) throw new Error(d.error);
-        const rows: MonthRow[] = d.map(m => ({
-          month: m.month,
-          spend: m.totalSpend,
-          revenue: m.totalConvValue,
-          roas: m.totalSpend > 0 ? m.totalConvValue / m.totalSpend : 0,
-          mer: m.totalSpend > 0 ? m.totalConvValue / m.totalSpend : 0,
-          contributionMargin: (m.totalConvValue * PROFIT_MARGIN) - m.totalSpend,
-          breakeven: m.totalSpend > 0 ? m.totalSpend / PROFIT_MARGIN : 0,
-        }));
+        // Filter to months within range
+        const rows: MonthRow[] = d
+          .filter(m => m.month >= range.startYM && m.month <= range.endYM)
+          .map(m => ({
+            month: m.month,
+            spend: m.totalSpend,
+            revenue: m.totalConvValue,
+            roas: m.totalSpend > 0 ? m.totalConvValue / m.totalSpend : 0,
+            mer: m.totalSpend > 0 ? m.totalConvValue / m.totalSpend : 0,
+            contributionMargin: (m.totalConvValue * PROFIT_MARGIN) - m.totalSpend,
+            breakeven: m.totalSpend > 0 ? m.totalSpend / PROFIT_MARGIN : 0,
+          }));
         setMonths(rows);
         setLoading(false);
       })
       .catch(e => { setError(e.message); setLoading(false); });
-  }, [year]);
+  }, [rangeKey]);
 
   // Totals
   const totalSpend = months.reduce((s, m) => s + m.spend, 0);
@@ -75,14 +81,7 @@ export default function GoogleMerPage() {
             <span className="text-gray-500 text-xs">(after COGS & fulfillment)</span>
           </div>
         </div>
-        <div className="flex gap-2">
-          {["2025", "2026"].map(y => (
-            <button key={y} onClick={() => setYear(y)}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${year === y ? "bg-blue-600/20 text-blue-400 border border-blue-600/30" : "text-gray-400 hover:text-gray-100 hover:bg-gray-800"}`}>
-              {y}
-            </button>
-          ))}
-        </div>
+        <DateRangeDropdown value={rangeKey} onChange={setRangeKey} />
       </div>
 
       {loading && <div className="text-gray-400">Loading...</div>}
@@ -141,7 +140,7 @@ export default function GoogleMerPage() {
           {/* Monthly table */}
           <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
             <div className="px-6 py-4 border-b border-gray-800">
-              <h2 className="text-sm font-semibold text-white">Monthly Breakdown — {year}</h2>
+              <h2 className="text-sm font-semibold text-white">Monthly Breakdown — {getRange(rangeKey).label}</h2>
             </div>
             <table className="w-full text-sm">
               <thead>
@@ -157,7 +156,7 @@ export default function GoogleMerPage() {
               </thead>
               <tbody className="divide-y divide-gray-800">
                 {months.length === 0 ? (
-                  <tr><td colSpan={7} className="py-8 text-center text-gray-500">No data for {year}</td></tr>
+                  <tr><td colSpan={7} className="py-8 text-center text-gray-500">No data for this period</td></tr>
                 ) : months.map((m) => {
                   const vsBreakeven = m.revenue - m.breakeven;
                   return (
@@ -182,7 +181,7 @@ export default function GoogleMerPage() {
               {months.length > 0 && (
                 <tfoot>
                   <tr className="bg-gray-800/50 border-t border-gray-700 text-xs font-semibold text-gray-300">
-                    <td className="py-3 px-4 text-gray-400">Total {year}</td>
+                    <td className="py-3 px-4 text-gray-400">Total</td>
                     <td className="py-3 px-4 text-right">{fmtC(totalSpend)}</td>
                     <td className="py-3 px-4 text-right text-blue-300">{fmtC(totalRevenue)}</td>
                     <td className={`py-3 px-4 text-right font-bold ${roasColor(totalMER)}`}>{totalMER > 0 ? `${totalMER.toFixed(2)}x` : "—"}</td>

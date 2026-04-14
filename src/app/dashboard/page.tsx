@@ -22,6 +22,8 @@ interface ShopifyData {
 interface GoogleMonth { month: string; totalSpend: number; totalConvValue: number; }
 interface SheetRow { month: string; cost: number; revenue: number; }
 interface SheetData { totals: { cost: number; revenue: number; roas: number }; rows: SheetRow[]; }
+interface MarketplaceDay { date: string; net: number; }
+interface MarketplaceSummary { days: MarketplaceDay[]; }
 
 // ── component ──────────────────────────────────────────────────────────────
 export default function DashboardOverview() {
@@ -35,8 +37,17 @@ export default function DashboardOverview() {
   const [amazon, setAmazon] = useState<SheetData | null>(null);
   const [connexity, setConnexity] = useState<SheetData | null>(null);
   const [pinterest, setPinterest] = useState<SheetData | null>(null);
+  const [marketplace, setMarketplace] = useState<MarketplaceSummary | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
+
+  // Marketplace fetched once — filtered client-side by range
+  useEffect(() => {
+    fetch("/api/sheets/marketplace")
+      .then(r => r.json())
+      .then(d => { if (!d.error) setMarketplace(d); })
+      .catch(() => {/* non-fatal */});
+  }, []);
 
   const fetchAll = useCallback(() => {
     setLoading(true);
@@ -46,7 +57,6 @@ export default function DashboardOverview() {
     const r = getRange(rangeKey);
     const errs: Record<string, string> = {};
 
-    // Need to capture range at fetch time for sheet filtering
     function filterSheet(data: { rows: SheetRow[]; totals: { cost: number; revenue: number; roas: number } }): SheetData {
       const rows = data.rows.filter(row => row.month >= r.startYM && row.month <= r.endYM);
       const cost = rows.reduce((s, row) => s + row.cost, 0);
@@ -57,7 +67,7 @@ export default function DashboardOverview() {
     Promise.allSettled([
       fetch(`/api/shopify/orders?start=${r.start}&end=${r.end}`)
         .then(res => res.json()).then(d => { if (d.error) throw new Error(d.error); setShopify(d); }),
-      fetch(`/api/google-ads/campaigns?year=${r.year}`)
+      fetch(`/api/google-ads/campaigns?start=${r.start}&end=${r.end}`)
         .then(res => res.json()).then(d => { if (d.error) throw new Error(d.error); setGoogleMonths(Array.isArray(d) ? d : []); }),
       fetch("/api/sheets/bing").then(res => res.json()).then(d => { if (d.error) throw new Error(d.error); setBing(filterSheet(d)); }),
       fetch("/api/sheets/meta").then(res => res.json()).then(d => { if (d.error) throw new Error(d.error); setMeta(filterSheet(d)); }),
@@ -83,6 +93,11 @@ export default function DashboardOverview() {
     .filter(m => m.month >= range.startYM && m.month <= range.endYM)
     .reduce((s, m) => s + m.totalConvValue, 0);
 
+  // ── Marketplace revenue filtered to selected range ────────────────────────
+  const marketplaceRevenue = (marketplace?.days ?? [])
+    .filter(d => d.date >= range.start && d.date <= range.end)
+    .reduce((s, d) => s + d.net, 0);
+
   // ── Derived ───────────────────────────────────────────────────────────────
   const shopifyRevenue = shopify?.summary.netRevenue ?? 0;
   const shopifyGross = shopify?.summary.grossRevenue ?? 0;
@@ -102,8 +117,9 @@ export default function DashboardOverview() {
   const totalAdSpend = googleSpend + bingSpend + metaSpend + amazonSpend + connexitySpend + pinterestSpend;
   const totalAdRevenue = googleRevenue + bingRevenue + metaRevenue + amazonRevenue + connexityRevenue + pinterestRevenue;
   const blendedROAS = totalAdSpend > 0 ? totalAdRevenue / totalAdSpend : 0;
-  const mer = totalAdSpend > 0 ? shopifyRevenue / totalAdSpend : 0;
-  const contributionMargin = (shopifyRevenue * PROFIT_MARGIN) - totalAdSpend;
+  const totalRevenue = shopifyRevenue + marketplaceRevenue;
+  const mer = totalAdSpend > 0 ? totalRevenue / totalAdSpend : 0;
+  const contributionMargin = (totalRevenue * PROFIT_MARGIN) - totalAdSpend;
   const breakeven = totalAdSpend > 0 ? totalAdSpend / PROFIT_MARGIN : 0;
 
   const platforms: PlatformSummary[] = [
@@ -138,8 +154,10 @@ export default function DashboardOverview() {
           </div>
           {loading ? <div className="h-8 bg-gray-800 rounded animate-pulse mt-1" /> : (
             <>
-              <div className="text-2xl font-bold text-white mt-1">{fmtC(shopifyRevenue)}</div>
-              <div className="text-xs text-gray-500 mt-1">{fmtC(shopifyGross)} gross · {fmtC(shopifyRefunds)} refunds</div>
+              <div className="text-2xl font-bold text-white mt-1">{fmtC(totalRevenue)}</div>
+              <div className="text-xs text-gray-500 mt-1">
+                {fmtC(shopifyRevenue)} Shopify · {fmtC(marketplaceRevenue)} marketplaces
+              </div>
             </>
           )}
         </div>
