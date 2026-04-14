@@ -31,6 +31,12 @@ const navSections: ExpandableSection[] = [
     ],
   },
   {
+    label: "Performance",
+    items: [
+      { href: "/dashboard/scorecard", label: "Scorecard", icon: "🎯" },
+    ],
+  },
+  {
     label: "Advertising",
     items: [
       { href: "/dashboard/ad-spend", label: "All Ad Spend", icon: "💰" },
