@@ -61,6 +61,20 @@ const navSections: ExpandableSection[] = [
     ],
   },
   {
+    label: "Email Marketing",
+    items: [
+      {
+        href: "/dashboard/email",
+        label: "Email Overview",
+        icon: "📧",
+        children: [
+          { href: "/dashboard/email/campaigns", label: "Campaigns", icon: "📨" },
+          { href: "/dashboard/email/flows", label: "Flows", icon: "🔄" },
+        ],
+      },
+    ],
+  },
+  {
     label: "Operations",
     items: [
       { href: "/dashboard/refunds", label: "Shopify Refunds", icon: "↩️" },
@@ -97,9 +111,11 @@ export default function Sidebar() {
   // Auto-open Google Ads if on a Google Ads sub-page, Bing if on Bing sub-page
   const googleAdsSubPaths = ["/dashboard/pmax", "/dashboard/shopping", "/dashboard/search", "/dashboard/demand-gen", "/dashboard/gclid"];
   const customersSubPaths = ["/dashboard/customers"];
+  const emailSubPaths = ["/dashboard/email"];
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
     "/dashboard/google-ads": googleAdsSubPaths.some(p => pathname.startsWith(p)),
     "/dashboard/customers": customersSubPaths.some(p => pathname.startsWith(p)),
+    "/dashboard/email": emailSubPaths.some(p => pathname.startsWith(p)),
   });
 
   function toggleGroup(href: string) {
