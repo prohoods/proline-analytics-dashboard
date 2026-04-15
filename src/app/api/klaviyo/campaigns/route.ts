@@ -7,12 +7,11 @@ export async function GET() {
       return NextResponse.json({ error: "KLAVIYO_API_KEY not configured" }, { status: 500 });
     }
 
-    // Fetch campaigns (email only, sorted newest first) + metric ID in parallel
+    // Note: page[size] is not supported on /campaigns/ — removed
     const [campaignsRes, metricId] = await Promise.all([
       klaviyoGet("/campaigns/", {
         "filter": "equals(messages.channel,'email')",
         "sort": "-created_at",
-        "page[size]": "50",
         "fields[campaign]": "name,status,created_at,send_time",
       }),
       getPlacedOrderMetricId(),
@@ -20,7 +19,6 @@ export async function GET() {
 
     const campaigns: any[] = campaignsRes.data ?? [];
 
-    // Only fetch stats for sent campaigns
     const sentIds = campaigns
       .filter((c: any) => c.attributes?.status === "Sent")
       .map((c: any) => c.id);
@@ -28,13 +26,14 @@ export async function GET() {
     let statsMap: Record<string, any> = {};
 
     if (metricId && sentIds.length > 0) {
+      // Klaviyo uses "sum_value" for revenue attribution (not "revenue")
       const statsRes = await klaviyoPost("/campaign-values-reports/", {
         data: {
           type: "campaign-values-report",
           attributes: {
             timeframe: { key: "last_365_days" },
             conversion_metric_id: metricId,
-            statistics: ["opens", "open_rate", "clicks", "click_rate", "delivered", "revenue", "bounced", "unsubscribed"],
+            statistics: ["opens", "open_rate", "clicks", "click_rate", "delivered", "sum_value", "bounces_count", "unsubscribed"],
             filter: "equals(send_channel,'email')",
           },
         },
@@ -48,20 +47,22 @@ export async function GET() {
 
     const rows = campaigns.map((c: any) => {
       const stats = statsMap[c.id] ?? {};
+      const revenue = stats.sum_value ?? null;
+      const delivered = stats.delivered ?? null;
       return {
         id: c.id,
         name: c.attributes?.name ?? "—",
         status: c.attributes?.status ?? "—",
         sentAt: c.attributes?.send_time ?? c.attributes?.created_at ?? null,
-        delivered: stats.delivered ?? null,
+        delivered,
         opens: stats.opens ?? null,
         openRate: stats.open_rate ?? null,
         clicks: stats.clicks ?? null,
         clickRate: stats.click_rate ?? null,
-        revenue: stats.revenue ?? null,
-        bounced: stats.bounced ?? null,
+        revenue,
+        bounced: stats.bounces_count ?? null,
         unsubscribed: stats.unsubscribed ?? null,
-        revenuePerEmail: stats.delivered > 0 ? (stats.revenue ?? 0) / stats.delivered : null,
+        revenuePerEmail: delivered && delivered > 0 ? (revenue ?? 0) / delivered : null,
       };
     });
 

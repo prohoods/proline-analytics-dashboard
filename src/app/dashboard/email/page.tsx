@@ -6,7 +6,6 @@ import Link from "next/link";
 interface KlaviyoList {
   id: string;
   name: string;
-  profileCount: number | null;
 }
 
 interface Last30Days {
@@ -146,14 +145,10 @@ export default function EmailOverviewPage() {
               ) : (
                 <div className="space-y-2">
                   {data.lists
-                    .sort((a, b) => (b.profileCount ?? 0) - (a.profileCount ?? 0))
                     .slice(0, 8)
                     .map(list => (
-                      <div key={list.id} className="flex items-center justify-between">
+                      <div key={list.id} className="flex items-center">
                         <span className="text-gray-300 text-sm">{list.name}</span>
-                        <span className="text-white font-medium text-sm">
-                          {list.profileCount !== null ? fmtN(list.profileCount) : "—"}
-                        </span>
                       </div>
                     ))}
                 </div>

@@ -21,13 +21,14 @@ export async function GET() {
     let statsMap: Record<string, any> = {};
 
     if (metricId && flows.length > 0) {
+      // Klaviyo uses "sum_value" for revenue attribution (not "revenue")
       const statsRes = await klaviyoPost("/flow-values-reports/", {
         data: {
           type: "flow-values-report",
           attributes: {
             timeframe: { key: "last_365_days" },
             conversion_metric_id: metricId,
-            statistics: ["opens", "open_rate", "clicks", "click_rate", "delivered", "revenue", "bounced", "unsubscribed"],
+            statistics: ["opens", "open_rate", "clicks", "click_rate", "delivered", "sum_value", "bounces_count", "unsubscribed"],
           },
         },
       });
@@ -35,15 +36,14 @@ export async function GET() {
       for (const r of statsRes?.data?.attributes?.results ?? []) {
         const id = r.groupings?.flow_id;
         if (id) {
-          // Aggregate across flow messages (multiple entries per flow possible)
           if (!statsMap[id]) {
             statsMap[id] = { delivered: 0, opens: 0, clicks: 0, revenue: 0, bounced: 0, unsubscribed: 0, openRateSum: 0, clickRateSum: 0, count: 0 };
           }
           statsMap[id].delivered += r.statistics?.delivered ?? 0;
           statsMap[id].opens += r.statistics?.opens ?? 0;
           statsMap[id].clicks += r.statistics?.clicks ?? 0;
-          statsMap[id].revenue += r.statistics?.revenue ?? 0;
-          statsMap[id].bounced += r.statistics?.bounced ?? 0;
+          statsMap[id].revenue += r.statistics?.sum_value ?? 0;
+          statsMap[id].bounced += r.statistics?.bounces_count ?? 0;
           statsMap[id].unsubscribed += r.statistics?.unsubscribed ?? 0;
           if ((r.statistics?.delivered ?? 0) > 0) {
             statsMap[id].openRateSum += r.statistics?.open_rate ?? 0;
@@ -76,7 +76,6 @@ export async function GET() {
       };
     });
 
-    // Sort by revenue desc
     rows.sort((a, b) => (b.revenue ?? 0) - (a.revenue ?? 0));
 
     return NextResponse.json({ flows: rows });

@@ -8,9 +8,10 @@ export async function GET() {
     }
 
     // Parallel: profiles count + lists + metric ID
+    // Note: profile_count is not a valid field for lists — only name/id/created/updated/opt_in_process
     const [profilesRes, listsRes, metricId] = await Promise.all([
       klaviyoGet("/profiles/", { "page[size]": "1" }),
-      klaviyoGet("/lists/", { "fields[list]": "name,profile_count", "page[size]": "100" }),
+      klaviyoGet("/lists/", { "fields[list]": "name", "page[size]": "100" }),
       getPlacedOrderMetricId(),
     ]);
 
@@ -19,10 +20,10 @@ export async function GET() {
     const lists = (listsRes.data ?? []).map((l: any) => ({
       id: l.id,
       name: l.attributes?.name ?? "Unknown",
-      profileCount: l.attributes?.profile_count ?? null,
     }));
 
     // Revenue reports — only if we found the metric
+    // Klaviyo uses "sum_value" for revenue attribution, not "revenue"
     let last30Days = {
       campaignDelivered: 0,
       campaignOpens: 0,
@@ -42,7 +43,7 @@ export async function GET() {
           attributes: {
             timeframe: { key: "last_30_days" },
             conversion_metric_id: metricId,
-            statistics: ["opens", "open_rate", "clicks", "click_rate", "delivered", "revenue"],
+            statistics: ["opens", "open_rate", "clicks", "click_rate", "delivered", "sum_value"],
             ...(type === "campaign-values-report" ? { filter: "equals(send_channel,'email')" } : {}),
           },
         },
@@ -61,7 +62,7 @@ export async function GET() {
         last30Days.campaignDelivered += r.statistics?.delivered ?? 0;
         last30Days.campaignOpens += r.statistics?.opens ?? 0;
         last30Days.campaignClicks += r.statistics?.clicks ?? 0;
-        last30Days.campaignRevenue += r.statistics?.revenue ?? 0;
+        last30Days.campaignRevenue += r.statistics?.sum_value ?? 0;
         if ((r.statistics?.delivered ?? 0) > 0) {
           sumOpenRate += r.statistics?.open_rate ?? 0;
           sumClickRate += r.statistics?.click_rate ?? 0;
@@ -74,7 +75,7 @@ export async function GET() {
 
       for (const r of flowStats?.data?.attributes?.results ?? []) {
         last30Days.flowDelivered += r.statistics?.delivered ?? 0;
-        last30Days.flowRevenue += r.statistics?.revenue ?? 0;
+        last30Days.flowRevenue += r.statistics?.sum_value ?? 0;
       }
 
       last30Days.totalEmailRevenue = last30Days.campaignRevenue + last30Days.flowRevenue;
