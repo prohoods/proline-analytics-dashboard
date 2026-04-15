@@ -64,7 +64,7 @@ export async function klaviyoGetAll(path: string, params?: Record<string, string
 
 /** Find the "Placed Order" metric ID — needed for revenue attribution in reports. */
 export async function getPlacedOrderMetricId(): Promise<string | null> {
-  const metrics = await klaviyoGetAll("/metrics/", { "page[size]": "200" });
+  const metrics = await klaviyoGetAll("/metrics/");
   const metric = metrics.find((m: any) => m.attributes?.name === "Placed Order");
   return metric?.id ?? null;
 }
