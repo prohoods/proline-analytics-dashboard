@@ -7,7 +7,7 @@ function fmt(n: number) {
 // CBIZ payroll data extracted from bank statements
 // Jan ~$84K, Feb ~$87.5K, Mar ~$117K (confirmed as CBIZ ACH transactions)
 const payrollByMonth = statements.map(m => {
-  const cbiz = m.expenses.filter(e => e.vendor === "CBIZ");
+  const cbiz = m.expenses.filter(e => e.category === "Payroll");
   return {
     month: m.month,
     shortMonth: m.shortMonth,
