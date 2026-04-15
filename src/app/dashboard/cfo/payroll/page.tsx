@@ -147,7 +147,7 @@ export default function PayrollPage() {
         <h2 className="text-sm font-semibold text-white mb-4">Payroll as % of Revenue</h2>
         <div className="grid grid-cols-3 gap-4">
           {payrollByMonth.map((m, i) => {
-            const rev = statements[i].totalDeposits;
+            const rev = statements[i].acct115Deposits;
             const pct = (m.amount / rev) * 100;
             return (
               <div key={m.month} className="text-center">
