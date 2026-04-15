@@ -32,7 +32,6 @@ export default function CFOOverview() {
   const totals = totalByCategory();
   const totalExpenses = q1.totalExpenses;
   const netCashFlow = q1.netCashFlow;
-  const kbboTotal = totals["Vendor Payments (KBBO)"] ?? 0;
 
   return (
     <div className="p-6 space-y-6">
@@ -40,13 +39,6 @@ export default function CFOOverview() {
       <div>
         <h1 className="text-2xl font-bold text-white">Financial Overview</h1>
         <p className="text-gray-400 text-sm mt-1">Q1 2026 — Account …0115 (operating) + Account …2285 (payroll/expense), inter-account transfers excluded</p>
-        {kbboTotal > 0 && (
-          <div className="mt-2 inline-flex items-center gap-2 bg-yellow-900/20 border border-yellow-700/30 rounded-lg px-3 py-1.5">
-            <span className="text-yellow-400 text-xs font-medium">
-              {fmt(kbboTotal)} in KBBO ACH payments pending breakdown (Google Ads, contractors, Zline)
-            </span>
-          </div>
-        )}
       </div>
 
       {/* Q1 KPI cards */}
@@ -129,7 +121,7 @@ export default function CFOOverview() {
                 <div key={cat}>
                   <div className="flex justify-between text-xs mb-1">
                     <span className={CATEGORY_TEXT[cat] ?? "text-gray-400"}>
-                      {cat}{isPending ? " ⚠" : ""}
+                      {cat}
                     </span>
                     <span className="text-white font-medium">{fmt(amount)} <span className="text-gray-500">({pct.toFixed(0)}%)</span></span>
                   </div>
@@ -178,7 +170,6 @@ export default function CFOOverview() {
                   <tr key={cat} className={`hover:bg-gray-800/30 ${isPending ? "opacity-70" : ""}`}>
                     <td className={`py-2.5 px-4 font-medium text-xs ${CATEGORY_TEXT[cat] ?? "text-gray-400"}`}>
                       {cat}
-                      {isPending && <span className="ml-1.5 text-yellow-500 font-normal">⚠ breakdown TBD</span>}
                     </td>
                     <td className="py-2.5 px-4 text-right text-gray-300 text-xs">{jan ? fmt(jan) : "—"}</td>
                     <td className="py-2.5 px-4 text-right text-gray-300 text-xs">{feb ? fmt(feb) : "—"}</td>
