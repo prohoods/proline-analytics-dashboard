@@ -2,91 +2,74 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useTheme } from "@/components/ThemeProvider";
 
 interface NavItem { href: string; label: string; icon: string; }
-// Top-level sections with optional sub-items
-interface ExpandableItem {
-  href: string;
-  label: string;
-  icon: string;
-  children?: NavItem[];
-}
+interface ExpandableItem { href: string; label: string; icon: string; children?: NavItem[]; }
+interface NavSection { label: string; icon: string; items: ExpandableItem[]; }
 
-interface ExpandableSection {
-  label: string;
-  items: ExpandableItem[];
-  cfo?: boolean;
-}
-
-const navSections: ExpandableSection[] = [
+const navSections: NavSection[] = [
   {
-    label: "Revenue",
+    label: "Revenue", icon: "💵",
     items: [
-      { href: "/dashboard", label: "Overview", icon: "⬛" },
-      { href: "/dashboard/sales", label: "Daily & Monthly Sales", icon: "📈" },
-      { href: "/dashboard/shopify", label: "Shopify Live Orders", icon: "🟢" },
-      { href: "/dashboard/shl", label: "Smart Home Luxury", icon: "🏠" },
+      { href: "/dashboard",          label: "Overview",             icon: "⬛" },
+      { href: "/dashboard/sales",    label: "Daily & Monthly Sales",icon: "📈" },
+      { href: "/dashboard/shopify",  label: "Shopify Live Orders",  icon: "🟢" },
+      { href: "/dashboard/shl",      label: "Smart Home Luxury",    icon: "🏠" },
       { href: "/dashboard/marketplace", label: "Marketplace Sales", icon: "🏪" },
     ],
   },
   {
-    label: "Performance",
+    label: "Performance", icon: "🎯",
     items: [
       { href: "/dashboard/scorecard", label: "Scorecard", icon: "🎯" },
     ],
   },
   {
-    label: "Advertising",
+    label: "Advertising", icon: "📣",
     items: [
       { href: "/dashboard/ad-spend", label: "All Ad Spend", icon: "💰" },
       {
-        href: "/dashboard/google-ads",
-        label: "Google Ads",
-        icon: "🔵",
+        href: "/dashboard/google-ads", label: "Google Ads", icon: "🔵",
         children: [
-          { href: "/dashboard/pmax", label: "PMAX Campaigns", icon: "⚡" },
-          { href: "/dashboard/shopping", label: "Shopping", icon: "🛒" },
-          { href: "/dashboard/search", label: "Search Campaigns", icon: "🔍" },
-          { href: "/dashboard/demand-gen", label: "Demand Gen", icon: "📣" },
-          { href: "/dashboard/gclid", label: "GCLID Attribution", icon: "🔗" },
-          { href: "/dashboard/google-mer", label: "Google MER", icon: "📊" },
+          { href: "/dashboard/pmax",       label: "PMAX Campaigns",    icon: "⚡" },
+          { href: "/dashboard/shopping",   label: "Shopping",          icon: "🛒" },
+          { href: "/dashboard/search",     label: "Search Campaigns",  icon: "🔍" },
+          { href: "/dashboard/demand-gen", label: "Demand Gen",        icon: "📣" },
+          { href: "/dashboard/gclid",      label: "GCLID Attribution", icon: "🔗" },
+          { href: "/dashboard/google-mer", label: "Google MER",        icon: "📊" },
         ],
       },
-      { href: "/dashboard/bing", label: "Bing / Microsoft", icon: "🪟" },
-      { href: "/dashboard/connexity", label: "Connexity", icon: "🟣" },
-      { href: "/dashboard/meta", label: "Meta", icon: "📘" },
-      { href: "/dashboard/pinterest", label: "Pinterest", icon: "📌" },
-      { href: "/dashboard/amazon-ads", label: "Amazon Ads", icon: "🟠" },
+      { href: "/dashboard/bing",        label: "Bing / Microsoft", icon: "🪟" },
+      { href: "/dashboard/connexity",   label: "Connexity",        icon: "🟣" },
+      { href: "/dashboard/meta",        label: "Meta",             icon: "📘" },
+      { href: "/dashboard/pinterest",   label: "Pinterest",        icon: "📌" },
+      { href: "/dashboard/amazon-ads",  label: "Amazon Ads",       icon: "🟠" },
     ],
   },
   {
-    label: "Email Marketing",
+    label: "Email Marketing", icon: "📧",
     items: [
       {
-        href: "/dashboard/email",
-        label: "Email Overview",
-        icon: "📧",
+        href: "/dashboard/email", label: "Email Overview", icon: "📧",
         children: [
           { href: "/dashboard/email/campaigns", label: "Campaigns", icon: "📨" },
-          { href: "/dashboard/email/flows", label: "Flows", icon: "🔄" },
+          { href: "/dashboard/email/flows",     label: "Flows",     icon: "🔄" },
         ],
       },
     ],
   },
   {
-    label: "Operations",
+    label: "Operations", icon: "⚙️",
     items: [
-      { href: "/dashboard/refunds", label: "Shopify Refunds", icon: "↩️" },
-      { href: "/dashboard/products", label: "Product Profitability", icon: "📦" },
-      { href: "/dashboard/fulfillment", label: "Order Fulfillment", icon: "🚚" },
+      { href: "/dashboard/refunds",      label: "Shopify Refunds",      icon: "↩️" },
+      { href: "/dashboard/products",     label: "Product Profitability", icon: "📦" },
+      { href: "/dashboard/fulfillment",  label: "Order Fulfillment",    icon: "🚚" },
       {
-        href: "/dashboard/customers",
-        label: "Customers",
-        icon: "👤",
+        href: "/dashboard/customers", label: "Customers", icon: "👤",
         children: [
-          { href: "/dashboard/customers", label: "Customer Insights", icon: "👤" },
+          { href: "/dashboard/customers",             label: "Customer Directory",    icon: "👤" },
           { href: "/dashboard/customers/acquisition", label: "Acquisition & Retention", icon: "🎯" },
         ],
       },
@@ -95,26 +78,47 @@ const navSections: ExpandableSection[] = [
   },
 ];
 
+// All paths that belong to each section (for auto-open logic)
+function sectionContainsPath(section: NavSection, pathname: string): boolean {
+  return section.items.some(item =>
+    pathname === item.href ||
+    pathname.startsWith(item.href + "/") ||
+    item.children?.some(c => pathname === c.href || pathname.startsWith(c.href + "/"))
+  );
+}
+
 export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
+  const { theme, toggle: toggleTheme } = useTheme();
 
-  // Track which expandable items are open
-  // Auto-open Google Ads if on a Google Ads sub-page, Bing if on Bing sub-page
-  const googleAdsSubPaths = ["/dashboard/pmax", "/dashboard/shopping", "/dashboard/search", "/dashboard/demand-gen", "/dashboard/gclid"];
-  const customersSubPaths = ["/dashboard/customers"];
-  const emailSubPaths = ["/dashboard/email"];
-  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
-    "/dashboard/google-ads": googleAdsSubPaths.some(p => pathname.startsWith(p)),
-    "/dashboard/customers": customersSubPaths.some(p => pathname.startsWith(p)),
-    "/dashboard/email": emailSubPaths.some(p => pathname.startsWith(p)),
-  });
+  // Section open/closed state — auto-open the active section
+  const defaultOpenSections = useMemo(() => {
+    const map: Record<string, boolean> = {};
+    for (const section of navSections) {
+      map[section.label] = sectionContainsPath(section, pathname);
+    }
+    return map;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // only compute once on mount
 
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>(defaultOpenSections);
+
+  // Item-level expandable groups (Google Ads sub-pages, Customers, Email)
+  const defaultOpenGroups = useMemo(() => ({
+    "/dashboard/google-ads": ["/dashboard/pmax","/dashboard/shopping","/dashboard/search","/dashboard/demand-gen","/dashboard/gclid","/dashboard/google-mer"].some(p => pathname.startsWith(p)),
+    "/dashboard/customers":  pathname.startsWith("/dashboard/customers"),
+    "/dashboard/email":      pathname.startsWith("/dashboard/email"),
+  }), []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(defaultOpenGroups);
+
+  function toggleSection(label: string) {
+    setOpenSections(prev => ({ ...prev, [label]: !prev[label] }));
+  }
   function toggleGroup(href: string) {
     setOpenGroups(prev => ({ ...prev, [href]: !prev[href] }));
   }
-
-  const { theme, toggle: toggleTheme } = useTheme();
 
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -139,97 +143,113 @@ export default function Sidebar() {
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-6">
-        {navSections.map((section) => (
-          <div key={section.label}>
-            <div className={`px-3 mb-2 text-xs font-semibold uppercase tracking-wider ${section.cfo ? "text-emerald-600" : "text-gray-500"}`}>
-              {section.label}
-            </div>
-            <div className="space-y-0.5">
-              {section.items.map((item) => {
-                const isActive = pathname === item.href;
-                const hasChildren = item.children && item.children.length > 0;
-                const isOpen = openGroups[item.href];
-                const isChildActive = hasChildren && item.children!.some(c => pathname === c.href);
-                const isCFO = section.cfo;
+      <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-0.5">
+        {navSections.map((section) => {
+          const isOpen = openSections[section.label];
+          const hasActive = sectionContainsPath(section, pathname);
 
-                return (
-                  <div key={item.href}>
-                    {hasChildren ? (
-                      // Expandable group header
-                      <button
-                        onClick={() => toggleGroup(item.href)}
-                        className={`flex items-center gap-3 w-full px-3 py-2 rounded-lg text-sm transition-colors ${
-                          isChildActive || isActive
-                            ? "bg-blue-600/20 text-blue-400 font-medium"
-                            : "text-gray-400 hover:text-gray-100 hover:bg-gray-800"
-                        }`}
-                      >
-                        <span className="text-base">{item.icon}</span>
-                        <span className="flex-1 text-left">{item.label}</span>
-                        <svg
-                          className={`w-3 h-3 transition-transform ${isOpen ? "rotate-180" : ""}`}
-                          fill="none" viewBox="0 0 24 24" stroke="currentColor"
-                        >
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                        </svg>
-                      </button>
-                    ) : (
-                      // Regular link
-                      <Link
-                        href={item.href}
-                        className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
-                          isActive
-                            ? isCFO
-                              ? "bg-emerald-600/20 text-emerald-400 font-medium"
-                              : "bg-blue-600/20 text-blue-400 font-medium"
-                            : "text-gray-400 hover:text-gray-100 hover:bg-gray-800"
-                        }`}
-                      >
-                        <span className="text-base">{item.icon}</span>
-                        {item.label}
-                      </Link>
-                    )}
+          return (
+            <div key={section.label}>
+              {/* Section header — clickable toggle */}
+              <button
+                onClick={() => toggleSection(section.label)}
+                className={`flex items-center gap-2 w-full px-3 py-2 rounded-lg text-xs font-semibold uppercase tracking-wider transition-colors group ${
+                  hasActive
+                    ? "text-blue-400 hover:text-blue-300"
+                    : "text-gray-500 hover:text-gray-300 hover:bg-gray-800/60"
+                }`}
+              >
+                <span className="text-sm">{section.icon}</span>
+                <span className="flex-1 text-left">{section.label}</span>
+                <svg
+                  className={`w-3 h-3 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}
+                  fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
 
-                    {/* Sub-items */}
-                    {hasChildren && isOpen && (
-                      <div className="mt-0.5 ml-3 pl-3 border-l border-gray-800 space-y-0.5">
-                        {/* Link to parent page too */}
-                        <Link
-                          href={item.href}
-                          className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs transition-colors ${
-                            isActive
-                              ? "text-blue-400 font-medium"
-                              : "text-gray-500 hover:text-gray-300 hover:bg-gray-800"
-                          }`}
-                        >
-                          Overview
-                        </Link>
-                        {item.children!.map((child) => {
-                          const childActive = pathname === child.href;
-                          return (
+              {/* Section items */}
+              {isOpen && (
+                <div className="mb-1 space-y-0.5">
+                  {section.items.map((item) => {
+                    const isActive = pathname === item.href;
+                    const hasChildren = !!item.children?.length;
+                    const isGroupOpen = openGroups[item.href];
+                    const isChildActive = hasChildren && item.children!.some(c => pathname === c.href || pathname.startsWith(c.href + "/"));
+
+                    return (
+                      <div key={item.href}>
+                        {hasChildren ? (
+                          <button
+                            onClick={() => toggleGroup(item.href)}
+                            className={`flex items-center gap-3 w-full px-3 py-2 rounded-lg text-sm transition-colors ${
+                              isChildActive || isActive
+                                ? "bg-blue-600/20 text-blue-400 font-medium"
+                                : "text-gray-400 hover:text-gray-100 hover:bg-gray-800"
+                            }`}
+                          >
+                            <span className="text-base w-5 text-center">{item.icon}</span>
+                            <span className="flex-1 text-left">{item.label}</span>
+                            <svg
+                              className={`w-3 h-3 transition-transform duration-150 ${isGroupOpen ? "rotate-180" : ""}`}
+                              fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                            >
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </button>
+                        ) : (
+                          <Link
+                            href={item.href}
+                            className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                              isActive
+                                ? "bg-blue-600/20 text-blue-400 font-medium"
+                                : "text-gray-400 hover:text-gray-100 hover:bg-gray-800"
+                            }`}
+                          >
+                            <span className="text-base w-5 text-center">{item.icon}</span>
+                            {item.label}
+                          </Link>
+                        )}
+
+                        {/* Sub-items */}
+                        {hasChildren && isGroupOpen && (
+                          <div className="mt-0.5 ml-4 pl-3 border-l border-gray-800 space-y-0.5">
                             <Link
-                              key={child.href}
-                              href={child.href}
+                              href={item.href}
                               className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs transition-colors ${
-                                childActive
-                                  ? "bg-blue-600/20 text-blue-400 font-medium"
-                                  : "text-gray-500 hover:text-gray-300 hover:bg-gray-800"
+                                isActive ? "text-blue-400 font-medium" : "text-gray-500 hover:text-gray-300 hover:bg-gray-800"
                               }`}
                             >
-                              <span>{child.icon}</span>
-                              {child.label}
+                              Overview
                             </Link>
-                          );
-                        })}
+                            {item.children!.map((child) => {
+                              const childActive = pathname === child.href || pathname.startsWith(child.href + "/");
+                              return (
+                                <Link
+                                  key={child.href}
+                                  href={child.href}
+                                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs transition-colors ${
+                                    childActive
+                                      ? "bg-blue-600/20 text-blue-400 font-medium"
+                                      : "text-gray-500 hover:text-gray-300 hover:bg-gray-800"
+                                  }`}
+                                >
+                                  <span>{child.icon}</span>
+                                  {child.label}
+                                </Link>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
-                );
-              })}
+                    );
+                  })}
+                </div>
+              )}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </nav>
 
       {/* Settings dropdown */}
@@ -238,7 +258,7 @@ export default function Sidebar() {
           href="/finance"
           className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-gray-400 hover:text-gray-100 hover:bg-gray-800 transition-colors"
         >
-          <svg className="w-4 h-4 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg className="w-4 h-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
           </svg>
           Switch to Finance Hub
@@ -285,7 +305,7 @@ function SettingsDropdown({ children }: { children: React.ReactNode }) {
           <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
         </svg>
         <span className="flex-1 text-left">Settings</span>
-        <svg className={`w-3 h-3 transition-transform ${open ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <svg className={`w-3 h-3 transition-transform duration-150 ${open ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
         </svg>
       </button>
