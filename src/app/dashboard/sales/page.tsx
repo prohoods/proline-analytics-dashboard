@@ -2,7 +2,10 @@
 
 import { useEffect, useState, useMemo } from "react";
 import DateRangeDropdown from "@/components/DateRangeDropdown";
-import { RangeKey, getRange } from "@/lib/date-ranges";
+import { RangeKey, getRange, getPreviousRange } from "@/lib/date-ranges";
+import DeltaBadge from "@/components/DeltaBadge";
+import { TableSkeleton, SkeletonCard } from "@/components/Skeleton";
+import { exportToCSV } from "@/lib/export-csv";
 
 interface SalesBucket {
   date: string;
@@ -91,6 +94,9 @@ export default function SalesPage() {
   const [view, setView] = useState<ViewTab>("monthly");
   const [selectedWeek, setSelectedWeek] = useState<string>("");
   const [refreshKey, setRefreshKey] = useState(0);
+  const [showCompare, setShowCompare] = useState(false);
+  const [prevTotals, setPrevTotals] = useState<ReturnType<typeof sumBuckets> | null>(null);
+  const [prevLoading, setPrevLoading] = useState(false);
 
   // Range-scoped data (drives the table)
   const [shopifyData, setShopifyData] = useState<{ daily: SalesBucket[]; weekly: SalesBucket[]; monthly: SalesBucket[] } | null>(null);
@@ -151,7 +157,29 @@ export default function SalesPage() {
       .finally(() => setLoading(false));
   }, [rangeKey, refreshKey]);
 
+  // Fetch previous period when compare is toggled on
+  useEffect(() => {
+    if (!showCompare) { setPrevTotals(null); return; }
+    const prev = getPreviousRange(rangeKey);
+    setPrevLoading(true);
+    Promise.all([
+      fetch(`/api/shopify/channel-sales?start=${prev.start}&end=${prev.end}&_=${refreshKey}`).then(r => r.json()),
+    ]).then(([d]) => {
+      if (!d.error && d.daily) {
+        // Build prev daily with marketplace + SHL
+        const prevDaily: SalesBucket[] = d.daily.map((row: SalesBucket) => ({
+          ...row,
+          marketplaces: marketplace?.days.filter(m => m.date >= prev.start && m.date <= prev.end).reduce((s: number, m: MarketplaceDay) => m.date === row.date ? s + m.net : s, 0) ?? 0,
+          shl: shlDays.filter((s: SHLDay) => s.date === row.date).reduce((acc: number, s: SHLDay) => acc + s.netRevenue, 0),
+        }));
+        setPrevTotals(sumBuckets(prevDaily));
+      }
+    }).finally(() => setPrevLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showCompare, rangeKey, refreshKey]);
+
   const range = getRange(rangeKey);
+  const prevRange = getPreviousRange(rangeKey);
   const today = new Date().toISOString().substring(0, 10);
   const currentYM = today.substring(0, 7);
 
@@ -286,7 +314,7 @@ export default function SalesPage() {
           <h1 className="text-2xl font-bold text-white">Sales by Channel</h1>
           <p className="text-gray-400 mt-1">Gross → Discounts → Returns → Net → Shipping → Tax → Total</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={() => setRefreshKey(k => k + 1)}
             disabled={loading}
@@ -297,6 +325,19 @@ export default function SalesPage() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
             Refresh
+          </button>
+          <button
+            onClick={() => setShowCompare(c => !c)}
+            className={`flex items-center gap-1.5 px-3 py-2 border rounded-lg text-sm transition-colors ${
+              showCompare
+                ? "bg-purple-600/20 border-purple-600/40 text-purple-300"
+                : "bg-gray-800 hover:bg-gray-700 border-gray-700 text-gray-300 hover:text-white"
+            }`}
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+            {showCompare ? `vs ${prevRange.start} – ${prevRange.end}` : "Compare"}
           </button>
           <DateRangeDropdown value={rangeKey} onChange={setRangeKey} />
         </div>
@@ -375,20 +416,28 @@ export default function SalesPage() {
         </div>
       </div>
 
-      {/* Range summary cards — 5 separate */}
+      {/* Range summary cards */}
       {!loading && (
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
           {[
-            { label: "Gross Sales", value: fmt(totals.grossSales), sub: "before discounts", color: "text-white" },
-            { label: "Discounts", value: `(${fmt(totals.discounts)})`, sub: "promo codes & sales", color: "text-red-400" },
-            { label: "Returns", value: `(${fmt(totals.returns)})`, sub: "refunded orders", color: "text-red-400" },
-            { label: "Net Sales", value: fmt(totals.netSales), sub: "after discounts & returns", color: "text-white" },
-            { label: "Total Sales", value: fmt(totals.totalSales + totals.marketplaces + totals.shl), sub: "net + shipping + tax + mktplc + SHL", color: "text-green-400" },
+            { label: "Gross Sales",  cur: totals.grossSales,                               prev: prevTotals?.grossSales,  inverted: false, color: "text-white",     display: fmt(totals.grossSales),                              sub: "before discounts" },
+            { label: "Discounts",    cur: totals.discounts,                                prev: prevTotals?.discounts,   inverted: true,  color: "text-red-400",  display: `(${fmt(totals.discounts)})`,                        sub: "promo codes & sales" },
+            { label: "Returns",      cur: totals.returns,                                  prev: prevTotals?.returns,     inverted: true,  color: "text-red-400",  display: `(${fmt(totals.returns)})`,                          sub: "refunded orders" },
+            { label: "Net Sales",    cur: totals.netSales,                                 prev: prevTotals?.netSales,    inverted: false, color: "text-white",     display: fmt(totals.netSales),                                sub: "after discounts & returns" },
+            { label: "Total Sales",  cur: totals.totalSales + totals.marketplaces + totals.shl, prev: prevTotals ? prevTotals.totalSales + prevTotals.marketplaces + prevTotals.shl : undefined, inverted: false, color: "text-green-400", display: fmt(totals.totalSales + totals.marketplaces + totals.shl), sub: "net + shipping + tax + mktplc + SHL" },
           ].map(card => (
             <div key={card.label} className="bg-gray-900 border border-gray-800 rounded-xl p-4">
               <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">{card.label}</div>
-              <div className={`text-xl font-bold ${card.color}`}>{card.value}</div>
-              <div className="text-xs text-gray-600 mt-1">{card.sub}</div>
+              <div className={`text-xl font-bold ${card.color}`}>{card.display}</div>
+              <div className="flex items-center gap-2 mt-1">
+                <span className="text-xs text-gray-600">{card.sub}</span>
+                {showCompare && card.prev !== undefined && !prevLoading && (
+                  <DeltaBadge current={card.cur} previous={card.prev} inverted={card.inverted} />
+                )}
+              </div>
+              {showCompare && card.prev !== undefined && !prevLoading && (
+                <div className="text-xs text-gray-600 mt-0.5">prev: {card.label === "Discounts" || card.label === "Returns" ? `(${fmt(card.prev)})` : fmt(card.prev)}</div>
+              )}
             </div>
           ))}
         </div>
@@ -429,7 +478,7 @@ export default function SalesPage() {
         )}
       </div>
 
-      {loading && <div className="text-gray-400 py-8">Loading...</div>}
+      {loading && <TableSkeleton rows={10} cols={13} />}
 
       {!loading && tableRows.length > 0 && (
         <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
@@ -439,16 +488,36 @@ export default function SalesPage() {
                 ? `Week of ${weekRangeLabel(weekly.find(w => w.date === selectedWeek) ?? weekly[0])}`
                 : view === "monthly" ? "Monthly Breakdown" : "Daily Breakdown"}
             </h2>
-            <span className="text-xs text-gray-500">
-              {view === "weekly"
-                ? `${tableRows.length} days this week`
-                : `${tableRows.length} ${view === "daily" ? "days" : "months"}`}
-            </span>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-gray-500">
+                {view === "weekly"
+                  ? `${tableRows.length} days this week`
+                  : `${tableRows.length} ${view === "daily" ? "days" : "months"}`}
+              </span>
+              <button
+                onClick={() => exportToCSV(
+                  tableRows.map(r => ({
+                    Date: r.date, PRH: r.prh, Pro: r.prolinePro, Phone: r.phone,
+                    SHL: r.shl ?? 0, Other: r.other, Marketplace: r.marketplaces ?? 0,
+                    Gross: r.grossSales, Discounts: r.discounts, Returns: r.returns,
+                    Net: r.netSales, Shipping: r.shipping, Tax: r.salesTax,
+                    Total: r.totalSales + (r.marketplaces ?? 0) + (r.shl ?? 0),
+                  })),
+                  `proline-sales-${range.start}-${range.end}`
+                )}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-xs text-gray-300 hover:text-white transition-colors"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                Export CSV
+              </button>
+            </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead>
-                <tr className="text-gray-500 text-xs uppercase tracking-wider bg-gray-800/50 border-b border-gray-800">
+              <thead className="sticky top-0 z-10">
+                <tr className="text-gray-500 text-xs uppercase tracking-wider bg-gray-800 border-b border-gray-800">
                   <th className="py-3 px-3 text-left">{view === "monthly" ? "Month" : "Date"}</th>
                   <th className="py-3 px-3 text-right">PRH</th>
                   <th className="py-3 px-3 text-right">Pro</th>

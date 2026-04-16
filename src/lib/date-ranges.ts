@@ -83,6 +83,26 @@ export function getRange(key: RangeKey): DateRange {
   }
 }
 
+// Returns the same-length window immediately before the given range
+export function getPreviousRange(key: RangeKey): DateRange {
+  const cur = getRange(key);
+  const startMs = new Date(cur.start).getTime();
+  const endMs   = new Date(cur.end).getTime();
+  const days    = Math.round((endMs - startMs) / 86400000);
+
+  const prevEnd   = new Date(startMs - 86400000);
+  const prevStart = new Date(prevEnd.getTime() - days * 86400000);
+
+  return {
+    start:   toDateStr(prevStart),
+    end:     toDateStr(prevEnd),
+    label:   `Prev ${days + 1} days`,
+    year:    String(prevStart.getFullYear()),
+    startYM: toYM(prevStart),
+    endYM:   toYM(prevEnd),
+  };
+}
+
 export const RANGE_OPTIONS: { key: RangeKey; label: string }[] = [
   { key: "7d", label: "Last 7 Days" },
   { key: "15d", label: "Last 15 Days" },

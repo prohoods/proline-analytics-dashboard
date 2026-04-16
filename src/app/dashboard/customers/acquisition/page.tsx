@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo } from "react";
 import DateRangeDropdown from "@/components/DateRangeDropdown";
 import { RangeKey, getRange } from "@/lib/date-ranges";
+import { KPISkeleton, TableSkeleton } from "@/components/Skeleton";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 interface AcqSummary {
@@ -154,7 +155,12 @@ export default function AcquisitionPage() {
       </div>
 
       {error && <div className="text-red-400 bg-red-900/20 rounded-lg p-4 text-sm">{error}</div>}
-      {loading && <div className="text-gray-400">Loading...</div>}
+      {loading && (
+        <div className="space-y-6">
+          <KPISkeleton count={8} />
+          <TableSkeleton rows={6} cols={10} />
+        </div>
+      )}
 
       {!loading && s && (
         <>
@@ -310,8 +316,8 @@ export default function AcquisitionPage() {
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-gray-500 text-xs uppercase tracking-wider bg-gray-800/50 border-b border-gray-800">
+                  <thead className="sticky top-0 z-10">
+                    <tr className="text-gray-500 text-xs uppercase tracking-wider bg-gray-800 border-b border-gray-800">
                       <th className="py-3 px-4 text-left">State</th>
                       <th className="py-3 px-4 text-right">Orders</th>
                       <th className="py-3 px-4 text-right text-emerald-400">New</th>
@@ -354,8 +360,8 @@ export default function AcquisitionPage() {
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-gray-500 text-xs uppercase tracking-wider bg-gray-800/50 border-b border-gray-800">
+                  <thead className="sticky top-0 z-10">
+                    <tr className="text-gray-500 text-xs uppercase tracking-wider bg-gray-800 border-b border-gray-800">
                       <th className="py-3 px-4 text-left">Month</th>
                       <th className="py-3 px-4 text-right text-emerald-400">New</th>
                       <th className="py-3 px-4 text-right text-emerald-400">New Rev</th>
@@ -479,7 +485,7 @@ export default function AcquisitionPage() {
               </div>
               <div className="overflow-x-auto p-4">
                 <table className="text-xs w-full">
-                  <thead>
+                  <thead className="sticky top-0 z-10">
                     <tr className="text-gray-500 uppercase tracking-wider">
                       <th className="py-2 px-3 text-left">Cohort</th>
                       <th className="py-2 px-3 text-right">Size</th>

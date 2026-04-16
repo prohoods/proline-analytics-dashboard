@@ -3,6 +3,8 @@
 import { useEffect, useState, useMemo } from "react";
 import DateRangeDropdown from "@/components/DateRangeDropdown";
 import { RangeKey, getRange } from "@/lib/date-ranges";
+import { KPISkeleton, TableSkeleton } from "@/components/Skeleton";
+import { exportToCSV } from "@/lib/export-csv";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Customer {
@@ -167,7 +169,12 @@ export default function CustomerDirectoryPage() {
       </div>
 
       {error && <div className="text-red-400 bg-red-900/20 rounded-lg p-4 text-sm">{error}</div>}
-      {loading && <div className="text-gray-400">Loading...</div>}
+      {loading && (
+        <div className="space-y-6">
+          <KPISkeleton count={4} />
+          <TableSkeleton rows={12} cols={9} />
+        </div>
+      )}
 
       {!loading && s && (
         <>
@@ -268,12 +275,33 @@ export default function CustomerDirectoryPage() {
                  segment === "at-risk" ? "At-Risk Customers (60+ days inactive)" :
                  "First-Time Buyers"} — {range.label}
               </h2>
-              <span className="text-xs text-gray-500">{filtered.length} customers</span>
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-gray-500">{filtered.length} customers</span>
+                <button
+                  onClick={() => exportToCSV(
+                    filtered.map(c => ({
+                      Name: c.name, Email: c.email, State: c.state ?? "",
+                      Channel: c.channel, "Proline Pro": c.isProlinePro ? "Yes" : "No",
+                      Orders: c.orderCount, "Total Spend": c.totalSpend,
+                      AOV: c.orderCount > 0 ? (c.totalSpend / c.orderCount).toFixed(2) : "0",
+                      "First Order": c.firstOrder, "Last Order": c.lastOrder,
+                      "Days Since Last": c.daysSinceLastOrder,
+                    })),
+                    `proline-customers-${range.start}-${range.end}`
+                  )}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-xs text-gray-300 hover:text-white transition-colors"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  Export CSV
+                </button>
+              </div>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-gray-500 text-xs uppercase tracking-wider bg-gray-800/50 border-b border-gray-800">
+                <thead className="sticky top-0 z-10">
+                  <tr className="text-gray-500 text-xs uppercase tracking-wider bg-gray-800 border-b border-gray-800">
                     <th className="py-3 px-4 text-left">Customer</th>
                     <th className="py-3 px-4 text-left">Email</th>
                     <th className="py-3 px-4 text-left">State</th>
