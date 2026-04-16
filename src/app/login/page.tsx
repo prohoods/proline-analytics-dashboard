@@ -22,7 +22,7 @@ export default function LoginPage() {
 
     if (res.ok) {
       const params = new URLSearchParams(window.location.search);
-      router.push(params.get("next") ?? "/");
+      window.location.href = params.get("next") ?? "/";
     } else {
       setError("Incorrect password");
       setLoading(false);
