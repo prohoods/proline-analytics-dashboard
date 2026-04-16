@@ -96,7 +96,7 @@ export interface ShopifyOrder {
   refunds: ShopifyRefund[];
   line_items: ShopifyLineItem[];
   billing_address: { province: string; province_code: string; city: string; country_code: string } | null;
-  customer: { email: string; first_name: string; last_name: string; orders_count?: number; tags?: string } | null;
+  customer: { id: number; email: string; first_name: string; last_name: string; orders_count?: number; tags?: string } | null;
 }
 
 export interface ShopifyRefund {
