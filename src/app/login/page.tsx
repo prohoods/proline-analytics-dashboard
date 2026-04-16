@@ -21,7 +21,8 @@ export default function LoginPage() {
     });
 
     if (res.ok) {
-      router.push("/dashboard");
+      const params = new URLSearchParams(window.location.search);
+      router.push(params.get("next") ?? "/");
     } else {
       setError("Incorrect password");
       setLoading(false);

@@ -5,8 +5,9 @@ export function middleware(request: NextRequest) {
   const cfoAuth = request.cookies.get("cfo-auth");
   const { pathname } = request.nextUrl;
 
-  // Allow public routes through
+  // Allow public routes through (including portal at /)
   if (
+    pathname === "/" ||
     pathname.startsWith("/login") ||
     pathname.startsWith("/cfo-login") ||
     pathname.startsWith("/api/auth") ||
@@ -17,7 +18,15 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // CFO section requires both general auth AND CFO auth
+  // Finance Hub: requires general auth (CFO password handled inside the layout)
+  if (pathname.startsWith("/finance")) {
+    if (!auth || auth.value !== "true") {
+      return NextResponse.redirect(new URL("/login?next=/finance", request.url));
+    }
+    return NextResponse.next();
+  }
+
+  // Legacy CFO dashboard routes
   if (pathname.startsWith("/dashboard/cfo") || pathname.startsWith("/api/cfo")) {
     if (!auth || auth.value !== "true") {
       return NextResponse.redirect(new URL("/login", request.url));
