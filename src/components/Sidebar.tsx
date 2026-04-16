@@ -92,15 +92,6 @@ const navSections: ExpandableSection[] = [
       { href: "/dashboard/shopping-feed", label: "Product Ad Performance", icon: "📋" },
     ],
   },
-  {
-    label: "CFO — Restricted",
-    cfo: true,
-    items: [
-      { href: "/dashboard/cfo/overview", label: "Financial Overview", icon: "🏦" },
-      { href: "/dashboard/cfo/expenses", label: "Expenses", icon: "💳" },
-      { href: "/dashboard/cfo/payroll", label: "Payroll & Benefits", icon: "👥" },
-    ],
-  },
 ];
 
 export default function Sidebar() {
@@ -242,6 +233,15 @@ export default function Sidebar() {
 
       {/* Footer */}
       <div className="px-3 py-4 border-t border-gray-800 space-y-1">
+        <Link
+          href="/finance"
+          className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-emerald-600 hover:text-emerald-400 hover:bg-gray-800 transition-colors"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+          </svg>
+          Finance Hub
+        </Link>
         {/* Theme toggle */}
         <button
           onClick={toggleTheme}
