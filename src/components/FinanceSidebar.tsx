@@ -8,6 +8,7 @@ const navItems = [
   { href: "/finance/overview", label: "Financial Overview", icon: "🏦" },
   { href: "/finance/expenses", label: "Expenses", icon: "💳" },
   { href: "/finance/payroll", label: "Payroll & Benefits", icon: "👥" },
+  { href: "/finance/reconciliation", label: "Reconciliation", icon: "🔗" },
 ];
 
 export default function FinanceSidebar() {
