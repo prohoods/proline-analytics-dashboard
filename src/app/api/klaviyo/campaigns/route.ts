@@ -1,11 +1,14 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { klaviyoGet, klaviyoPost, getPlacedOrderMetricId } from "@/lib/klaviyo";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     if (!process.env.KLAVIYO_API_KEY) {
       return NextResponse.json({ error: "KLAVIYO_API_KEY not configured" }, { status: 500 });
     }
+
+    const { searchParams } = new URL(request.url);
+    const timeframe = searchParams.get("timeframe") ?? "last_365_days";
 
     const [campaignsRes, metricId] = await Promise.all([
       klaviyoGet("/campaigns/", {
@@ -16,20 +19,19 @@ export async function GET() {
       getPlacedOrderMetricId(),
     ]);
 
-    const campaigns: any[] = campaignsRes.data ?? [];
-
+    const campaigns: Record<string, unknown>[] = campaignsRes.data ?? [];
     const sentIds = campaigns
-      .filter((c: any) => c.attributes?.status === "Sent")
-      .map((c: any) => c.id);
+      .filter((c) => (c.attributes as Record<string, unknown>)?.status === "Sent")
+      .map((c) => c.id);
 
-    let statsMap: Record<string, any> = {};
+    const statsMap: Record<string, Record<string, number>> = {};
 
     if (metricId && sentIds.length > 0) {
       const statsRes = await klaviyoPost("/campaign-values-reports/", {
         data: {
           type: "campaign-values-report",
           attributes: {
-            timeframe: { key: "last_365_days" },
+            timeframe: { key: timeframe },
             conversion_metric_id: metricId,
             statistics: ["opens", "open_rate", "clicks", "click_rate", "delivered", "conversion_value", "bounced", "unsubscribes"],
             filter: "equals(send_channel,'email')",
@@ -43,29 +45,37 @@ export async function GET() {
       }
     }
 
-    const rows = campaigns.map((c: any) => {
-      const stats = statsMap[c.id] ?? {};
+    const rows = campaigns.map((c) => {
+      const attrs = c.attributes as Record<string, unknown>;
+      const stats = statsMap[c.id as string] ?? {};
       const revenue = stats.conversion_value ?? null;
       const delivered = stats.delivered ?? null;
       return {
         id: c.id,
-        name: c.attributes?.name ?? "—",
-        status: c.attributes?.status ?? "—",
-        sentAt: c.attributes?.send_time ?? c.attributes?.created_at ?? null,
+        name: attrs?.name ?? "—",
+        status: attrs?.status ?? "—",
+        sentAt: attrs?.send_time ?? attrs?.created_at ?? null,
         delivered,
         opens: stats.opens ?? null,
-        openRate: stats.open_rate ?? null,
+        openRate: delivered && (delivered as number) > 0 && stats.opens != null
+          ? (stats.opens as number) / (delivered as number) : stats.open_rate ?? null,
         clicks: stats.clicks ?? null,
-        clickRate: stats.click_rate ?? null,
+        clickRate: delivered && (delivered as number) > 0 && stats.clicks != null
+          ? (stats.clicks as number) / (delivered as number) : stats.click_rate ?? null,
         revenue,
         bounced: stats.bounced ?? null,
+        bounceRate: delivered && (delivered as number) > 0 && stats.bounced != null
+          ? (stats.bounced as number) / (delivered as number) : null,
         unsubscribed: stats.unsubscribes ?? null,
-        revenuePerEmail: delivered && delivered > 0 ? (revenue ?? 0) / delivered : null,
+        unsubRate: delivered && (delivered as number) > 0 && stats.unsubscribes != null
+          ? (stats.unsubscribes as number) / (delivered as number) : null,
+        revenuePerEmail: delivered && (delivered as number) > 0 ? (revenue as number ?? 0) / (delivered as number) : null,
       };
     });
 
-    return NextResponse.json({ campaigns: rows });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ campaigns: rows, timeframe });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

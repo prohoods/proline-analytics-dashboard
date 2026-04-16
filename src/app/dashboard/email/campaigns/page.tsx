@@ -2,6 +2,18 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { KPISkeleton, TableSkeleton } from "@/components/Skeleton";
+import { exportToCSV } from "@/lib/export-csv";
+
+const TIMEFRAMES = [
+  { key: "last_30_days",  label: "Last 30 Days" },
+  { key: "last_90_days",  label: "Last 90 Days" },
+  { key: "this_month",    label: "This Month" },
+  { key: "last_month",    label: "Last Month" },
+  { key: "last_365_days", label: "Last 365 Days" },
+  { key: "this_year",     label: "This Year" },
+  { key: "all_time",      label: "All Time" },
+];
 
 interface Campaign {
   id: string;
@@ -13,15 +25,17 @@ interface Campaign {
   openRate: number | null;
   clicks: number | null;
   clickRate: number | null;
-  revenue: number | null;
   bounced: number | null;
+  bounceRate: number | null;
   unsubscribed: number | null;
+  unsubRate: number | null;
+  revenue: number | null;
   revenuePerEmail: number | null;
 }
 
 function fmt$(n: number | null) {
   if (n === null) return "—";
-  return "$" + n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  return "$" + n.toLocaleString("en-US", { maximumFractionDigits: 0 });
 }
 function fmtN(n: number | null) {
   if (n === null) return "—";
@@ -36,9 +50,10 @@ function fmtDate(s: string | null) {
   return new Date(s).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
-type SortKey = "sentAt" | "delivered" | "openRate" | "clickRate" | "revenue";
+type SortKey = "sentAt" | "delivered" | "openRate" | "clickRate" | "bounceRate" | "unsubRate" | "revenue";
 
 export default function CampaignsPage() {
+  const [timeframe, setTimeframe] = useState("last_365_days");
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -47,7 +62,9 @@ export default function CampaignsPage() {
   const [filter, setFilter] = useState<"all" | "sent">("sent");
 
   useEffect(() => {
-    fetch("/api/klaviyo/campaigns")
+    setLoading(true);
+    setError(null);
+    fetch(`/api/klaviyo/campaigns?timeframe=${timeframe}`)
       .then(r => r.json())
       .then(d => {
         if (d.error) setError(d.error);
@@ -55,7 +72,7 @@ export default function CampaignsPage() {
       })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
-  }, []);
+  }, [timeframe]);
 
   function handleSort(key: SortKey) {
     if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
@@ -78,6 +95,32 @@ export default function CampaignsPage() {
 
   const totalRevenue = visible.reduce((s, c) => s + (c.revenue ?? 0), 0);
   const totalDelivered = visible.reduce((s, c) => s + (c.delivered ?? 0), 0);
+  const totalOpens = visible.reduce((s, c) => s + (c.opens ?? 0), 0);
+  const totalClicks = visible.reduce((s, c) => s + (c.clicks ?? 0), 0);
+  const totalBounced = visible.reduce((s, c) => s + (c.bounced ?? 0), 0);
+  const totalUnsub = visible.reduce((s, c) => s + (c.unsubscribed ?? 0), 0);
+
+  const tfLabel = TIMEFRAMES.find(t => t.key === timeframe)?.label ?? timeframe;
+
+  function handleExport() {
+    if (!visible.length) return;
+    exportToCSV(visible.map(c => ({
+      name: c.name,
+      status: c.status,
+      sent_at: fmtDate(c.sentAt),
+      delivered: c.delivered ?? "",
+      opens: c.opens ?? "",
+      open_rate: c.openRate != null ? fmtPct(c.openRate) : "",
+      clicks: c.clicks ?? "",
+      click_rate: c.clickRate != null ? fmtPct(c.clickRate) : "",
+      bounced: c.bounced ?? "",
+      bounce_rate: c.bounceRate != null ? fmtPct(c.bounceRate) : "",
+      unsubscribed: c.unsubscribed ?? "",
+      unsub_rate: c.unsubRate != null ? fmtPct(c.unsubRate) : "",
+      revenue: c.revenue ?? "",
+      revenue_per_email: c.revenuePerEmail != null ? c.revenuePerEmail.toFixed(2) : "",
+    })), `campaigns-${timeframe}.csv`);
+  }
 
   function SortIcon({ k }: { k: SortKey }) {
     if (sortKey !== k) return <span className="text-gray-600 ml-1">↕</span>;
@@ -89,7 +132,8 @@ export default function CampaignsPage() {
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
+      {/* Header */}
+      <div className="flex items-start justify-between flex-wrap gap-4">
         <div>
           <div className="flex items-center gap-2 text-gray-500 text-sm mb-1">
             <Link href="/dashboard/email" className="hover:text-gray-300">Email Marketing</Link>
@@ -97,94 +141,151 @@ export default function CampaignsPage() {
             <span className="text-gray-300">Campaigns</span>
           </div>
           <h1 className="text-2xl font-bold text-white">Campaign Performance</h1>
+          <p className="text-gray-400 text-sm mt-1">Powered by Klaviyo · {tfLabel}</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-3 flex-wrap">
+          <select
+            value={timeframe}
+            onChange={e => setTimeframe(e.target.value)}
+            className="bg-gray-800 border border-gray-700 text-gray-300 text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500"
+          >
+            {TIMEFRAMES.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
+          </select>
           <button
             onClick={() => setFilter("sent")}
-            className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${filter === "sent" ? "bg-blue-600 text-white" : "bg-gray-800 text-gray-400 hover:text-gray-200"}`}
+            className={`px-3 py-2 rounded-lg text-sm transition-colors ${filter === "sent" ? "bg-blue-600 text-white" : "bg-gray-800 text-gray-400 hover:text-gray-200"}`}
           >Sent only</button>
           <button
             onClick={() => setFilter("all")}
-            className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${filter === "all" ? "bg-blue-600 text-white" : "bg-gray-800 text-gray-400 hover:text-gray-200"}`}
+            className={`px-3 py-2 rounded-lg text-sm transition-colors ${filter === "all" ? "bg-blue-600 text-white" : "bg-gray-800 text-gray-400 hover:text-gray-200"}`}
           >All</button>
+          <button
+            onClick={handleExport}
+            className="px-3 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm rounded-lg transition-colors"
+          >Export CSV</button>
         </div>
       </div>
 
-      {/* Summary cards */}
+      {error && <div className="bg-red-900/20 border border-red-700/30 rounded-xl p-4 text-red-400 text-sm">{error}</div>}
+
+      {loading && (
+        <div className="space-y-6">
+          <KPISkeleton count={4} />
+          <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+            <TableSkeleton rows={10} cols={9} />
+          </div>
+        </div>
+      )}
+
       {!loading && !error && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-            <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Campaigns</div>
-            <div className="text-2xl font-bold text-white">{visible.length}</div>
-          </div>
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-            <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Total Delivered</div>
-            <div className="text-2xl font-bold text-blue-400">{fmtN(totalDelivered)}</div>
-          </div>
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-            <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Total Revenue</div>
-            <div className="text-2xl font-bold text-green-400">{fmt$(totalRevenue)}</div>
-          </div>
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-            <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Revenue / Email</div>
-            <div className="text-2xl font-bold text-yellow-400">
-              {totalDelivered > 0 ? "$" + (totalRevenue / totalDelivered).toFixed(2) : "—"}
+        <>
+          {/* Summary cards */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+              <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Campaigns</div>
+              <div className="text-2xl font-bold text-white">{visible.length}</div>
+            </div>
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+              <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Total Delivered</div>
+              <div className="text-2xl font-bold text-blue-400">{fmtN(totalDelivered)}</div>
+            </div>
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+              <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Total Revenue</div>
+              <div className="text-2xl font-bold text-green-400">{fmt$(totalRevenue)}</div>
+            </div>
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+              <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Revenue / Email</div>
+              <div className="text-2xl font-bold text-yellow-400">
+                {totalDelivered > 0 ? "$" + (totalRevenue / totalDelivered).toFixed(2) : "—"}
+              </div>
             </div>
           </div>
-        </div>
-      )}
 
-      {error && (
-        <div className="bg-red-900/20 border border-red-700/30 rounded-xl p-4 text-red-400 text-sm">{error}</div>
-      )}
-
-      {loading && <div className="text-gray-500 text-sm animate-pulse">Loading campaigns…</div>}
-
-      {!loading && !error && (
-        <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="border-b border-gray-800">
-                <tr>
-                  <th className={th} onClick={() => handleSort("sentAt")}>Campaign <SortIcon k="sentAt" /></th>
-                  <th className={`${th} text-center`}>Status</th>
-                  <th className={`${th} text-right`} onClick={() => handleSort("delivered")}>Delivered <SortIcon k="delivered" /></th>
-                  <th className={`${th} text-right`} onClick={() => handleSort("openRate")}>Open Rate <SortIcon k="openRate" /></th>
-                  <th className={`${th} text-right`} onClick={() => handleSort("clickRate")}>Click Rate <SortIcon k="clickRate" /></th>
-                  <th className={`${th} text-right`} onClick={() => handleSort("revenue")}>Revenue <SortIcon k="revenue" /></th>
-                  <th className={`${th} text-right`}>Rev / Email</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-800">
-                {visible.length === 0 && (
-                  <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-500">No campaigns found.</td></tr>
-                )}
-                {visible.map(c => (
-                  <tr key={c.id} className="hover:bg-gray-800/40 transition-colors">
-                    <td className={td}>
-                      <div className="text-white font-medium max-w-xs truncate">{c.name}</div>
-                      <div className="text-gray-500 text-xs mt-0.5">{fmtDate(c.sentAt)}</div>
-                    </td>
-                    <td className={`${td} text-center`}>
-                      <StatusBadge status={c.status} />
-                    </td>
-                    <td className={`${td} text-right text-gray-300`}>{fmtN(c.delivered)}</td>
-                    <td className={`${td} text-right`}>
-                      <RateCell value={c.openRate} low={0.20} high={0.35} />
-                    </td>
-                    <td className={`${td} text-right`}>
-                      <RateCell value={c.clickRate} low={0.01} high={0.03} />
-                    </td>
-                    <td className={`${td} text-right font-medium text-green-400`}>{fmt$(c.revenue)}</td>
-                    <td className={`${td} text-right text-gray-400`}>
-                      {c.revenuePerEmail !== null ? "$" + c.revenuePerEmail.toFixed(2) : "—"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          {/* Aggregate rates */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+              <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Avg Open Rate</div>
+              <div className={`text-2xl font-bold ${totalDelivered > 0 && totalOpens / totalDelivered >= 0.30 ? "text-green-400" : totalDelivered > 0 && totalOpens / totalDelivered >= 0.20 ? "text-yellow-400" : "text-red-400"}`}>
+                {totalDelivered > 0 ? fmtPct(totalOpens / totalDelivered) : "—"}
+              </div>
+              <div className="text-xs text-gray-600 mt-1">Weighted avg</div>
+            </div>
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+              <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Avg Click Rate</div>
+              <div className={`text-2xl font-bold ${totalDelivered > 0 && totalClicks / totalDelivered >= 0.03 ? "text-green-400" : totalDelivered > 0 && totalClicks / totalDelivered >= 0.01 ? "text-yellow-400" : "text-red-400"}`}>
+                {totalDelivered > 0 ? fmtPct(totalClicks / totalDelivered) : "—"}
+              </div>
+            </div>
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+              <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Bounce Rate</div>
+              <div className={`text-2xl font-bold ${totalDelivered > 0 && totalBounced / totalDelivered <= 0.01 ? "text-green-400" : totalDelivered > 0 && totalBounced / totalDelivered <= 0.02 ? "text-yellow-400" : "text-red-400"}`}>
+                {totalDelivered > 0 ? fmtPct(totalBounced / totalDelivered) : "—"}
+              </div>
+              <div className="text-xs text-gray-500 mt-1">{fmtN(totalBounced)} bounces</div>
+            </div>
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+              <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Unsubscribe Rate</div>
+              <div className={`text-2xl font-bold ${totalDelivered > 0 && totalUnsub / totalDelivered <= 0.002 ? "text-green-400" : totalDelivered > 0 && totalUnsub / totalDelivered <= 0.005 ? "text-yellow-400" : "text-red-400"}`}>
+                {totalDelivered > 0 ? fmtPct(totalUnsub / totalDelivered) : "—"}
+              </div>
+              <div className="text-xs text-gray-500 mt-1">{fmtN(totalUnsub)} unsubs</div>
+            </div>
           </div>
-        </div>
+
+          {/* Table */}
+          <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="sticky top-0 z-10 border-b border-gray-800 bg-gray-900">
+                  <tr>
+                    <th className={th} onClick={() => handleSort("sentAt")}>Campaign <SortIcon k="sentAt" /></th>
+                    <th className={`${th} text-center`}>Status</th>
+                    <th className={`${th} text-right`} onClick={() => handleSort("delivered")}>Delivered <SortIcon k="delivered" /></th>
+                    <th className={`${th} text-right`} onClick={() => handleSort("openRate")}>Open Rate <SortIcon k="openRate" /></th>
+                    <th className={`${th} text-right`} onClick={() => handleSort("clickRate")}>Click Rate <SortIcon k="clickRate" /></th>
+                    <th className={`${th} text-right`} onClick={() => handleSort("bounceRate")}>Bounce Rate <SortIcon k="bounceRate" /></th>
+                    <th className={`${th} text-right`} onClick={() => handleSort("unsubRate")}>Unsub Rate <SortIcon k="unsubRate" /></th>
+                    <th className={`${th} text-right`} onClick={() => handleSort("revenue")}>Revenue <SortIcon k="revenue" /></th>
+                    <th className={`${th} text-right`}>Rev / Email</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-800">
+                  {visible.length === 0 && (
+                    <tr><td colSpan={9} className="px-4 py-8 text-center text-gray-500">No campaigns found.</td></tr>
+                  )}
+                  {visible.map(c => (
+                    <tr key={c.id} className="hover:bg-gray-800/40 transition-colors">
+                      <td className={td}>
+                        <div className="text-white font-medium max-w-xs truncate">{c.name}</div>
+                        <div className="text-gray-500 text-xs mt-0.5">{fmtDate(c.sentAt)}</div>
+                      </td>
+                      <td className={`${td} text-center`}>
+                        <StatusBadge status={c.status} />
+                      </td>
+                      <td className={`${td} text-right text-gray-300`}>{fmtN(c.delivered)}</td>
+                      <td className={`${td} text-right`}>
+                        <RateCell value={c.openRate} low={0.20} high={0.35} />
+                      </td>
+                      <td className={`${td} text-right`}>
+                        <RateCell value={c.clickRate} low={0.01} high={0.03} />
+                      </td>
+                      <td className={`${td} text-right`}>
+                        <RateCell value={c.bounceRate} low={0.02} high={0.01} inverted />
+                      </td>
+                      <td className={`${td} text-right`}>
+                        <RateCell value={c.unsubRate} low={0.005} high={0.002} inverted />
+                      </td>
+                      <td className={`${td} text-right font-medium text-green-400`}>{fmt$(c.revenue)}</td>
+                      <td className={`${td} text-right text-gray-400`}>
+                        {c.revenuePerEmail !== null ? "$" + c.revenuePerEmail.toFixed(2) : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
       )}
     </div>
   );
@@ -204,8 +305,13 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-function RateCell({ value, low, high }: { value: number | null; low: number; high: number }) {
+function RateCell({ value, low, high, inverted = false }: { value: number | null; low: number; high: number; inverted?: boolean }) {
   if (value === null) return <span className="text-gray-500">—</span>;
-  const color = value >= high ? "text-green-400" : value >= low ? "text-yellow-400" : "text-red-400";
+  let color: string;
+  if (inverted) {
+    color = value <= high ? "text-green-400" : value <= low ? "text-yellow-400" : "text-red-400";
+  } else {
+    color = value >= high ? "text-green-400" : value >= low ? "text-yellow-400" : "text-red-400";
+  }
   return <span className={color}>{(value * 100).toFixed(1)}%</span>;
 }
