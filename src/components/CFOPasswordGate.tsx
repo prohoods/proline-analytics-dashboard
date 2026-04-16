@@ -22,7 +22,7 @@ export default function CFOPasswordGate() {
       });
 
       if (res.ok) {
-        router.refresh();
+        window.location.href = "/finance/overview";
       } else {
         const data = await res.json();
         setError(data.error ?? "Invalid password");

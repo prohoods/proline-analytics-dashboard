@@ -11,6 +11,7 @@ export function middleware(request: NextRequest) {
     pathname.startsWith("/login") ||
     pathname.startsWith("/cfo-login") ||
     pathname.startsWith("/api/auth") ||
+    pathname.startsWith("/api/finance") ||
     pathname.startsWith("/api/debug") ||
     pathname.startsWith("/api/shopify/debug-refunds") ||
     pathname.startsWith("/api/google-ads/debug")
@@ -18,11 +19,8 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Finance Hub: requires general auth (CFO password handled inside the layout)
+  // Finance Hub: only requires CFO password (handled inside the layout)
   if (pathname.startsWith("/finance")) {
-    if (!auth || auth.value !== "true") {
-      return NextResponse.redirect(new URL(`/login?next=${pathname}`, request.url));
-    }
     return NextResponse.next();
   }
 
