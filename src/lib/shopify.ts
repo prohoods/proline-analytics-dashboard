@@ -90,10 +90,13 @@ export interface ShopifyOrder {
   fulfillment_status: string | null;
   tags: string;
   source_name: string;
+  landing_site: string | null;
+  referring_site: string | null;
   note_attributes: { name: string; value: string }[];
   refunds: ShopifyRefund[];
   line_items: ShopifyLineItem[];
-  customer: { email: string; first_name: string; last_name: string; orders_count?: number } | null;
+  billing_address: { province: string; province_code: string; city: string; country_code: string } | null;
+  customer: { email: string; first_name: string; last_name: string; orders_count?: number; tags?: string } | null;
 }
 
 export interface ShopifyRefund {
