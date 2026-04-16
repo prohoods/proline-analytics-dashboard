@@ -19,7 +19,10 @@ interface SalesBucket {
   salesTax: number;
   totalSales: number;
   marketplaces?: number;
+  shl?: number;
 }
+
+interface SHLDay { date: string; netRevenue: number; }
 
 interface MarketplaceDay { date: string; net: number; }
 interface MarketplaceSummary { days: MarketplaceDay[]; }
@@ -72,6 +75,7 @@ function sumBuckets(buckets: SalesBucket[]) {
     phone: buckets.reduce((s, r) => s + r.phone, 0),
     other: buckets.reduce((s, r) => s + r.other, 0),
     marketplaces: buckets.reduce((s, r) => s + (r.marketplaces ?? 0), 0),
+    shl: buckets.reduce((s, r) => s + (r.shl ?? 0), 0),
     grossSales: buckets.reduce((s, r) => s + r.grossSales, 0),
     discounts: buckets.reduce((s, r) => s + r.discounts, 0),
     returns: buckets.reduce((s, r) => s + r.returns, 0),
@@ -98,12 +102,24 @@ export default function SalesPage() {
 
   // Marketplace
   const [marketplace, setMarketplace] = useState<MarketplaceSummary | null>(null);
+  // SHL
+  const [shlDays, setShlDays] = useState<SHLDay[]>([]);
 
   // Fetch marketplace once
   useEffect(() => {
     fetch("/api/sheets/marketplace")
       .then(r => r.json())
       .then(d => { if (!d.error) setMarketplace(d); })
+      .catch(() => {});
+  }, []);
+
+  // Fetch SHL for the full year so it covers all range selections
+  useEffect(() => {
+    const year = new Date().getFullYear();
+    const today = new Date().toISOString().substring(0, 10);
+    fetch(`/api/shopify-shl/orders?start=${year}-01-01&end=${today}`)
+      .then(r => r.json())
+      .then(d => { if (!d.error && d.daily) setShlDays(d.daily); })
       .catch(() => {});
   }, []);
 
@@ -164,12 +180,38 @@ export default function SalesPage() {
     return map;
   }, [marketplace, today]);
 
-  // Enrich daily with marketplace
-  const daily = useMemo(() =>
-    (shopifyData?.daily ?? []).map(d => ({ ...d, marketplaces: mktMap[d.date] ?? 0 })),
-  [shopifyData, mktMap]);
+  // SHL maps keyed by date
+  const shlMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const d of shlDays) {
+      if (d.date >= range.start && d.date <= range.end) {
+        map[d.date] = d.netRevenue;
+      }
+    }
+    return map;
+  }, [shlDays, range.start, range.end]);
 
-  // Enrich weekly with marketplace
+  const shlYtdMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    const year = new Date().getFullYear();
+    for (const d of shlDays) {
+      if (d.date >= `${year}-01-01` && d.date <= today) {
+        map[d.date] = d.netRevenue;
+      }
+    }
+    return map;
+  }, [shlDays, today]);
+
+  // Enrich daily with marketplace + SHL
+  const daily = useMemo(() =>
+    (shopifyData?.daily ?? []).map(d => ({
+      ...d,
+      marketplaces: mktMap[d.date] ?? 0,
+      shl: shlMap[d.date] ?? 0,
+    })),
+  [shopifyData, mktMap, shlMap]);
+
+  // Enrich weekly with marketplace + SHL
   const weekly = useMemo(() => {
     if (!shopifyData) return [];
     const wkMap: Record<string, number> = {};
@@ -177,10 +219,19 @@ export default function SalesPage() {
       const wk = isoWeek(date);
       wkMap[wk] = (wkMap[wk] ?? 0) + val;
     }
-    return shopifyData.weekly.map(w => ({ ...w, marketplaces: wkMap[w.date] ?? 0 }));
-  }, [shopifyData, mktMap]);
+    const shlWkMap: Record<string, number> = {};
+    for (const [date, val] of Object.entries(shlMap)) {
+      const wk = isoWeek(date);
+      shlWkMap[wk] = (shlWkMap[wk] ?? 0) + val;
+    }
+    return shopifyData.weekly.map(w => ({
+      ...w,
+      marketplaces: wkMap[w.date] ?? 0,
+      shl: shlWkMap[w.date] ?? 0,
+    }));
+  }, [shopifyData, mktMap, shlMap]);
 
-  // Enrich monthly with marketplace
+  // Enrich monthly with marketplace + SHL
   const monthly = useMemo(() => {
     if (!shopifyData) return [];
     const mktM: Record<string, number> = {};
@@ -188,8 +239,17 @@ export default function SalesPage() {
       const ym = date.substring(0, 7);
       mktM[ym] = (mktM[ym] ?? 0) + val;
     }
-    return shopifyData.monthly.map(m => ({ ...m, marketplaces: mktM[m.date] ?? 0 }));
-  }, [shopifyData, mktMap]);
+    const shlM: Record<string, number> = {};
+    for (const [date, val] of Object.entries(shlMap)) {
+      const ym = date.substring(0, 7);
+      shlM[ym] = (shlM[ym] ?? 0) + val;
+    }
+    return shopifyData.monthly.map(m => ({
+      ...m,
+      marketplaces: mktM[m.date] ?? 0,
+      shl: shlM[m.date] ?? 0,
+    }));
+  }, [shopifyData, mktMap, shlMap]);
 
   // For the weekly view: daily rows for the selected week
   const weekDailyRows = useMemo(() => {
@@ -203,8 +263,12 @@ export default function SalesPage() {
 
   // ── Persistent header stats ──────────────────────────────────────────────
   const ytdDailyWithMkt = useMemo(() =>
-    (ytdData?.daily ?? []).map(d => ({ ...d, marketplaces: mktYtdMap[d.date] ?? 0 })),
-  [ytdData, mktYtdMap]);
+    (ytdData?.daily ?? []).map(d => ({
+      ...d,
+      marketplaces: mktYtdMap[d.date] ?? 0,
+      shl: shlYtdMap[d.date] ?? 0,
+    })),
+  [ytdData, mktYtdMap, shlYtdMap]);
 
   const ytdTotals = useMemo(() => sumBuckets(ytdDailyWithMkt), [ytdDailyWithMkt]);
 
@@ -259,7 +323,7 @@ export default function SalesPage() {
             </div>
             <div>
               <div className="text-xs text-gray-500 mb-0.5">Total</div>
-              <div className="text-base font-bold text-green-400">{fmt(ytdTotals.totalSales + ytdTotals.marketplaces)}</div>
+              <div className="text-base font-bold text-green-400">{fmt(ytdTotals.totalSales + ytdTotals.marketplaces + ytdTotals.shl)}</div>
             </div>
             <div>
               <div className="text-xs text-gray-500 mb-0.5">Discounts</div>
@@ -270,8 +334,8 @@ export default function SalesPage() {
               <div className="text-sm font-medium text-red-400">({fmt(ytdTotals.returns)})</div>
             </div>
             <div>
-              <div className="text-xs text-gray-500 mb-0.5">Marketplaces</div>
-              <div className="text-sm font-medium text-orange-400">{fmt(ytdTotals.marketplaces)}</div>
+              <div className="text-xs text-gray-500 mb-0.5">Mktplc + SHL</div>
+              <div className="text-sm font-medium text-orange-400">{fmt(ytdTotals.marketplaces + ytdTotals.shl)}</div>
             </div>
           </div>
         </div>
@@ -293,7 +357,7 @@ export default function SalesPage() {
             </div>
             <div>
               <div className="text-xs text-gray-500 mb-0.5">Total</div>
-              <div className="text-base font-bold text-green-400">{fmt(currentMonthTotals.totalSales + currentMonthTotals.marketplaces)}</div>
+              <div className="text-base font-bold text-green-400">{fmt(currentMonthTotals.totalSales + currentMonthTotals.marketplaces + currentMonthTotals.shl)}</div>
             </div>
             <div>
               <div className="text-xs text-gray-500 mb-0.5">Discounts</div>
@@ -304,8 +368,8 @@ export default function SalesPage() {
               <div className="text-sm font-medium text-red-400">({fmt(currentMonthTotals.returns)})</div>
             </div>
             <div>
-              <div className="text-xs text-gray-500 mb-0.5">Marketplaces</div>
-              <div className="text-sm font-medium text-orange-400">{fmt(currentMonthTotals.marketplaces)}</div>
+              <div className="text-xs text-gray-500 mb-0.5">Mktplc + SHL</div>
+              <div className="text-sm font-medium text-orange-400">{fmt(currentMonthTotals.marketplaces + currentMonthTotals.shl)}</div>
             </div>
           </div>
         </div>
@@ -319,7 +383,7 @@ export default function SalesPage() {
             { label: "Discounts", value: `(${fmt(totals.discounts)})`, sub: "promo codes & sales", color: "text-red-400" },
             { label: "Returns", value: `(${fmt(totals.returns)})`, sub: "refunded orders", color: "text-red-400" },
             { label: "Net Sales", value: fmt(totals.netSales), sub: "after discounts & returns", color: "text-white" },
-            { label: "Total Sales", value: fmt(totals.totalSales + totals.marketplaces), sub: "net + shipping + tax + mktplc", color: "text-green-400" },
+            { label: "Total Sales", value: fmt(totals.totalSales + totals.marketplaces + totals.shl), sub: "net + shipping + tax + mktplc + SHL", color: "text-green-400" },
           ].map(card => (
             <div key={card.label} className="bg-gray-900 border border-gray-800 rounded-xl p-4">
               <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">{card.label}</div>
@@ -389,6 +453,7 @@ export default function SalesPage() {
                   <th className="py-3 px-3 text-right">PRH</th>
                   <th className="py-3 px-3 text-right">Pro</th>
                   <th className="py-3 px-3 text-right">Phone</th>
+                  <th className="py-3 px-3 text-right text-purple-400">SHL</th>
                   <th className="py-3 px-3 text-right text-gray-600">Other</th>
                   <th className="py-3 px-3 text-right text-orange-400">Mktplc</th>
                   <th className="py-3 px-3 text-right border-l border-gray-800">Gross</th>
@@ -415,6 +480,7 @@ export default function SalesPage() {
                       <td className="py-2 px-3 text-right">{dash(row.prh)}</td>
                       <td className="py-2 px-3 text-right">{dash(row.prolinePro)}</td>
                       <td className="py-2 px-3 text-right">{dash(row.phone)}</td>
+                      <td className="py-2 px-3 text-right text-purple-400">{(row.shl ?? 0) > 0 ? fmt(row.shl!) : <span className="text-gray-600">—</span>}</td>
                       <td className="py-2 px-3 text-right text-gray-500">{dash(row.other)}</td>
                       <td className="py-2 px-3 text-right text-orange-400">{(row.marketplaces ?? 0) > 0 ? fmt(row.marketplaces!) : <span className="text-gray-600">—</span>}</td>
                       <td className="py-2 px-3 text-right border-l border-gray-800">{fmt(row.grossSales)}</td>
@@ -423,7 +489,7 @@ export default function SalesPage() {
                       <td className="py-2 px-3 text-right font-semibold text-white">{fmt(row.netSales)}</td>
                       <td className="py-2 px-3 text-right text-gray-400">{row.shipping > 0 ? fmt(row.shipping) : <span className="text-gray-600">—</span>}</td>
                       <td className="py-2 px-3 text-right text-gray-400">{row.salesTax > 0 ? fmt(row.salesTax) : <span className="text-gray-600">—</span>}</td>
-                      <td className="py-2 px-3 text-right font-semibold text-green-400">{fmt(row.totalSales + (row.marketplaces ?? 0))}</td>
+                      <td className="py-2 px-3 text-right font-semibold text-green-400">{fmt(row.totalSales + (row.marketplaces ?? 0) + (row.shl ?? 0))}</td>
                     </tr>
                   );
                 })}
@@ -434,6 +500,7 @@ export default function SalesPage() {
                   <td className="py-3 px-3 text-right">{fmt(totals.prh)}</td>
                   <td className="py-3 px-3 text-right">{fmt(totals.prolinePro)}</td>
                   <td className="py-3 px-3 text-right">{fmt(totals.phone)}</td>
+                  <td className="py-3 px-3 text-right text-purple-400">{fmt(totals.shl)}</td>
                   <td className="py-3 px-3 text-right text-gray-500">{fmt(totals.other)}</td>
                   <td className="py-3 px-3 text-right text-orange-400">{fmt(totals.marketplaces)}</td>
                   <td className="py-3 px-3 text-right border-l border-gray-800">{fmt(totals.grossSales)}</td>
@@ -442,7 +509,7 @@ export default function SalesPage() {
                   <td className="py-3 px-3 text-right">{fmt(totals.netSales)}</td>
                   <td className="py-3 px-3 text-right text-gray-400">{fmt(totals.shipping)}</td>
                   <td className="py-3 px-3 text-right text-gray-400">{fmt(totals.salesTax)}</td>
-                  <td className="py-3 px-3 text-right text-green-400">{fmt(totals.totalSales + totals.marketplaces)}</td>
+                  <td className="py-3 px-3 text-right text-green-400">{fmt(totals.totalSales + totals.marketplaces + totals.shl)}</td>
                 </tr>
               </tfoot>
             </table>
