@@ -75,6 +75,9 @@ export default function CFOPasswordGate() {
         </div>
 
         <p className="text-center text-xs text-gray-600 mt-4">Session expires after 8 hours</p>
+        <div className="text-center mt-3">
+          <a href="/" className="text-xs text-gray-600 hover:text-gray-400 transition-colors">← Back to portal</a>
+        </div>
       </div>
     </div>
   );
