@@ -24,6 +24,7 @@ export default function Portal() {
         {/* Analytics */}
         <Link
           href="/dashboard"
+          prefetch={false}
           className="group bg-gray-900 border border-gray-800 hover:border-blue-700/60 rounded-2xl p-8 transition-all hover:bg-gray-900/80 flex flex-col gap-5"
         >
           <div className="w-12 h-12 rounded-xl bg-blue-600/20 border border-blue-700/40 flex items-center justify-center group-hover:bg-blue-600/30 transition-colors">

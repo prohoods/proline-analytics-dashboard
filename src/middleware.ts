@@ -21,7 +21,7 @@ export function middleware(request: NextRequest) {
   // Finance Hub: requires general auth (CFO password handled inside the layout)
   if (pathname.startsWith("/finance")) {
     if (!auth || auth.value !== "true") {
-      return NextResponse.redirect(new URL("/login?next=/finance", request.url));
+      return NextResponse.redirect(new URL(`/login?next=${pathname}`, request.url));
     }
     return NextResponse.next();
   }
@@ -29,7 +29,7 @@ export function middleware(request: NextRequest) {
   // Legacy CFO dashboard routes
   if (pathname.startsWith("/dashboard/cfo") || pathname.startsWith("/api/cfo")) {
     if (!auth || auth.value !== "true") {
-      return NextResponse.redirect(new URL("/login", request.url));
+      return NextResponse.redirect(new URL(`/login?next=${pathname}`, request.url));
     }
     if (!cfoAuth || cfoAuth.value !== "true") {
       return NextResponse.redirect(new URL("/cfo-login", request.url));
@@ -39,7 +39,7 @@ export function middleware(request: NextRequest) {
 
   // All other dashboard routes require general auth only
   if (!auth || auth.value !== "true") {
-    return NextResponse.redirect(new URL("/login", request.url));
+    return NextResponse.redirect(new URL(`/login?next=${pathname}`, request.url));
   }
 
   return NextResponse.next();
