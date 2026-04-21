@@ -11,7 +11,7 @@ function fmtK(n: number) {
 // Categories to show in chart (skip the very-large KBBO pending bucket to avoid distortion)
 const CHART_CATEGORIES = [
   "Factory / Inventory (COGS)",
-  "Vendor Payments (KBBO)",
+  "Unclassified Outflows (115)",
   "Payroll",
   "Digital Advertising",
   "Rent",
@@ -116,7 +116,7 @@ export default function CFOOverview() {
               const amount = totals[cat] ?? 0;
               if (!amount) return null;
               const pct = (amount / totalExpenses) * 100;
-              const isPending = cat === "Vendor Payments (KBBO)";
+              const isPending = cat === "Unclassified Outflows (115)";
               return (
                 <div key={cat}>
                   <div className="flex justify-between text-xs mb-1">
@@ -165,7 +165,7 @@ export default function CFOOverview() {
                 const mar = sumByCategory(statements[2])[cat] ?? 0;
                 const total = jan + feb + mar;
                 if (!total) return null;
-                const isPending = cat === "Vendor Payments (KBBO)";
+                const isPending = cat === "Unclassified Outflows (115)";
                 return (
                   <tr key={cat} className={`hover:bg-gray-800/30 ${isPending ? "opacity-70" : ""}`}>
                     <td className={`py-2.5 px-4 font-medium text-xs ${CATEGORY_TEXT[cat] ?? "text-gray-400"}`}>
@@ -198,7 +198,7 @@ export default function CFOOverview() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
           {[
             { label: "Ferguson Enterprises", note: "Marketplace payments TO us — already counted in revenue deposits. Not an expense.", status: "confirmed" },
-            { label: "KBBO ACH Payments", note: "Large vendor payments (Google Ads, contractors, Zline product). Labeled 'Vendor Payments' pending itemized breakdown.", status: "pending" },
+            { label: "KBBO ACH Payments", note: "Itemized Q1 — Google Ads $468K, Zline (SHL wholesale) $37K, Worldwide Logistic $43K, Renan Bonin (web dev) $10K. ~$1.05M in non-KBBO 115 outflows still pending (wires/checks).", status: "confirmed" },
             { label: "Worldwidelogis Dzurov", note: "Import & customs broker for Chinese factory shipments.", status: "confirmed" },
             { label: "Branch 0052 Utah Withdrawals", note: "Petty cash — regular cash withdrawals ~$7K/month.", status: "confirmed" },
             { label: "LGS1997BYU PayPal", note: "Owner draw — Nate's tuition payments via PayPal (~$1,500/month).", status: "confirmed" },

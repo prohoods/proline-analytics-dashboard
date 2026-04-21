@@ -27,6 +27,7 @@ export interface ExpenseLineItem {
   notes: string;
   account?: "115" | "2285";
   pending?: boolean;
+  side?: "DTC" | "SHL";  // Business line: DTC (Proline retail) vs SHL (wholesale). Default DTC.
 }
 
 export interface MonthData {
@@ -74,7 +75,13 @@ export const statements: MonthData[] = [
       { vendor: "Shenzhen Dapeng", amount: 20_000.00, category: "Factory / Inventory (COGS)", notes: "Wire transfer", account: "115" },
       { vendor: "Shenzhen Dapeng", amount: 11_654.00, category: "Factory / Inventory (COGS)", notes: "Wire transfer", account: "115" },
       { vendor: "KWS Companies", amount: 62_319.05, category: "Rent", notes: "Warehouse/office lease — est. Jan amount", account: "115", pending: true },
-      { vendor: "Vendor Payments — KBBO ACH", amount: 565_000.00, category: "Vendor Payments (KBBO)", notes: "KBBO ACH debits — Google Ads, contractors, Zline, others. Exact split TBD.", account: "115", pending: true },
+      // ── KBBO ACH portal — itemized from Jan 2026 export ────────────────
+      { vendor: "Google LLC (Google Ads)", amount: 99_000.93, category: "Digital Advertising", notes: "KBBO ACH 01/28/2026 — ID 172", account: "115" },
+      { vendor: "Zline Kitchen and Bath", amount: 14_683.29, category: "Factory / Inventory (COGS)", notes: "KBBO ACH 01/30/2026 — ID 175 — SHL wholesale supplier", account: "115", side: "SHL" },
+      { vendor: "Zline Kitchen and Bath", amount: 7_930.00, category: "Factory / Inventory (COGS)", notes: "KBBO ACH 01/15/2026 — ID 168 — SHL wholesale supplier", account: "115", side: "SHL" },
+      { vendor: "Renan Bonin Designer", amount: 5_200.00, category: "Marketing Services", notes: "KBBO ACH 01/21/2026 — ID 170 — website dev/designer retainer", account: "115" },
+      // ── Residual: 115 outflows hitting bank but not yet itemized (non-KBBO) ──
+      { vendor: "Unclassified 115 Outflows", amount: 448_186.58, category: "Unclassified Outflows (115)", notes: "Net 115 outflows not yet itemized — likely outgoing wires, checks, or non-KBBO ACH. Needs bank statement PDF to resolve.", account: "115", pending: true },
       { vendor: "Worldwidelogis Dzurov", amount: 11_549.57, category: "Import & Customs", notes: "Import & customs broker for Chinese factory shipments", account: "115", pending: true },
       { vendor: "Branch Cash Withdrawal (0052 Utah)", amount: 7_000.00, category: "Petty Cash", notes: "Regular cash withdrawal — petty cash", account: "115", pending: true },
       { vendor: "LGS1997BYU PayPal (Nate tuition)", amount: 1_500.00, category: "Owner Draw / Personal", notes: "Owner's child tuition payments via PayPal", account: "115", pending: true },
@@ -130,7 +137,14 @@ export const statements: MonthData[] = [
       { vendor: "CBIZ Payroll", amount: 87_500.00, category: "Payroll", notes: "Est. — CBIZ ACH payroll runs", account: "115", pending: true },
       { vendor: "Saia Motor Freight", amount: 52_119.45, category: "Shipping & Freight", notes: "LTL freight carrier", account: "115" },
       { vendor: "Avalara (large remittance)", amount: 32_399.10, category: "Taxes & Compliance", notes: "Sales tax remittance", account: "115" },
-      { vendor: "Vendor Payments — KBBO ACH", amount: 445_000.00, category: "Vendor Payments (KBBO)", notes: "KBBO ACH debits — Google Ads, contractors, Zline, others. Exact split TBD.", account: "115", pending: true },
+      // ── KBBO ACH portal — itemized from Feb 2026 export ────────────────
+      { vendor: "Google LLC (Google Ads)", amount: 50_000.00, category: "Digital Advertising", notes: "KBBO ACH 02/26/2026 — ID 191", account: "115" },
+      { vendor: "Google LLC (Google Ads)", amount: 92_231.64, category: "Digital Advertising", notes: "KBBO ACH 02/24/2026 — ID 188", account: "115" },
+      { vendor: "Google LLC (Google Ads)", amount: 66_670.93, category: "Digital Advertising", notes: "KBBO ACH 02/02/2026 — ID 177", account: "115" },
+      { vendor: "Zline Kitchen and Bath", amount: 1_350.98, category: "Factory / Inventory (COGS)", notes: "KBBO ACH 02/18/2026 — ID 186 — SHL wholesale supplier", account: "115", side: "SHL" },
+      { vendor: "Worldwide Logistic", amount: 43_282.53, category: "Import & Customs", notes: "KBBO ACH 02/12/2026 — ID 181 — separate from the smaller Worldwidelogis wire tracked above", account: "115" },
+      // ── Residual: 115 outflows hitting bank but not yet itemized (non-KBBO) ──
+      { vendor: "Unclassified 115 Outflows", amount: 191_463.92, category: "Unclassified Outflows (115)", notes: "Net 115 outflows not yet itemized — likely outgoing wires, checks, or non-KBBO ACH.", account: "115", pending: true },
       { vendor: "Worldwidelogis Dzurov", amount: 8_035.74, category: "Import & Customs", notes: "Import & customs broker for Chinese factory shipments", account: "115", pending: true },
       { vendor: "Branch Cash Withdrawal (0052 Utah)", amount: 7_000.00, category: "Petty Cash", notes: "Regular cash withdrawal — petty cash", account: "115", pending: true },
       { vendor: "LGS1997BYU PayPal (Nate tuition)", amount: 1_500.00, category: "Owner Draw / Personal", notes: "Owner's child tuition payments via PayPal", account: "115", pending: true },
@@ -187,7 +201,14 @@ export const statements: MonthData[] = [
       { vendor: "CBIZ Payroll", amount: 117_000.00, category: "Payroll", notes: "Est. — higher Mar run (bonuses/hires?)", account: "115", pending: true },
       { vendor: "Avalara (large remittance)", amount: 42_903.42, category: "Taxes & Compliance", notes: "Sales tax remittance", account: "115" },
       { vendor: "Saia Motor Freight", amount: 38_000.00, category: "Shipping & Freight", notes: "Est. — combined LTL runs", account: "115", pending: true },
-      { vendor: "Vendor Payments — KBBO ACH", amount: 590_000.00, category: "Vendor Payments (KBBO)", notes: "KBBO ACH debits — Google Ads, contractors, Zline, others. Exact split TBD.", account: "115", pending: true },
+      // ── KBBO ACH portal — itemized from Mar 2026 export ────────────────
+      { vendor: "Google LLC (Google Ads)", amount: 61_000.00, category: "Digital Advertising", notes: "KBBO ACH 03/24/2026 — ID 201", account: "115" },
+      { vendor: "Google LLC (Google Ads)", amount: 99_298.78, category: "Digital Advertising", notes: "KBBO ACH 03/19/2026 — ID 196", account: "115" },
+      { vendor: "Zline Kitchen and Bath", amount: 2_814.51, category: "Factory / Inventory (COGS)", notes: "KBBO ACH 03/23/2026 — ID 199 — SHL wholesale supplier", account: "115", side: "SHL" },
+      { vendor: "Zline Kitchen and Bath", amount: 10_187.19, category: "Factory / Inventory (COGS)", notes: "KBBO ACH 03/03/2026 — ID 194 — SHL wholesale supplier", account: "115", side: "SHL" },
+      { vendor: "Renan Bonin Designer", amount: 5_200.00, category: "Marketing Services", notes: "KBBO ACH 03/27/2026 — ID 204 — website dev/designer retainer", account: "115" },
+      // ── Residual: 115 outflows hitting bank but not yet itemized (non-KBBO) ──
+      { vendor: "Unclassified 115 Outflows", amount: 411_497.52, category: "Unclassified Outflows (115)", notes: "Net 115 outflows not yet itemized — likely outgoing wires, checks, or non-KBBO ACH.", account: "115", pending: true },
       { vendor: "Worldwidelogis Dzurov", amount: 7_104.78, category: "Import & Customs", notes: "Import & customs broker for Chinese factory shipments", account: "115", pending: true },
       { vendor: "Branch Cash Withdrawal (0052 Utah)", amount: 7_000.00, category: "Petty Cash", notes: "Regular cash withdrawal — petty cash", account: "115", pending: true },
       { vendor: "LGS1997BYU PayPal (Nate tuition)", amount: 1_500.00, category: "Owner Draw / Personal", notes: "Owner's child tuition payments via PayPal", account: "115", pending: true },
@@ -238,7 +259,7 @@ export const CATEGORIES = [
   "Owner Draw / Personal",
   "Bank Fees",
   "Misc & Other",
-  "Vendor Payments (KBBO)",  // pending breakdown — Google Ads, contractors, Zline
+  "Unclassified Outflows (115)",  // residual: bank debits not yet itemized (non-KBBO wires/checks/ACH)
 ] as const;
 
 export type Category = (typeof CATEGORIES)[number];
@@ -260,7 +281,7 @@ export const CATEGORY_COLORS: Record<string, string> = {
   "Owner Draw / Personal": "bg-rose-500",
   "Bank Fees": "bg-gray-500",
   "Misc & Other": "bg-slate-500",
-  "Vendor Payments (KBBO)": "bg-gray-600",
+  "Unclassified Outflows (115)": "bg-gray-600",
 };
 
 export const CATEGORY_TEXT: Record<string, string> = {
@@ -280,7 +301,7 @@ export const CATEGORY_TEXT: Record<string, string> = {
   "Owner Draw / Personal": "text-rose-400",
   "Bank Fees": "text-gray-400",
   "Misc & Other": "text-slate-400",
-  "Vendor Payments (KBBO)": "text-gray-400",
+  "Unclassified Outflows (115)": "text-gray-400",
 };
 
 /** Real expenses for a month (excludes inter-account transfers) */
@@ -321,3 +342,80 @@ export const q1 = {
   acct115BeginBalance: statements[0].acct115BeginBalance,
   acct115EndBalance: statements[statements.length - 1].acct115EndBalance,
 };
+
+// ── P&L grouping (cash basis — see pages for caveats) ────────────────────────
+// Categories roll up into P&L sections for financial reporting.
+
+export const PL_GROUPS = {
+  COGS: [
+    "Factory / Inventory (COGS)",
+    "Import & Customs",
+  ] as string[],
+  "OpEx — Marketing": [
+    "Digital Advertising",
+    "Marketing Services",
+  ] as string[],
+  "OpEx — Personnel": [
+    "Payroll",
+  ] as string[],
+  "OpEx — Facilities & Logistics": [
+    "Rent",
+    "Shipping & Freight",
+  ] as string[],
+  "OpEx — G&A": [
+    "SaaS & Software",
+    "Operations & Supplies",
+    "Meals & Entertainment",
+    "Travel",
+    "Petty Cash",
+    "Misc & Other",
+  ] as string[],
+  "Below the Line": [
+    "Taxes & Compliance",
+    "Bank Fees",
+    "Owner Draw / Personal",
+  ] as string[],
+  "Unclassified (Pending)": [
+    "Unclassified Outflows (115)",
+  ] as string[],
+};
+
+export type PLGroupKey = keyof typeof PL_GROUPS;
+
+/** Sum categories in a P&L group for a specific month, or all months if undefined. */
+export function sumGroup(groupKey: PLGroupKey, month?: MonthData): number {
+  const cats = PL_GROUPS[groupKey];
+  const months = month ? [month] : statements;
+  let total = 0;
+  for (const m of months) {
+    for (const e of m.expenses) {
+      if (cats.includes(e.category)) total += e.amount;
+    }
+  }
+  return total;
+}
+
+/** Sum a specific category for a specific month, or all months. */
+export function sumCategory(category: string, month?: MonthData): number {
+  const months = month ? [month] : statements;
+  let total = 0;
+  for (const m of months) {
+    for (const e of m.expenses) {
+      if (e.category === category) total += e.amount;
+    }
+  }
+  return total;
+}
+
+/** Sum expenses by business side (DTC vs SHL). Items without `side` count as DTC. */
+export function sumBySide(side: "DTC" | "SHL", month?: MonthData): number {
+  const months = month ? [month] : statements;
+  let total = 0;
+  for (const m of months) {
+    for (const e of m.expenses) {
+      const s = e.side ?? "DTC";
+      if (s === side) total += e.amount;
+    }
+  }
+  return total;
+}

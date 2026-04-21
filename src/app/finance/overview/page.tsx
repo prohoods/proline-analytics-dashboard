@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { statements, sumByCategory, totalByCategory, q1, CATEGORY_COLORS, CATEGORY_TEXT, monthRevenue, monthNetExpenses } from "@/lib/financial-data";
+import CategoryDrillDown from "@/components/CategoryDrillDown";
 
 function fmt(n: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n);
@@ -67,10 +68,10 @@ function fmtK(n: number) {
   return sign + "$" + (Math.abs(n) / 1000).toFixed(0) + "K";
 }
 
-// Categories to show in chart (skip the very-large KBBO pending bucket to avoid distortion)
+// Categories to show in chart — Unclassified Outflows included but still flagged pending
 const CHART_CATEGORIES = [
   "Factory / Inventory (COGS)",
-  "Vendor Payments (KBBO)",
+  "Unclassified Outflows (115)",
   "Payroll",
   "Digital Advertising",
   "Rent",
@@ -91,9 +92,11 @@ export default function CFOOverview() {
   const totals = totalByCategory();
   const totalExpenses = q1.totalExpenses;
   const netCashFlow = q1.netCashFlow;
+  const [drillCategory, setDrillCategory] = useState<string | null>(null);
 
   return (
     <div className="p-6 space-y-6">
+      <CategoryDrillDown category={drillCategory} onClose={() => setDrillCategory(null)} />
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-white">Financial Overview</h1>
@@ -179,11 +182,15 @@ export default function CFOOverview() {
               const amount = totals[cat] ?? 0;
               if (!amount) return null;
               const pct = (amount / totalExpenses) * 100;
-              const isPending = cat === "Vendor Payments (KBBO)";
+              const isPending = cat === "Unclassified Outflows (115)";
               return (
-                <div key={cat}>
+                <button
+                  key={cat}
+                  onClick={() => setDrillCategory(cat)}
+                  className="w-full text-left rounded-lg p-1.5 -mx-1.5 hover:bg-gray-800/50 transition-colors group"
+                >
                   <div className="flex justify-between text-xs mb-1">
-                    <span className={CATEGORY_TEXT[cat] ?? "text-gray-400"}>
+                    <span className={`${CATEGORY_TEXT[cat] ?? "text-gray-400"} group-hover:underline`}>
                       {cat}
                     </span>
                     <span className="text-white font-medium">{fmt(amount)} <span className="text-gray-500">({pct.toFixed(0)}%)</span></span>
@@ -194,7 +201,7 @@ export default function CFOOverview() {
                       style={{ width: `${Math.min(pct, 100)}%` }}
                     />
                   </div>
-                </div>
+                </button>
               );
             })}
           </div>
@@ -228,11 +235,15 @@ export default function CFOOverview() {
                 const mar = sumByCategory(statements[2])[cat] ?? 0;
                 const total = jan + feb + mar;
                 if (!total) return null;
-                const isPending = cat === "Vendor Payments (KBBO)";
+                const isPending = cat === "Unclassified Outflows (115)";
                 return (
-                  <tr key={cat} className={`hover:bg-gray-800/30 ${isPending ? "opacity-70" : ""}`}>
-                    <td className={`py-2.5 px-4 font-medium text-xs ${CATEGORY_TEXT[cat] ?? "text-gray-400"}`}>
-                      {cat}
+                  <tr
+                    key={cat}
+                    onClick={() => setDrillCategory(cat)}
+                    className={`hover:bg-gray-800/50 cursor-pointer transition-colors ${isPending ? "opacity-70" : ""}`}
+                  >
+                    <td className={`py-2.5 px-4 font-medium text-xs ${CATEGORY_TEXT[cat] ?? "text-gray-400"} hover:underline`}>
+                      {cat} <span className="text-gray-600">→</span>
                     </td>
                     <td className="py-2.5 px-4 text-right text-gray-300 text-xs">{jan ? fmt(jan) : "—"}</td>
                     <td className="py-2.5 px-4 text-right text-gray-300 text-xs">{feb ? fmt(feb) : "—"}</td>
@@ -261,7 +272,7 @@ export default function CFOOverview() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
           {[
             { label: "Ferguson Enterprises", note: "Marketplace payments TO us — already counted in revenue deposits. Not an expense.", status: "confirmed" },
-            { label: "KBBO ACH Payments", note: "Large vendor payments (Google Ads, contractors, Zline product). Labeled 'Vendor Payments' pending itemized breakdown.", status: "pending" },
+            { label: "KBBO ACH Payments", note: "Itemized Q1 — Google Ads $468K, Zline (SHL wholesale) $37K, Worldwide Logistic $43K, Renan Bonin (web dev) $10K. ~$1.05M in non-KBBO 115 outflows still pending (wires/checks).", status: "confirmed" },
             { label: "Worldwidelogis Dzurov", note: "Import & customs broker for Chinese factory shipments.", status: "confirmed" },
             { label: "Branch 0052 Utah Withdrawals", note: "Petty cash — regular cash withdrawals ~$7K/month.", status: "confirmed" },
             { label: "LGS1997BYU PayPal", note: "Owner draw — Nate's tuition payments via PayPal (~$1,500/month).", status: "confirmed" },

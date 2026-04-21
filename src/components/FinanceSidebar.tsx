@@ -5,11 +5,40 @@ import { useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "@/components/ThemeProvider";
 
-const navItems = [
-  { href: "/finance/overview", label: "Financial Overview", icon: "🏦" },
-  { href: "/finance/expenses", label: "Expenses", icon: "💳" },
-  { href: "/finance/payroll", label: "Payroll & Benefits", icon: "👥" },
-  { href: "/finance/reconciliation", label: "Reconciliation", icon: "🔗" },
+interface NavGroup {
+  label: string;
+  items: { href: string; label: string; icon: string }[];
+}
+
+const navGroups: NavGroup[] = [
+  {
+    label: "Overview",
+    items: [
+      { href: "/finance/overview",        label: "Financial Overview",     icon: "🏦" },
+      { href: "/finance/upload",          label: "Upload Statements",      icon: "📤" },
+    ],
+  },
+  {
+    label: "CFO Reporting",
+    items: [
+      { href: "/finance/cash-treasury",   label: "Cash & Treasury",        icon: "💰" },
+      { href: "/finance/reporting",       label: "Financial Reporting",    icon: "📊" },
+      { href: "/finance/board",           label: "Board & Executive",      icon: "📋" },
+      { href: "/finance/planning",        label: "Planning & Forecasting", icon: "📈" },
+      { href: "/finance/operational",     label: "Operational Performance",icon: "⚙️" },
+      { href: "/finance/compliance",      label: "Regulatory & Compliance",icon: "⚖️" },
+      { href: "/finance/risk",            label: "Risk & Controls",        icon: "🛡️" },
+      { href: "/finance/strategic",       label: "M&A / Strategic",        icon: "🎯" },
+    ],
+  },
+  {
+    label: "Detailed Ledgers",
+    items: [
+      { href: "/finance/expenses",        label: "Expenses",               icon: "💳" },
+      { href: "/finance/payroll",         label: "Payroll & Benefits",     icon: "👥" },
+      { href: "/finance/reconciliation",  label: "Reconciliation",         icon: "🔗" },
+    ],
+  },
 ];
 
 export default function FinanceSidebar() {
@@ -40,29 +69,33 @@ export default function FinanceSidebar() {
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 overflow-y-auto px-3 py-2">
-        <div className="px-3 mb-2 text-xs font-semibold uppercase tracking-wider text-emerald-600">
-          Finance Hub
-        </div>
-        <div className="space-y-0.5">
-          {navItems.map(item => {
-            const isActive = pathname === item.href;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
-                  isActive
-                    ? "bg-emerald-600/20 text-emerald-400 font-medium"
-                    : "text-gray-400 hover:text-gray-100 hover:bg-gray-800"
-                }`}
-              >
-                <span className="text-base">{item.icon}</span>
-                {item.label}
-              </Link>
-            );
-          })}
-        </div>
+      <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-4">
+        {navGroups.map(group => (
+          <div key={group.label}>
+            <div className="px-3 mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-600">
+              {group.label}
+            </div>
+            <div className="space-y-0.5">
+              {group.items.map(item => {
+                const isActive = pathname === item.href;
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                      isActive
+                        ? "bg-emerald-600/20 text-emerald-400 font-medium"
+                        : "text-gray-400 hover:text-gray-100 hover:bg-gray-800"
+                    }`}
+                  >
+                    <span className="text-base">{item.icon}</span>
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        ))}
       </nav>
 
       {/* Settings dropdown */}

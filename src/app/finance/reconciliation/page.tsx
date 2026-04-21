@@ -85,7 +85,7 @@ export default function ReconciliationPage() {
   const bankAds = bankDigitalAds();
   const bankTotalDigitalAds = bankAds.reduce((s, m) => s + m.digitalAds, 0);
   const bankKbbo = statements.reduce((s, m) => {
-    return s + m.expenses.filter(e => e.category === "Vendor Payments (KBBO)").reduce((ss, e) => ss + e.amount, 0);
+    return s + m.expenses.filter(e => e.category === "Unclassified Outflows (115)").reduce((ss, e) => ss + e.amount, 0);
   }, 0);
 
   // ── Live platform figures ─────────────────────────────────────────────────
@@ -108,9 +108,6 @@ export default function ReconciliationPage() {
 
   // Ad spend gap: platform reported vs bank digital ads categorized
   const adSpendDiff = totalPlatformSpend - bankTotalDigitalAds;
-
-  // KBBO explained: how much of KBBO could be Google Ads
-  const kbboUnexplained = bankKbbo - googleQ1Spend;
 
   const Skeleton = () => <div className="h-6 bg-gray-800 rounded animate-pulse w-24" />;
 
@@ -226,7 +223,7 @@ export default function ReconciliationPage() {
       <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-800">
           <h2 className="text-sm font-semibold text-white">Ad Spend Reconciliation</h2>
-          <p className="text-xs text-gray-500 mt-0.5">Platform-reported spend vs categorized bank outflows — helps identify what's inside the KBBO bucket</p>
+          <p className="text-xs text-gray-500 mt-0.5">Platform-reported spend vs categorized bank outflows — KBBO now itemized; gap is platform-reporting lag/refunds</p>
         </div>
 
         <table className="w-full text-sm">
@@ -248,15 +245,15 @@ export default function ReconciliationPage() {
               <td className="py-3 px-4 text-right font-medium text-white">
                 {loading ? <span className="text-gray-600">—</span> : errors.google ? <span className="text-red-400 text-xs">error</span> : fmt(googleQ1Spend)}
               </td>
-              <td className="py-3 px-4 text-right text-gray-400">
-                <span className="text-yellow-500 text-xs">In KBBO bucket</span>
+              <td className="py-3 px-4 text-right font-medium text-white">
+                {fmt(468_202.28)}
               </td>
               <td className="py-3 px-4 text-right">
                 {loading || errors.google ? "—" : (
-                  <span className="text-xs text-yellow-400">{fmt(googleQ1Spend)} unaccounted</span>
+                  <span className="text-xs text-gray-400">{fmt(googleQ1Spend - 468_202.28)}</span>
                 )}
               </td>
-              <td className="py-3 px-4 text-xs text-gray-500">Google Ads billed via KBBO ACH — not yet split out</td>
+              <td className="py-3 px-4 text-xs text-gray-500">Itemized from KBBO ACH export — 6 payments Jan–Mar</td>
             </tr>
 
             {/* Bing */}
@@ -342,72 +339,51 @@ export default function ReconciliationPage() {
               <td className={`py-3 px-4 text-right text-sm ${loading ? "text-gray-500" : adSpendDiff - googleQ1Spend >= 0 ? "text-emerald-400" : "text-yellow-400"}`}>
                 {loading ? "—" : fmtDiff(adSpendDiff - googleQ1Spend)}
               </td>
-              <td className="py-3 px-4 text-xs text-gray-500">Google excluded (inside KBBO)</td>
+              <td className="py-3 px-4 text-xs text-gray-500">Google excluded (shown separately above)</td>
             </tr>
           </tfoot>
         </table>
       </div>
 
-      {/* ── SECTION 4: KBBO Decoder ───────────────────────────────────────── */}
+      {/* ── SECTION 4: KBBO Breakdown (itemized from ACH portal export) ─────── */}
       <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-800">
-          <h2 className="text-sm font-semibold text-white">KBBO Bucket Decoder</h2>
-          <p className="text-xs text-gray-500 mt-0.5">Using Google Ads live data to estimate what's inside the unclassified KBBO ACH payments</p>
+          <h2 className="text-sm font-semibold text-white">KBBO ACH Q1 Breakdown</h2>
+          <p className="text-xs text-gray-500 mt-0.5">Itemized from the KeyBank ACH portal export — no longer a mystery bucket</p>
         </div>
         <div className="p-5 space-y-4">
-          {/* KBBO total */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="bg-gray-800/50 rounded-lg p-4">
-              <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">KBBO Total (Bank)</div>
-              <div className="text-xl font-bold text-yellow-400">{fmt(bankKbbo)}</div>
-              <div className="text-xs text-gray-500 mt-1">Jan + Feb + Mar KBBO ACH</div>
+              <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Google Ads (via KBBO)</div>
+              <div className="text-xl font-bold text-blue-400">{fmt(468_202.28)}</div>
+              <div className="text-xs text-gray-500 mt-1">84% of KBBO — Digital Ads</div>
             </div>
             <div className="bg-gray-800/50 rounded-lg p-4">
-              <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Google Ads Q1 (Live)</div>
-              <div className={`text-xl font-bold ${loading ? "text-gray-600" : errors.google ? "text-red-400" : "text-blue-400"}`}>
-                {loading ? "Loading…" : errors.google ? "Error" : fmt(googleQ1Spend)}
-              </div>
-              <div className="text-xs text-gray-500 mt-1">Google-reported spend, Q1 2026</div>
+              <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Zline (SHL COGS)</div>
+              <div className="text-xl font-bold text-cyan-400">{fmt(36_965.97)}</div>
+              <div className="text-xs text-gray-500 mt-1">Wholesale supplier — tagged side=SHL</div>
             </div>
             <div className="bg-gray-800/50 rounded-lg p-4">
-              <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Remaining (Contractors + Zline)</div>
-              <div className={`text-xl font-bold ${loading || errors.google ? "text-gray-600" : "text-white"}`}>
-                {loading || errors.google ? "—" : fmt(Math.max(0, kbboUnexplained))}
-              </div>
-              <div className="text-xs text-gray-500 mt-1">KBBO minus Google Ads estimate</div>
+              <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Worldwide Logistic</div>
+              <div className="text-xl font-bold text-violet-400">{fmt(43_282.53)}</div>
+              <div className="text-xs text-gray-500 mt-1">Import & Customs broker</div>
+            </div>
+            <div className="bg-gray-800/50 rounded-lg p-4">
+              <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Renan Bonin (Web Dev)</div>
+              <div className="text-xl font-bold text-pink-400">{fmt(10_400)}</div>
+              <div className="text-xs text-gray-500 mt-1">$5,200 × 2 — designer retainer</div>
             </div>
           </div>
 
-          {/* Breakdown bars */}
-          {!loading && !errors.google && (
-            <div>
-              <div className="text-xs text-gray-500 mb-3">Estimated KBBO composition</div>
-              <div className="space-y-3">
-                {[
-                  { label: "Google Ads (confirmed via API)", amount: googleQ1Spend, color: "bg-blue-500", confirmed: true },
-                  { label: "Renan contractor + Zline product (estimated)", amount: Math.max(0, kbboUnexplained * 0.7), color: "bg-orange-500", confirmed: false },
-                  { label: "Other / unknown", amount: Math.max(0, kbboUnexplained * 0.3), color: "bg-gray-600", confirmed: false },
-                ].map(item => {
-                  const p = bankKbbo > 0 ? (item.amount / bankKbbo) * 100 : 0;
-                  return (
-                    <div key={item.label}>
-                      <div className="flex justify-between text-xs mb-1">
-                        <span className={item.confirmed ? "text-white" : "text-gray-400"}>
-                          {item.label}
-                          {!item.confirmed && <span className="ml-1.5 text-gray-600">est.</span>}
-                        </span>
-                        <span className="text-white font-medium">{fmt(item.amount)} <span className="text-gray-500">({p.toFixed(0)}%)</span></span>
-                      </div>
-                      <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
-                        <div className={`h-full rounded-full ${item.color} ${!item.confirmed ? "opacity-50" : ""}`} style={{ width: `${Math.min(p, 100)}%` }} />
-                      </div>
-                    </div>
-                  );
-                })}
+          <div className="bg-yellow-900/20 border border-yellow-800/40 rounded-lg p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-xs text-yellow-300 uppercase tracking-wide">Residual: Non-KBBO 115 Outflows</div>
+                <div className="text-xl font-bold text-yellow-400">{fmt(bankKbbo)}</div>
+                <p className="text-xs text-yellow-200/70 mt-1">Bank statement shows 115 outflows beyond the KBBO portal — likely outgoing wires, checks, or other ACH rails. Needs bank statement PDFs to resolve.</p>
               </div>
-              <p className="text-xs text-gray-600 mt-3">Non-Google portions are rough estimates until KBBO breakdown is confirmed with your boss.</p>
             </div>
-          )}
+          </div>
         </div>
       </div>
 

@@ -43,7 +43,7 @@ ${monthLines}
 TOP EXPENSE CATEGORIES:
 ${topCats}
 
-NOTE: "Vendor Payments (KBBO)" is a pending bucket — contains Google Ads, contractor payments (Renan), and Zline product purchases that haven't been broken down yet.
+NOTE: KBBO ACH is now itemized — Google Ads $468K (Q1), Zline (SHL wholesale supplier) $37K, Worldwide Logistic $43K, Renan Bonin (web dev) $10K. A separate "Unclassified Outflows (115)" bucket holds ~$1.05M Q1 residual — non-KBBO bank debits (likely outgoing wires/checks) that haven't been itemized yet.
 NOTE: March had a double rent payment (KWS Companies paid twice — $64K × 2) which inflated March expenses.
 NOTE: March payroll was ~$117K vs $87K in Feb — possible bonuses or extra headcount.
 
