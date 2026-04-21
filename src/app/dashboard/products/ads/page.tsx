@@ -44,6 +44,151 @@ const fmtPct = (n: number) => (n * 100).toFixed(1) + "%";
 
 type SortKey = "adSpend" | "adRevenue" | "roas" | "clicks" | "conversions" | "ctr" | "cpc";
 
+function RoasBadge({ roas, large }: { roas: number | null; large?: boolean }) {
+  if (roas === null) return <span className="text-gray-600">—</span>;
+  const color = roas >= 4 ? "text-green-400" : roas >= 2 ? "text-yellow-400" : "text-red-400";
+  return <span className={`font-semibold ${color} ${large ? "text-2xl" : ""}`}>{roas.toFixed(2)}x</span>;
+}
+
+function MetricCard({ label, value, sub }: { label: string; value: React.ReactNode; sub?: string }) {
+  return (
+    <div className="bg-gray-800/60 rounded-lg p-3">
+      <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">{label}</div>
+      <div className="text-lg font-bold text-white">{value}</div>
+      {sub && <div className="text-xs text-gray-500 mt-0.5">{sub}</div>}
+    </div>
+  );
+}
+
+function ProductDetailPanel({ product, onClose, totalSpend }: {
+  product: AdProduct;
+  onClose: () => void;
+  totalSpend: number;
+}) {
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const spendShare = totalSpend > 0 ? (product.adSpend / totalSpend) * 100 : 0;
+  const estimatedProfit = product.costPerUnit != null && product.conversions > 0
+    ? product.adRevenue - product.adSpend - product.costPerUnit * product.conversions
+    : null;
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 bg-black/50 z-40 backdrop-blur-sm"
+        onClick={onClose}
+      />
+      {/* Panel */}
+      <div className="fixed right-0 top-0 h-full w-full max-w-md bg-gray-900 border-l border-gray-700 z-50 overflow-y-auto shadow-2xl">
+        {/* Header */}
+        <div className="sticky top-0 bg-gray-900 border-b border-gray-800 px-5 py-4 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Product Detail</div>
+            <div className="text-white font-semibold text-sm leading-snug">{product.productTitle}</div>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-white transition-colors flex-shrink-0 mt-0.5"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="px-5 py-5 space-y-5">
+          {/* Identity */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-gray-500 uppercase tracking-wide">SKU</span>
+              {product.sku
+                ? <span className="font-mono text-sm text-white font-medium">{product.sku}</span>
+                : <span className="text-xs text-gray-600 italic">Not matched — variant may be deleted</span>
+              }
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-gray-500 uppercase tracking-wide">Shopify Variant ID</span>
+              <span className="font-mono text-xs text-gray-400">{product.variantId || "—"}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-gray-500 uppercase tracking-wide">Google Item ID</span>
+              <span className="font-mono text-xs text-gray-500 truncate max-w-[200px]">{product.productItemId}</span>
+            </div>
+            {product.variantId && (
+              <a
+                href={`https://admin.shopify.com/store/861fdb/variants/${product.variantId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 transition-colors mt-1"
+              >
+                View variant in Shopify Admin
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+              </a>
+            )}
+          </div>
+
+          <div className="border-t border-gray-800" />
+
+          {/* Spend & Revenue */}
+          <div>
+            <div className="text-xs text-gray-500 uppercase tracking-wide mb-3">Spend & Revenue</div>
+            <div className="grid grid-cols-2 gap-2.5">
+              <MetricCard label="Ad Spend" value={fmt(product.adSpend)} sub={`${spendShare.toFixed(1)}% of total`} />
+              <MetricCard label="Ad Revenue" value={fmt(product.adRevenue)} />
+              <MetricCard label="ROAS" value={<RoasBadge roas={product.roas} large />} sub="Revenue ÷ Spend" />
+              <MetricCard label="Conversions" value={product.conversions.toFixed(1)} sub="Google-attributed" />
+            </div>
+          </div>
+
+          {/* Engagement */}
+          <div>
+            <div className="text-xs text-gray-500 uppercase tracking-wide mb-3">Engagement</div>
+            <div className="grid grid-cols-2 gap-2.5">
+              <MetricCard label="Clicks" value={fmtN(product.clicks)} />
+              <MetricCard label="Impressions" value={fmtN(product.impressions)} />
+              <MetricCard label="CTR" value={fmtPct(product.ctr)} sub="Clicks ÷ Impressions" />
+              <MetricCard label="CPC" value={product.cpc != null ? fmt2(product.cpc) : "—"} sub="Spend ÷ Clicks" />
+            </div>
+          </div>
+
+          {/* COGS & Profit */}
+          <div>
+            <div className="text-xs text-gray-500 uppercase tracking-wide mb-3">Cost & Profitability</div>
+            <div className="grid grid-cols-2 gap-2.5">
+              <MetricCard
+                label="COGS / Unit"
+                value={product.costPerUnit != null ? fmt2(product.costPerUnit) : <span className="text-gray-500 text-base">No data</span>}
+              />
+              <MetricCard label="Conv. Rate" value={fmtPct(product.cvr)} sub="Conversions ÷ Clicks" />
+              {estimatedProfit != null && (
+                <div className="col-span-2 bg-gray-800/60 rounded-lg p-3">
+                  <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Est. Net Profit</div>
+                  <div className={`text-lg font-bold ${estimatedProfit >= 0 ? "text-green-400" : "text-red-400"}`}>
+                    {fmt(estimatedProfit)}
+                  </div>
+                  <div className="text-xs text-gray-500 mt-0.5">
+                    Ad Revenue − Spend − (COGS × Conversions)
+                  </div>
+                </div>
+              )}
+            </div>
+            {product.costPerUnit == null && (
+              <p className="text-xs text-gray-600 mt-2">
+                Add this SKU to the COGS sheet to see estimated net profit.
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
 function MethodologyNote() {
   const [open, setOpen] = useState(false);
   return (
@@ -65,9 +210,9 @@ function MethodologyNote() {
               <li><span className="text-gray-200">Ad Revenue</span> — Conversion value attributed to this product by Google (last-click). Not total Shopify revenue.</li>
               <li><span className="text-gray-200">ROAS</span> — Ad Revenue ÷ Spend. A 4x ROAS means $4 attributed revenue per $1 spent.</li>
               <li><span className="text-gray-200">Conversions</span> — Number of purchases Google attributed to clicks on this product&apos;s ad.</li>
-              <li><span className="text-gray-200">CTR</span> — Clicks ÷ Impressions. How often someone clicks after seeing the ad.</li>
+              <li><span className="text-gray-200">CTR</span> — Clicks ÷ Impressions.</li>
               <li><span className="text-gray-200">CPC</span> — Cost Per Click = Spend ÷ Clicks.</li>
-              <li><span className="text-gray-200">COGS / Unit</span> — Our static cost per unit from the cost sheet. Does not account for units sold per campaign.</li>
+              <li><span className="text-gray-200">COGS / Unit</span> — Our static cost per unit from the cost sheet.</li>
             </ul>
           </div>
           <div>
@@ -76,19 +221,13 @@ function MethodologyNote() {
               <li>Google embeds the Shopify variant ID in the product_item_id (e.g. <span className="font-mono text-xs text-gray-300">shopify_US_49014031024430</span>).</li>
               <li>We look that variant ID up against all current Shopify products to get the SKU.</li>
               <li>Products showing <span className="font-mono text-xs text-gray-300">—</span> have no matching variant in Shopify — this usually means the product variant was deleted or archived after it ran ads.</li>
-              <li>COGS is then looked up by SKU from our cost sheet. No SKU = no COGS shown.</li>
+              <li>Click any row to see the full product title, Shopify variant link, and estimated net profit.</li>
             </ul>
           </div>
         </div>
       )}
     </div>
   );
-}
-
-function RoasBadge({ roas }: { roas: number | null }) {
-  if (roas === null) return <span className="text-gray-600">—</span>;
-  const color = roas >= 4 ? "text-green-400" : roas >= 2 ? "text-yellow-400" : "text-red-400";
-  return <span className={`font-semibold ${color}`}>{roas.toFixed(2)}x</span>;
 }
 
 export default function ProductAdsPage() {
@@ -101,6 +240,7 @@ export default function ProductAdsPage() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [search, setSearch] = useState("");
   const [showUnmatched, setShowUnmatched] = useState(true);
+  const [selected, setSelected] = useState<AdProduct | null>(null);
 
   useEffect(() => {
     const { start, end } = getRange(rangeKey);
@@ -199,7 +339,7 @@ export default function ProductAdsPage() {
 
       {!loading && !error && summary && (
         <>
-          {/* KPI row 1 — Spend & Revenue */}
+          {/* KPI row 1 */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-gray-900 border border-red-800/30 rounded-xl p-5">
               <div className="text-xs text-red-400 uppercase tracking-wide mb-1">Total Ad Spend</div>
@@ -225,7 +365,7 @@ export default function ProductAdsPage() {
             </div>
           </div>
 
-          {/* KPI row 2 — Efficiency */}
+          {/* KPI row 2 */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
               <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Avg CTR</div>
@@ -262,17 +402,21 @@ export default function ProductAdsPage() {
                 {filtered.slice(0, 8).map(p => {
                   const pct = summary.totalSpend > 0 ? (p.adSpend / summary.totalSpend) * 100 : 0;
                   return (
-                    <div key={p.productItemId}>
+                    <button
+                      key={p.productItemId}
+                      onClick={() => setSelected(p)}
+                      className="w-full text-left group"
+                    >
                       <div className="flex justify-between text-sm mb-1">
-                        <span className="text-gray-300 truncate max-w-sm">{p.sku ?? p.productTitle}</span>
+                        <span className="text-gray-300 truncate max-w-sm group-hover:text-white transition-colors">{p.sku ?? p.productTitle}</span>
                         <span className="text-white font-medium ml-4 flex-shrink-0">
                           {fmt(p.adSpend)} <span className="text-gray-500">· <RoasBadge roas={p.roas} /></span>
                         </span>
                       </div>
                       <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
-                        <div className="h-full bg-blue-500 rounded-full" style={{ width: `${pct}%` }} />
+                        <div className="h-full bg-blue-500 rounded-full group-hover:bg-blue-400 transition-colors" style={{ width: `${pct}%` }} />
                       </div>
-                    </div>
+                    </button>
                   );
                 })}
               </div>
@@ -294,7 +438,7 @@ export default function ProductAdsPage() {
             >
               {showUnmatched ? "All products" : "SKU-matched only"}
             </button>
-            <span className="text-xs text-gray-500">{filtered.length} products</span>
+            <span className="text-xs text-gray-500">{filtered.length} products · click any row to expand</span>
           </div>
 
           {/* Table */}
@@ -319,7 +463,11 @@ export default function ProductAdsPage() {
                     <tr><td colSpan={9} className="px-4 py-8 text-center text-gray-500">No products found.</td></tr>
                   )}
                   {filtered.map(p => (
-                    <tr key={p.productItemId} className="hover:bg-gray-800/40 transition-colors">
+                    <tr
+                      key={p.productItemId}
+                      onClick={() => setSelected(p)}
+                      className={`hover:bg-gray-800/60 transition-colors cursor-pointer ${selected?.productItemId === p.productItemId ? "bg-blue-900/20 ring-1 ring-inset ring-blue-700/40" : ""}`}
+                    >
                       <td className="px-4 py-2.5">
                         <div className={`font-mono font-medium truncate max-w-xs ${p.sku ? "text-white" : "text-gray-600"}`}>
                           {p.sku ?? "—"}
@@ -360,6 +508,15 @@ export default function ProductAdsPage() {
             </div>
           </div>
         </>
+      )}
+
+      {/* Detail panel */}
+      {selected && (
+        <ProductDetailPanel
+          product={selected}
+          onClose={() => setSelected(null)}
+          totalSpend={summary?.totalSpend ?? 0}
+        />
       )}
     </div>
   );
