@@ -7,6 +7,7 @@ import {
   sumGroup,
   q1,
 } from "@/lib/financial-data";
+import InfoTooltip from "@/components/InfoTooltip";
 import {
   LineChart,
   Line,
@@ -74,20 +75,66 @@ export default function BoardPage() {
       {/* Header */}
       <div className="flex items-center gap-3">
         <div className="w-10 h-10 rounded-xl bg-emerald-900/40 border border-emerald-800/40 flex items-center justify-center text-xl">📋</div>
-        <div>
-          <h1 className="text-2xl font-bold text-white">Board &amp; Executive</h1>
+        <div className="flex-1">
+          <div className="flex items-center">
+            <h1 className="text-2xl font-bold text-white">Board &amp; Executive</h1>
+            <InfoTooltip title="What is this page?" size="md">
+              A one-page summary you&apos;d show to investors, a board of directors, or a partner
+              to answer <em>&quot;how is the business doing?&quot;</em> at a glance. Each tile is a
+              headline number; hover the <span className="text-emerald-400">?</span> on any of
+              them for a plain-language explanation. The charts show how those numbers moved
+              across the quarter, and the auto-commentary below reads the data and flags what&apos;s
+              good or concerning.
+            </InfoTooltip>
+          </div>
           <p className="text-gray-500 text-sm mt-0.5">Q1 2026 performance summary for board review</p>
         </div>
       </div>
 
       {/* 6 exec KPI tiles */}
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-        <ExecKpi label="Revenue" value={fmt(totalRevenue)} trend={trend(series.map(s => s.revenue))} color="text-emerald-400" />
-        <ExecKpi label="Gross Margin" value={`${grossMargin.toFixed(1)}%`} trend={trend(series.map(s => s.grossMargin))} color={grossMargin >= 40 ? "text-emerald-400" : "text-yellow-400"} />
-        <ExecKpi label="Operating Income" value={fmt(opIncome)} trend={trend(series.map(s => s.opIncome))} color={opIncome >= 0 ? "text-emerald-400" : "text-red-400"} />
-        <ExecKpi label="Operating Margin" value={`${opMargin.toFixed(1)}%`} trend={trend(series.map(s => (s.revenue === 0 ? 0 : (s.opIncome / s.revenue) * 100)))} color={opMargin >= 0 ? "text-emerald-400" : "text-red-400"} />
-        <ExecKpi label="Cash on Hand" value={fmt(cashOnHand)} trend={trend(series.map(s => s.endCash))} color="text-white" />
-        <ExecKpi label="Runway" value={runway > 100 ? "∞" : `${runway.toFixed(1)} mo`} trend={runway > 12 ? "healthy" : runway > 6 ? "watch" : "critical"} color={runway > 12 ? "text-emerald-400" : runway > 6 ? "text-yellow-400" : "text-red-400"} />
+        <ExecKpi
+          label="Revenue"
+          value={fmt(totalRevenue)}
+          trend={trend(series.map(s => s.revenue))}
+          color="text-emerald-400"
+          tooltip={<>Total money that came IN the door — Shopify sales, Ferguson marketplace payouts, refunds received. It&apos;s deposits to account …0115. Does not subtract COGS or any expense yet.</>}
+        />
+        <ExecKpi
+          label="Gross Margin"
+          value={`${grossMargin.toFixed(1)}%`}
+          trend={trend(series.map(s => s.grossMargin))}
+          color={grossMargin >= 40 ? "text-emerald-400" : "text-yellow-400"}
+          tooltip={<><strong>Revenue minus cost-of-goods, as a %.</strong> If you sold $100 of product and it cost you $60 to buy from the factory + import it, your gross margin is 40%. Higher = you have more money left over to pay for ads, payroll, rent. For ecommerce, 40%+ is healthy.</>}
+        />
+        <ExecKpi
+          label="Operating Income"
+          value={fmt(opIncome)}
+          trend={trend(series.map(s => s.opIncome))}
+          color={opIncome >= 0 ? "text-emerald-400" : "text-red-400"}
+          tooltip={<>The profit from running the business before taxes, owner draws, and one-time items. Revenue minus COGS minus all operating expenses (ads, payroll, rent, software, etc.). If this is negative, the core business is losing money.</>}
+        />
+        <ExecKpi
+          label="Operating Margin"
+          value={`${opMargin.toFixed(1)}%`}
+          trend={trend(series.map(s => (s.revenue === 0 ? 0 : (s.opIncome / s.revenue) * 100)))}
+          color={opMargin >= 0 ? "text-emerald-400" : "text-red-400"}
+          tooltip={<>Operating income as a % of revenue. For every $100 of sales, this is how many dollars stay as profit after paying for product, ads, people, and overhead. Ecommerce benchmarks: 5%+ is decent, 10%+ is good, 15%+ is great.</>}
+        />
+        <ExecKpi
+          label="Cash on Hand"
+          value={fmt(cashOnHand)}
+          trend={trend(series.map(s => s.endCash))}
+          color="text-white"
+          tooltip={<>Actual money sitting in your bank accounts right now (end of the quarter). Different from profit — profit is an accounting number, cash is what you can actually spend.</>}
+        />
+        <ExecKpi
+          label="Runway"
+          value={runway > 100 ? "∞" : `${runway.toFixed(1)} mo`}
+          trend={runway > 12 ? "healthy" : runway > 6 ? "watch" : "critical"}
+          color={runway > 12 ? "text-emerald-400" : runway > 6 ? "text-yellow-400" : "text-red-400"}
+          tooltip={<><strong>How many months the business can keep running if revenue stopped tomorrow.</strong> Calculated as: Cash on Hand ÷ average monthly burn (how much you spend in a typical month). &quot;∞&quot; means you&apos;re profitable, so burn doesn&apos;t apply. Rule of thumb: below 6 months is scary, 12+ is comfortable.</>}
+        />
       </div>
 
       {/* Revenue vs Expenses chart */}
@@ -183,7 +230,7 @@ export default function BoardPage() {
   );
 }
 
-function ExecKpi({ label, value, trend, color }: { label: string; value: string; trend: string; color: string }) {
+function ExecKpi({ label, value, trend, color, tooltip }: { label: string; value: string; trend: string; color: string; tooltip?: React.ReactNode }) {
   const trendIcon =
     trend === "up" ? "↑" :
     trend === "down" ? "↓" :
@@ -197,7 +244,10 @@ function ExecKpi({ label, value, trend, color }: { label: string; value: string;
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
       <div className="flex items-center justify-between mb-1">
-        <div className="text-xs text-gray-500 uppercase tracking-wide">{label}</div>
+        <div className="text-xs text-gray-500 uppercase tracking-wide flex items-center">
+          {label}
+          {tooltip && <InfoTooltip title={label}>{tooltip}</InfoTooltip>}
+        </div>
         <span className={`text-xs font-semibold ${trendColor}`}>{trendIcon}</span>
       </div>
       <div className={`text-2xl font-bold ${color}`}>{value}</div>

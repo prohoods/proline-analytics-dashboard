@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { q1, sumGroup } from "@/lib/financial-data";
+import InfoTooltip from "@/components/InfoTooltip";
 import {
   BarChart,
   Bar,
@@ -82,27 +83,90 @@ export default function StrategicPage() {
       <div className="flex items-center gap-3">
         <div className="w-10 h-10 rounded-xl bg-emerald-900/40 border border-emerald-800/40 flex items-center justify-center text-xl">🎯</div>
         <div>
-          <h1 className="text-2xl font-bold text-white">M&amp;A / Strategic</h1>
+          <div className="flex items-center">
+            <h1 className="text-2xl font-bold text-white">M&amp;A / Strategic</h1>
+            <InfoTooltip title="What is this page?">
+              <p className="mb-2">M&amp;A = Mergers &amp; Acquisitions. This page estimates what the business could sell for if you ever wanted to exit, and tracks what paperwork a buyer would demand.</p>
+              <p>Hover any <strong>?</strong> to get a plain-English explanation — no finance background needed.</p>
+            </InfoTooltip>
+          </div>
           <p className="text-gray-500 text-sm mt-0.5">Valuation tracking, deal-room readiness, and strategic transaction preparation</p>
         </div>
       </div>
 
       {/* Valuation KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <KpiCard label="Annualized EBITDA (Proxy)" value={fmt(adjustedEbitda)} sub="Q1 operating income × 4, adjusted" color="text-emerald-400" />
-        <KpiCard label="Current Multiple" value={`${multiple.toFixed(1)}×`} sub="Adjust below to see valuation" color="text-white" />
-        <KpiCard label="Implied Valuation" value={valuation >= 1_000_000 ? fmtM(valuation) : fmt(valuation)} sub="EBITDA × multiple" color="text-emerald-400" />
-        <KpiCard label="Exit Readiness Score" value={`${readinessScore}/100`} sub={readinessScore >= 70 ? "Ready for process" : readinessScore >= 50 ? "6+ months of prep needed" : "12+ months of prep needed"} color={readinessScore >= 70 ? "text-emerald-400" : readinessScore >= 50 ? "text-yellow-400" : "text-red-400"} />
+        <KpiCard
+          label="Annualized EBITDA (Proxy)"
+          value={fmt(adjustedEbitda)}
+          sub="Q1 operating income × 4, adjusted"
+          color="text-emerald-400"
+          tooltip={
+            <>
+              <p className="mb-2"><strong>EBITDA</strong> = Earnings Before Interest, Taxes, Depreciation, and Amortization. Think of it as &quot;profit from running the business,&quot; before the IRS and lenders take their cuts.</p>
+              <p className="mb-2"><strong>Annualized</strong> = we took Q1 (3 months) and multiplied by 4 to estimate a full year. It&apos;s a rough shortcut — real buyers will want trailing 12 months.</p>
+              <p>Buyers value businesses as a multiple of this number, so bigger EBITDA = bigger sale price.</p>
+            </>
+          }
+        />
+        <KpiCard
+          label="Current Multiple"
+          value={`${multiple.toFixed(1)}×`}
+          sub="Adjust below to see valuation"
+          color="text-white"
+          tooltip={
+            <>
+              <p className="mb-2">A <strong>multiple</strong> is how many years of EBITDA a buyer will pay upfront. A 5× multiple means they pay 5 years of profit in cash today.</p>
+              <p>Distressed sales get 2×. Strong strategic buyers pay 6-8×. The multiple depends on growth, stability, customer diversification, and how badly the buyer wants you.</p>
+            </>
+          }
+        />
+        <KpiCard
+          label="Implied Valuation"
+          value={valuation >= 1_000_000 ? fmtM(valuation) : fmt(valuation)}
+          sub="EBITDA × multiple"
+          color="text-emerald-400"
+          tooltip={
+            <>
+              <p className="mb-2"><strong>Valuation</strong> = the estimated sale price of the whole business. Simple math: Adjusted EBITDA × Multiple.</p>
+              <p>This is an <em>enterprise value</em> estimate — before subtracting debt and adding back cash in the bank. The actual check at closing will differ.</p>
+            </>
+          }
+        />
+        <KpiCard
+          label="Exit Readiness Score"
+          value={`${readinessScore}/100`}
+          sub={readinessScore >= 70 ? "Ready for process" : readinessScore >= 50 ? "6+ months of prep needed" : "12+ months of prep needed"}
+          color={readinessScore >= 70 ? "text-emerald-400" : readinessScore >= 50 ? "text-yellow-400" : "text-red-400"}
+          tooltip={
+            <>
+              <p className="mb-2">How prepared the business is to actually go through a sale. Not about whether it&apos;s <em>worth</em> selling — about whether the paperwork, books, and systems are clean enough that a buyer won&apos;t walk away.</p>
+              <p>Score below 50 = months of cleanup before you can credibly start a process. Score above 70 = hire a banker and start talking to buyers.</p>
+            </>
+          }
+        />
       </div>
 
       {/* Valuation calculator */}
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-        <h2 className="text-sm font-semibold text-white mb-4">Valuation Calculator</h2>
+        <div className="flex items-center mb-4">
+          <h2 className="text-sm font-semibold text-white">Valuation Calculator</h2>
+          <InfoTooltip title="How to use this">
+            <p className="mb-2">Slide the three knobs to model what the business might sell for under different assumptions. The bridge below shows how the final number is calculated step-by-step.</p>
+            <p>Addbacks increase the sale price because they represent profit that <em>would</em> exist if you weren&apos;t running the business yourself.</p>
+          </InfoTooltip>
+        </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label className="text-xs text-gray-400 font-medium">Multiple (× EBITDA)</label>
+              <div className="flex items-center">
+                <label className="text-xs text-gray-400 font-medium">Multiple (× EBITDA)</label>
+                <InfoTooltip title="Multiple">
+                  <p className="mb-2">The price-to-profit ratio buyers use. A 5× multiple means they pay 5 years of annual profit upfront.</p>
+                  <p>See the buyer-type chart below — it shows the typical multiple range for different kinds of buyers.</p>
+                </InfoTooltip>
+              </div>
               <span className="text-sm text-white font-semibold tabular-nums">{multiple.toFixed(1)}×</span>
             </div>
             <input
@@ -121,7 +185,13 @@ export default function StrategicPage() {
 
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label className="text-xs text-gray-400 font-medium">Owner comp addback</label>
+              <div className="flex items-center">
+                <label className="text-xs text-gray-400 font-medium">Owner comp addback</label>
+                <InfoTooltip title="Owner comp addback">
+                  <p className="mb-2">If you&apos;re paying yourself more than a hired CEO would cost, the difference is &quot;excess&quot; owner comp. A buyer would replace you with a market-rate hire, so that excess becomes new profit.</p>
+                  <p>Example: you pay yourself $250K but the job is worth $150K to a hired operator. The $100K difference is an addback — it increases EBITDA for valuation.</p>
+                </InfoTooltip>
+              </div>
               <span className="text-sm text-white font-semibold tabular-nums">+{fmt(adjustments.ownerComp)}</span>
             </div>
             <input
@@ -140,7 +210,13 @@ export default function StrategicPage() {
 
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label className="text-xs text-gray-400 font-medium">One-time addbacks</label>
+              <div className="flex items-center">
+                <label className="text-xs text-gray-400 font-medium">One-time addbacks</label>
+                <InfoTooltip title="One-time addbacks">
+                  <p className="mb-2">Expenses that hit the books once and won&apos;t repeat — legal fees for a lawsuit, a one-time office move, Avalara sales-tax backfile, etc.</p>
+                  <p>Buyers add these back to EBITDA because they won&apos;t be there next year, so they understate &quot;normal&quot; profit. Every addback has to be documented and defensible.</p>
+                </InfoTooltip>
+              </div>
               <span className="text-sm text-white font-semibold tabular-nums">+{fmt(adjustments.oneTime)}</span>
             </div>
             <input
@@ -160,13 +236,28 @@ export default function StrategicPage() {
 
         {/* Valuation bridge */}
         <div className="bg-gray-800/40 rounded-lg p-4 border border-gray-800">
-          <div className="text-xs text-gray-500 uppercase tracking-wider mb-3">Valuation Bridge</div>
+          <div className="flex items-center mb-3">
+            <div className="text-xs text-gray-500 uppercase tracking-wider">Valuation Bridge</div>
+            <InfoTooltip title="Valuation Bridge">
+              <p>A step-by-step walk from raw operating income to the final sale price. Each line shows what we added or multiplied to get to the next.</p>
+            </InfoTooltip>
+          </div>
           <div className="space-y-2 text-sm">
             <BridgeRow label="Q1 Operating Income × 4 (annualized)" value={annualized} />
             <BridgeRow label="+ Owner comp addback" value={adjustments.ownerComp} />
             <BridgeRow label="+ One-time addbacks" value={adjustments.oneTime} />
             <div className="h-px bg-gray-700 my-1" />
-            <BridgeRow label="Adjusted EBITDA" value={adjustedEbitda} bold />
+            <BridgeRow
+              label="Adjusted EBITDA"
+              value={adjustedEbitda}
+              bold
+              tooltip={
+                <>
+                  <p className="mb-2"><strong>Adjusted EBITDA</strong> is the &quot;true&quot; profit number after cleaning up one-off items and owner perks.</p>
+                  <p>This is the number buyers actually multiply to get to a sale price — not the raw P&amp;L profit.</p>
+                </>
+              }
+            />
             <BridgeRow label={`× ${multiple.toFixed(1)} multiple`} value={null} />
             <div className="h-px bg-gray-700 my-1" />
             <BridgeRow label="Implied Valuation" value={valuation} bold color="text-emerald-400" />
@@ -176,7 +267,19 @@ export default function StrategicPage() {
 
       {/* Valuation band chart */}
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-        <h2 className="text-sm font-semibold text-white mb-4">Valuation by Buyer Type</h2>
+        <div className="flex items-center mb-4">
+          <h2 className="text-sm font-semibold text-white">Valuation by Buyer Type</h2>
+          <InfoTooltip title="Buyer types">
+            <p className="mb-2">Different kinds of buyers pay different multiples. From lowest to highest:</p>
+            <ul className="space-y-1 list-disc list-inside">
+              <li><strong>Asset Sale:</strong> fire-sale buyer wanting inventory/equipment only</li>
+              <li><strong>Small Business:</strong> individual buyer using SBA loan</li>
+              <li><strong>PE Lower-Middle:</strong> private equity firm bolting you onto a portfolio company</li>
+              <li><strong>Strategic Buyer:</strong> a competitor who wants your customers or brand</li>
+              <li><strong>Premium Strategic:</strong> a competitor who <em>really</em> wants you (bidding war territory)</li>
+            </ul>
+          </InfoTooltip>
+        </div>
         <div className="h-72">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={valuationBands} layout="vertical" margin={{ left: 50 }}>
@@ -203,7 +306,20 @@ export default function StrategicPage() {
 
       {/* Readiness breakdown */}
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-        <h2 className="text-sm font-semibold text-white mb-4">Exit Readiness by Category</h2>
+        <div className="flex items-center mb-4">
+          <h2 className="text-sm font-semibold text-white">Exit Readiness by Category</h2>
+          <InfoTooltip title="Exit Readiness Categories">
+            <p className="mb-2">Six buckets buyers care about when deciding whether to bother with you:</p>
+            <ul className="space-y-1 list-disc list-inside">
+              <li><strong>Financials:</strong> accurate, auditable P&amp;Ls and balance sheets</li>
+              <li><strong>Accounting:</strong> proper accrual-basis books (not just cash in/out)</li>
+              <li><strong>Documentation:</strong> contracts, policies, SOPs written down</li>
+              <li><strong>Customer:</strong> diversified revenue, not dependent on one buyer</li>
+              <li><strong>Operations:</strong> systems for inventory, fulfillment, forecasting</li>
+              <li><strong>Legal:</strong> clean cap table, IP, no pending lawsuits</li>
+            </ul>
+          </InfoTooltip>
+        </div>
         <div className="space-y-2.5">
           {Object.entries(readinessScores).map(([key, score]) => (
             <div key={key}>
@@ -222,7 +338,14 @@ export default function StrategicPage() {
       {/* Deal room checklist */}
       <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-800">
-          <h2 className="text-sm font-semibold text-white">Deal Room Readiness</h2>
+          <div className="flex items-center">
+            <h2 className="text-sm font-semibold text-white">Deal Room Readiness</h2>
+            <InfoTooltip title="Deal Room / Due Diligence">
+              <p className="mb-2">A <strong>deal room</strong> is a shared folder (physical or virtual) where a buyer&apos;s lawyers and accountants review every document about your business before closing.</p>
+              <p className="mb-2"><strong>Due diligence</strong> is the process they run — they verify every number you claimed, check for lawsuits, inspect contracts, confirm customers exist. Takes 60-90 days typically.</p>
+              <p>If you can&apos;t produce a document they ask for, they either lower their price or walk away. That&apos;s why prep matters.</p>
+            </InfoTooltip>
+          </div>
           <p className="text-xs text-gray-500 mt-0.5">Documents a buyer will ask for in due diligence</p>
         </div>
         <table className="w-full text-sm">
@@ -246,34 +369,45 @@ export default function StrategicPage() {
       </div>
 
       <div className="bg-yellow-900/10 border border-yellow-800/40 rounded-xl p-5">
-        <h2 className="text-sm font-semibold text-yellow-400 mb-2">Caveats on this valuation</h2>
+        <div className="flex items-center mb-2">
+          <h2 className="text-sm font-semibold text-yellow-400">Caveats on this valuation</h2>
+          <InfoTooltip title="Why caveats matter">
+            <p>These are the reasons a sophisticated buyer might discount the number above. Worth understanding before you anchor to any figure.</p>
+          </InfoTooltip>
+        </div>
         <ul className="text-sm text-gray-300 leading-relaxed space-y-1.5 list-disc list-inside">
-          <li>EBITDA proxy uses <strong>cash-basis</strong> operating income. Real accrual EBITDA may be materially different.</li>
-          <li>$1.6M of &quot;KBBO&quot; spend is still unclassified — could be operating cost (lowers EBITDA) or capital (neutral).</li>
-          <li>Q1 × 4 annualization ignores seasonality. A full trailing-12-month view will be more accurate.</li>
-          <li>Multiples assume stable, diversified revenue. Single-customer concentration (if Ferguson is too big) would compress multiples meaningfully.</li>
+          <li><strong>Cash-basis EBITDA:</strong> we&apos;re using money in/out of the bank, not accrual accounting. Real buyers will re-run this on accrual books, which can move the number materially.</li>
+          <li><strong>~$1.05M of Unclassified Outflows (115):</strong> still sitting in a residual bucket pending bank-statement parsing. If any of that is operating expense, EBITDA drops.</li>
+          <li><strong>Seasonality:</strong> Q1 × 4 ignores holiday swings. A trailing-12-month view will be more credible to buyers.</li>
+          <li><strong>Customer concentration:</strong> if Ferguson represents too large a share of revenue, buyers compress the multiple because losing one customer would be catastrophic.</li>
         </ul>
       </div>
     </div>
   );
 }
 
-function KpiCard({ label, value, sub, color }: { label: string; value: string; sub: string; color: string }) {
+function KpiCard({ label, value, sub, color, tooltip }: { label: string; value: string; sub: string; color: string; tooltip?: React.ReactNode }) {
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-      <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">{label}</div>
+      <div className="flex items-center mb-1">
+        <div className="text-xs text-gray-500 uppercase tracking-wide">{label}</div>
+        {tooltip && <InfoTooltip title={label}>{tooltip}</InfoTooltip>}
+      </div>
       <div className={`text-2xl font-bold ${color}`}>{value}</div>
       <div className="text-xs text-gray-500 mt-1">{sub}</div>
     </div>
   );
 }
 
-function BridgeRow({ label, value, bold, color }: { label: string; value: number | null; bold?: boolean; color?: string }) {
+function BridgeRow({ label, value, bold, color, tooltip }: { label: string; value: number | null; bold?: boolean; color?: string; tooltip?: React.ReactNode }) {
   const cls = bold ? "font-semibold text-white" : "text-gray-300";
   const valCls = color ?? (bold ? "text-white font-semibold" : "text-gray-200");
   return (
     <div className="flex items-center justify-between">
-      <span className={`text-xs ${cls}`}>{label}</span>
+      <span className={`text-xs ${cls} inline-flex items-center`}>
+        {label}
+        {tooltip && <InfoTooltip title={label}>{tooltip}</InfoTooltip>}
+      </span>
       {value !== null ? <span className={`tabular-nums ${valCls}`}>{fmt(value)}</span> : <span className="text-gray-500 text-xs italic">multiply</span>}
     </div>
   );

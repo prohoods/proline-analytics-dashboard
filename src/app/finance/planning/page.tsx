@@ -24,13 +24,36 @@ function fmtK(n: number) {
 // Baseline = Q1 monthly averages, convertible to weekly
 const WEEKS_PER_MONTH = 4.33;
 
+const DEFAULTS = {
+  revGrowth: 0,
+  cogsPctDelta: 0,
+  marketingDelta: 0,
+  hiresPerMonth: 0,
+  avgFTECost: 8500,
+};
+
 export default function PlanningPage() {
   // Assumption knobs
-  const [revGrowth, setRevGrowth] = useState(0);       // % monthly growth
-  const [cogsPctDelta, setCogsPctDelta] = useState(0); // bps change in COGS as % of revenue
-  const [marketingDelta, setMarketingDelta] = useState(0); // % change in marketing spend
-  const [hiresPerMonth, setHiresPerMonth] = useState(0);   // additional FTEs
-  const [avgFTECost, setAvgFTECost] = useState(8500);      // monthly loaded cost
+  const [revGrowth, setRevGrowth] = useState(DEFAULTS.revGrowth);       // % monthly growth
+  const [cogsPctDelta, setCogsPctDelta] = useState(DEFAULTS.cogsPctDelta); // bps change in COGS as % of revenue
+  const [marketingDelta, setMarketingDelta] = useState(DEFAULTS.marketingDelta); // % change in marketing spend
+  const [hiresPerMonth, setHiresPerMonth] = useState(DEFAULTS.hiresPerMonth);   // additional FTEs
+  const [avgFTECost, setAvgFTECost] = useState(DEFAULTS.avgFTECost);      // monthly loaded cost
+
+  const isModified =
+    revGrowth !== DEFAULTS.revGrowth ||
+    cogsPctDelta !== DEFAULTS.cogsPctDelta ||
+    marketingDelta !== DEFAULTS.marketingDelta ||
+    hiresPerMonth !== DEFAULTS.hiresPerMonth ||
+    avgFTECost !== DEFAULTS.avgFTECost;
+
+  const reset = () => {
+    setRevGrowth(DEFAULTS.revGrowth);
+    setCogsPctDelta(DEFAULTS.cogsPctDelta);
+    setMarketingDelta(DEFAULTS.marketingDelta);
+    setHiresPerMonth(DEFAULTS.hiresPerMonth);
+    setAvgFTECost(DEFAULTS.avgFTECost);
+  };
 
   const avgMonthlyRev = q1.totalRevenue / statements.length;
   const avgMonthlyCogs = sumCategory("Factory / Inventory (COGS)") / statements.length + sumCategory("Import & Customs") / statements.length;
@@ -98,7 +121,18 @@ export default function PlanningPage() {
 
       {/* Assumptions */}
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-        <h2 className="text-sm font-semibold text-white mb-4">Assumptions</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-sm font-semibold text-white">Assumptions</h2>
+          <button
+            type="button"
+            onClick={reset}
+            disabled={!isModified}
+            className="text-xs px-3 py-1.5 rounded-lg border border-gray-700 text-gray-300 hover:border-emerald-500 hover:text-emerald-400 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-gray-700 disabled:hover:text-gray-300 transition-colors inline-flex items-center gap-1.5"
+            title="Reset all sliders to defaults"
+          >
+            <span aria-hidden>↺</span> Reset to defaults
+          </button>
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           <AssumptionSlider
             label="Revenue growth (monthly)"

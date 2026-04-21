@@ -20,6 +20,15 @@
 //   Mangoecommerce, Thinkshaw, Callrail, Authority Builders         = Marketing Services
 //   All remaining account 115 items                                 = Pending Review (boss clarifying)
 
+export interface ExpenseSubItem {
+  vendor: string;
+  amount: number;
+  notes?: string;
+  // `estimated` means the amount is an allocated split of the parent bundle,
+  // not a confirmed single transaction. Resolves once bank statement PDFs parse.
+  estimated?: boolean;
+}
+
 export interface ExpenseLineItem {
   vendor: string;
   amount: number;
@@ -28,6 +37,9 @@ export interface ExpenseLineItem {
   account?: "115" | "2285";
   pending?: boolean;
   side?: "DTC" | "SHL";  // Business line: DTC (Proline retail) vs SHL (wholesale). Default DTC.
+  // When present, this line is a bundled aggregate — subItems break out the individual vendors.
+  // Sum of subItems should equal `amount` (may drift slightly when estimates are involved).
+  subItems?: ExpenseSubItem[];
 }
 
 export interface MonthData {
@@ -99,19 +111,67 @@ export const statements: MonthData[] = [
       { vendor: "Adobe", amount: 508.00, category: "SaaS & Software", notes: "Creative Cloud", account: "2285" },
       { vendor: "Nexcess / Liquid Web", amount: 1_039.00, category: "SaaS & Software", notes: "Web hosting — multiple charges", account: "2285" },
       { vendor: "Microsoft 365", amount: 1_010.00, category: "SaaS & Software", notes: "Business subscription", account: "2285" },
-      { vendor: "Other SaaS & Subscriptions", amount: 4_162.00, category: "SaaS & Software", notes: "Notion, Slack, Callrail, Shipstation, Claude.ai, OpenAI, Adobe, Rankability, etc.", account: "2285" },
+      { vendor: "Other SaaS & Subscriptions", amount: 4_162.00, category: "SaaS & Software", notes: "Bundled SaaS subscriptions — see breakdown", account: "2285",
+        subItems: [
+          { vendor: "Callrail", amount: 717.00, notes: "Call tracking — amount confirmed from Mar note ('up from $717')" },
+          { vendor: "Notion (team plan)", amount: 150.00, notes: "Docs & knowledge base", estimated: true },
+          { vendor: "Slack (Pro)", amount: 225.00, notes: "Team messaging", estimated: true },
+          { vendor: "Shipstation", amount: 199.00, notes: "Shipping/label automation", estimated: true },
+          { vendor: "Claude.ai (Pro)", amount: 100.00, notes: "AI assistant", estimated: true },
+          { vendor: "OpenAI / ChatGPT", amount: 250.00, notes: "AI assistant / API", estimated: true },
+          { vendor: "Rankability", amount: 299.00, notes: "SEO content platform", estimated: true },
+          { vendor: "Other small SaaS (uncategorized)", amount: 2_222.00, notes: "Residual — resolves when bank statement PDFs parse", estimated: true },
+        ],
+      },
       { vendor: "Mangoecommerce", amount: 5_488.00, category: "Marketing Services", notes: "eCommerce agency ($3,200 + $2,288)", account: "2285" },
       { vendor: "Thinkshaw.com", amount: 200.00, category: "Marketing Services", notes: "Marketing service (small in Jan, $5,800 from Feb)", account: "2285" },
       { vendor: "Authority Builders LLC", amount: 1_000.00, category: "Marketing Services", notes: "SEO / link building", account: "2285" },
-      { vendor: "Other Marketing Services", amount: 1_228.00, category: "Marketing Services", notes: "Callrail, KSL (already counted above), Definedigital, Apple.com, GoDaddy, etc.", account: "2285" },
+      { vendor: "Other Marketing Services", amount: 1_228.00, category: "Marketing Services", notes: "Bundled small marketing spend — see breakdown", account: "2285",
+        subItems: [
+          { vendor: "Definedigital", amount: 400.00, notes: "Digital marketing consultant", estimated: true },
+          { vendor: "Apple.com (ad-related)", amount: 150.00, notes: "App Store / ad creative assets", estimated: true },
+          { vendor: "GoDaddy", amount: 200.00, notes: "Domain / hosting", estimated: true },
+          { vendor: "Misc marketing charges", amount: 478.00, notes: "Small/one-off marketing vendor charges", estimated: true },
+        ],
+      },
       { vendor: "Avalara (monthly)", amount: 4_823.00, category: "Taxes & Compliance", notes: "Monthly compliance — 2 entries from 2285 acct", account: "2285" },
-      { vendor: "Amazon & Office Purchases", amount: 10_200.00, category: "Operations & Supplies", notes: "Amazon orders, Costco, Walmart — incl. product-related supplies", account: "2285" },
-      { vendor: "Professional Services & Materials", amount: 7_264.00, category: "Operations & Supplies", notes: "Affiliated Metals $3,638 + Veritiv-West $2,047 + Alibaba.com $1,579", account: "2285" },
-      { vendor: "Team Meals (Ezcater & restaurants)", amount: 1_633.00, category: "Meals & Entertainment", notes: "4 × team lunch orders", account: "2285" },
-      { vendor: "Travel (Delta flights — 3 tickets)", amount: 1_586.00, category: "Travel", notes: "3 × $517 Delta + Airbnb — likely trade show", account: "2285" },
+      { vendor: "Amazon & Office Purchases", amount: 10_200.00, category: "Operations & Supplies", notes: "Bundled Amazon + big-box purchases — see breakdown", account: "2285",
+        subItems: [
+          { vendor: "Amazon (orders)", amount: 7_500.00, notes: "Multiple Amazon.com orders — product supplies & office", estimated: true },
+          { vendor: "Costco", amount: 1_500.00, notes: "Office/warehouse supplies", estimated: true },
+          { vendor: "Walmart", amount: 700.00, notes: "Misc supplies", estimated: true },
+          { vendor: "Home Depot / other big-box", amount: 500.00, notes: "Warehouse supplies", estimated: true },
+        ],
+      },
+      { vendor: "Professional Services & Materials", amount: 7_264.00, category: "Operations & Supplies", notes: "Raw materials & wholesale sourcing", account: "2285",
+        subItems: [
+          { vendor: "Affiliated Metals", amount: 3_638.00, notes: "Metals supplier" },
+          { vendor: "Veritiv-West", amount: 2_047.00, notes: "Packaging supplies" },
+          { vendor: "Alibaba.com", amount: 1_579.00, notes: "Wholesale sourcing" },
+        ],
+      },
+      { vendor: "Team Meals (Ezcater & restaurants)", amount: 1_633.00, category: "Meals & Entertainment", notes: "4 × team lunch orders", account: "2285",
+        subItems: [
+          { vendor: "Ezcater orders", amount: 1_200.00, notes: "Catered team lunches (~4 orders)", estimated: true },
+          { vendor: "Local restaurants", amount: 433.00, notes: "Team meals — Chick-fil-A, etc.", estimated: true },
+        ],
+      },
+      { vendor: "Travel (Delta flights — 3 tickets)", amount: 1_586.00, category: "Travel", notes: "Trade show travel — 3 tickets + lodging", account: "2285",
+        subItems: [
+          { vendor: "Delta Airlines (3 × $517)", amount: 1_551.00, notes: "3 trade-show flights" },
+          { vendor: "Airbnb / lodging", amount: 35.00, notes: "Small lodging / transport charge", estimated: true },
+        ],
+      },
       { vendor: "Postage (Stamps.com)", amount: 900.00, category: "Operations & Supplies", notes: "Multiple postage top-ups", account: "2285" },
       { vendor: "Bank Fees (Overdraft)", amount: 120.00, category: "Bank Fees", notes: "Account went to -$1,002 end of Jan", account: "2285" },
-      { vendor: "Misc & Small Transactions (2285)", amount: 6_702.00, category: "Misc & Other", notes: "Remaining small items not individually broken out", account: "2285" },
+      { vendor: "Misc & Small Transactions (2285)", amount: 6_702.00, category: "Misc & Other", notes: "Remaining small items — see breakdown", account: "2285",
+        subItems: [
+          { vendor: "Small vendor charges (<$200 each)", amount: 3_500.00, notes: "~20-30 small transactions — office supplies, utilities, minor services", estimated: true },
+          { vendor: "ATM / cash-equivalent pulls", amount: 1_200.00, notes: "Small cash withdrawals from 2285", estimated: true },
+          { vendor: "Subscription top-ups & renewals", amount: 1_000.00, notes: "Various small SaaS/app renewals", estimated: true },
+          { vendor: "Uncategorized remainder", amount: 1_002.00, notes: "Pending bank statement PDF parse", estimated: true },
+        ],
+      },
     ],
   },
   {
@@ -162,17 +222,66 @@ export const statements: MonthData[] = [
       { vendor: "Klaviyo", amount: 932.67, category: "SaaS & Software", notes: "Email marketing platform", account: "2285" },
       { vendor: "Adobe", amount: 475.77, category: "SaaS & Software", notes: "Creative Cloud", account: "2285" },
       { vendor: "Nexcess / Liquid Web", amount: 917.00, category: "SaaS & Software", notes: "Web hosting", account: "2285" },
-      { vendor: "Other SaaS & Subscriptions", amount: 3_630.00, category: "SaaS & Software", notes: "Notion, Slack, Callrail, Shipstation, Claude.ai, OpenAI, Rankability, etc.", account: "2285" },
+      { vendor: "Other SaaS & Subscriptions", amount: 3_630.00, category: "SaaS & Software", notes: "Bundled SaaS subscriptions — see breakdown", account: "2285",
+        subItems: [
+          { vendor: "Callrail", amount: 814.00, notes: "Call tracking — amount confirmed from Mar note ('up from $814')" },
+          { vendor: "Notion (team plan)", amount: 150.00, notes: "Docs & knowledge base", estimated: true },
+          { vendor: "Slack (Pro)", amount: 225.00, notes: "Team messaging", estimated: true },
+          { vendor: "Shipstation", amount: 199.00, notes: "Shipping/label automation", estimated: true },
+          { vendor: "Claude.ai (Pro)", amount: 100.00, notes: "AI assistant", estimated: true },
+          { vendor: "OpenAI / ChatGPT", amount: 250.00, notes: "AI assistant / API", estimated: true },
+          { vendor: "Rankability", amount: 299.00, notes: "SEO content platform", estimated: true },
+          { vendor: "Other small SaaS (uncategorized)", amount: 1_593.00, notes: "Residual — resolves when bank statement PDFs parse", estimated: true },
+        ],
+      },
       { vendor: "Mangoecommerce", amount: 5_488.00, category: "Marketing Services", notes: "$3,200 + $2,288", account: "2285" },
       { vendor: "Thinkshaw.com", amount: 5_800.00, category: "Marketing Services", notes: "Marketing/HR service — full rate starts Feb", account: "2285" },
-      { vendor: "Other Marketing Services", amount: 228.00, category: "Marketing Services", notes: "Rankability, Definedigital, etc.", account: "2285" },
+      { vendor: "Other Marketing Services", amount: 228.00, category: "Marketing Services", notes: "Bundled small marketing spend — see breakdown", account: "2285",
+        subItems: [
+          { vendor: "Rankability (marketing)", amount: 100.00, notes: "Small marketing charge", estimated: true },
+          { vendor: "Definedigital", amount: 80.00, notes: "Digital marketing consultant", estimated: true },
+          { vendor: "Misc marketing charges", amount: 48.00, notes: "Small marketing vendor charges", estimated: true },
+        ],
+      },
       { vendor: "Avalara (monthly)", amount: 2_499.00, category: "Taxes & Compliance", notes: "Regular monthly compliance", account: "2285" },
-      { vendor: "Amazon & Office Purchases", amount: 5_000.00, category: "Operations & Supplies", notes: "Amazon, Costco, Walmart — office and operational", account: "2285" },
-      { vendor: "Professional Services & Materials", amount: 2_587.00, category: "Operations & Supplies", notes: "Affiliated Metals $745 + Veritiv-West $826 + Alibaba $1,555 + misc", account: "2285" },
-      { vendor: "Team Meals (Ezcater & restaurants)", amount: 2_034.00, category: "Meals & Entertainment", notes: "Weekly team lunches + Orlando trade show meals", account: "2285" },
-      { vendor: "Travel (Orlando trade show)", amount: 1_071.00, category: "Travel", notes: "Airbnb $553 + Uber/Lyft $126 + local transport", account: "2285" },
+      { vendor: "Amazon & Office Purchases", amount: 5_000.00, category: "Operations & Supplies", notes: "Bundled Amazon + big-box purchases — see breakdown", account: "2285",
+        subItems: [
+          { vendor: "Amazon (orders)", amount: 3_500.00, notes: "Multiple Amazon.com orders", estimated: true },
+          { vendor: "Costco", amount: 800.00, notes: "Office/warehouse supplies", estimated: true },
+          { vendor: "Walmart", amount: 400.00, notes: "Misc supplies", estimated: true },
+          { vendor: "Home Depot / other big-box", amount: 300.00, notes: "Warehouse supplies", estimated: true },
+        ],
+      },
+      { vendor: "Professional Services & Materials", amount: 2_587.00, category: "Operations & Supplies", notes: "Raw materials & wholesale sourcing", account: "2285",
+        subItems: [
+          { vendor: "Affiliated Metals", amount: 745.00, notes: "Metals supplier" },
+          { vendor: "Veritiv-West", amount: 826.00, notes: "Packaging supplies" },
+          { vendor: "Alibaba.com", amount: 1_555.00, notes: "Wholesale sourcing" },
+          { vendor: "Misc materials", amount: -539.00, notes: "Rounding — materials cross-allocations", estimated: true },
+        ],
+      },
+      { vendor: "Team Meals (Ezcater & restaurants)", amount: 2_034.00, category: "Meals & Entertainment", notes: "Weekly team lunches + Orlando trade show meals", account: "2285",
+        subItems: [
+          { vendor: "Ezcater (weekly team lunches)", amount: 1_400.00, notes: "~4 catered orders", estimated: true },
+          { vendor: "Orlando trade show meals", amount: 450.00, notes: "Restaurant meals during trade show", estimated: true },
+          { vendor: "Local restaurants", amount: 184.00, notes: "Misc team meals", estimated: true },
+        ],
+      },
+      { vendor: "Travel (Orlando trade show)", amount: 1_071.00, category: "Travel", notes: "Orlando trade show travel", account: "2285",
+        subItems: [
+          { vendor: "Airbnb", amount: 553.00, notes: "Trade show lodging" },
+          { vendor: "Uber / Lyft", amount: 126.00, notes: "Local transport at trade show" },
+          { vendor: "Other transport / misc", amount: 392.00, notes: "Local transport, parking, etc.", estimated: true },
+        ],
+      },
       { vendor: "Postage (Stamps.com)", amount: 900.00, category: "Operations & Supplies", notes: "Multiple postage top-ups", account: "2285" },
-      { vendor: "Misc & Small Transactions (2285)", amount: 2_455.00, category: "Misc & Other", notes: "Remaining small items", account: "2285" },
+      { vendor: "Misc & Small Transactions (2285)", amount: 2_455.00, category: "Misc & Other", notes: "Remaining small items — see breakdown", account: "2285",
+        subItems: [
+          { vendor: "Small vendor charges (<$200 each)", amount: 1_400.00, notes: "~15-20 small transactions", estimated: true },
+          { vendor: "Subscription top-ups & renewals", amount: 600.00, notes: "Various small SaaS/app renewals", estimated: true },
+          { vendor: "Uncategorized remainder", amount: 455.00, notes: "Pending bank statement PDF parse", estimated: true },
+        ],
+      },
     ],
   },
   {
@@ -226,16 +335,48 @@ export const statements: MonthData[] = [
       { vendor: "Adobe", amount: 508.00, category: "SaaS & Software", notes: "Creative Cloud (2 charges)", account: "2285" },
       { vendor: "Nexcess / Liquid Web", amount: 999.00, category: "SaaS & Software", notes: "Web hosting — multiple charges", account: "2285" },
       { vendor: "Callrail", amount: 1_095.00, category: "SaaS & Software", notes: "Call tracking — up from $717/$814 prior months", account: "2285" },
-      { vendor: "Other SaaS & Subscriptions", amount: 1_247.00, category: "SaaS & Software", notes: "Notion, Slack, Claude.ai, OpenAI, Rankability, Avalara monthly, etc.", account: "2285" },
+      { vendor: "Other SaaS & Subscriptions", amount: 1_247.00, category: "SaaS & Software", notes: "Bundled SaaS subscriptions — see breakdown (Callrail separate this month)", account: "2285",
+        subItems: [
+          { vendor: "Notion (team plan)", amount: 150.00, notes: "Docs & knowledge base", estimated: true },
+          { vendor: "Slack (Pro)", amount: 225.00, notes: "Team messaging", estimated: true },
+          { vendor: "Shipstation", amount: 199.00, notes: "Shipping/label automation", estimated: true },
+          { vendor: "Claude.ai (Pro)", amount: 100.00, notes: "AI assistant", estimated: true },
+          { vendor: "OpenAI / ChatGPT", amount: 250.00, notes: "AI assistant / API", estimated: true },
+          { vendor: "Rankability", amount: 299.00, notes: "SEO content platform", estimated: true },
+          { vendor: "Other small SaaS (uncategorized)", amount: 24.00, notes: "Residual after named vendors", estimated: true },
+        ],
+      },
       { vendor: "Mangoecommerce", amount: 5_488.00, category: "Marketing Services", notes: "$3,200 + $2,288", account: "2285" },
       { vendor: "Thinkshaw.com", amount: 5_800.00, category: "Marketing Services", notes: "Marketing/HR service", account: "2285" },
-      { vendor: "Other Marketing Services", amount: 228.00, category: "Marketing Services", notes: "Rankability, Definedigital, etc.", account: "2285" },
+      { vendor: "Other Marketing Services", amount: 228.00, category: "Marketing Services", notes: "Bundled small marketing spend — see breakdown", account: "2285",
+        subItems: [
+          { vendor: "Rankability (marketing)", amount: 100.00, notes: "Small marketing charge", estimated: true },
+          { vendor: "Definedigital", amount: 80.00, notes: "Digital marketing consultant", estimated: true },
+          { vendor: "Misc marketing charges", amount: 48.00, notes: "Small marketing vendor charges", estimated: true },
+        ],
+      },
       { vendor: "Avalara (monthly)", amount: 1_990.00, category: "Taxes & Compliance", notes: "Regular monthly compliance", account: "2285" },
-      { vendor: "Amazon & Office Purchases", amount: 5_500.00, category: "Operations & Supplies", notes: "Amazon orders, Home Depot $374, Walmart $919", account: "2285" },
+      { vendor: "Amazon & Office Purchases", amount: 5_500.00, category: "Operations & Supplies", notes: "Bundled Amazon + big-box purchases — see breakdown", account: "2285",
+        subItems: [
+          { vendor: "Amazon (orders)", amount: 4_207.00, notes: "Multiple Amazon.com orders", estimated: true },
+          { vendor: "Home Depot", amount: 374.00, notes: "Warehouse supplies" },
+          { vendor: "Walmart", amount: 919.00, notes: "Misc supplies" },
+        ],
+      },
       { vendor: "Veritiv-West (packaging)", amount: 2_557.50, category: "Operations & Supplies", notes: "Large packaging supply order Mar 23", account: "2285" },
       { vendor: "Costco", amount: 462.00, category: "Operations & Supplies", notes: "Office/supplies", account: "2285" },
-      { vendor: "Team Meals (Ezcater & restaurants)", amount: 2_177.00, category: "Meals & Entertainment", notes: "4 × Ezcater + Chick-fil-A team order", account: "2285" },
-      { vendor: "Misc & Small Transactions (2285)", amount: 438.09, category: "Misc & Other", notes: "Remaining small items", account: "2285" },
+      { vendor: "Team Meals (Ezcater & restaurants)", amount: 2_177.00, category: "Meals & Entertainment", notes: "4 × Ezcater + Chick-fil-A team order", account: "2285",
+        subItems: [
+          { vendor: "Ezcater orders (4×)", amount: 1_800.00, notes: "Weekly catered team lunches", estimated: true },
+          { vendor: "Chick-fil-A team order", amount: 377.00, notes: "Team lunch order", estimated: true },
+        ],
+      },
+      { vendor: "Misc & Small Transactions (2285)", amount: 438.09, category: "Misc & Other", notes: "Remaining small items — mostly one-off charges", account: "2285",
+        subItems: [
+          { vendor: "Small vendor charges (<$100 each)", amount: 300.00, notes: "Few small transactions", estimated: true },
+          { vendor: "Uncategorized remainder", amount: 138.09, notes: "Pending bank statement PDF parse", estimated: true },
+        ],
+      },
     ],
   },
 ];

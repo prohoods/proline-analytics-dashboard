@@ -3,6 +3,20 @@
 import { useEffect, useState } from "react";
 import { statements, sumByCategory, totalByCategory, q1, CATEGORY_COLORS, CATEGORY_TEXT, monthRevenue, monthNetExpenses } from "@/lib/financial-data";
 import CategoryDrillDown from "@/components/CategoryDrillDown";
+import InfoTooltip from "@/components/InfoTooltip";
+
+const UNCLASSIFIED_EXPLAINER = (
+  <>
+    <p className="mb-2"><strong>Unclassified Outflows (115)</strong> = money that left the operating bank account (…0115) but isn&apos;t yet tagged to a vendor or category.</p>
+    <p className="mb-2">Q1 total: <strong>~$1.05M</strong> (Jan $448K + Feb $191K + Mar $411K). It&apos;s almost certainly outgoing wires, checks, or non-KBBO ACH debits — things like factory payments, supplier wires, or one-off transfers that don&apos;t show up in the KBBO portal.</p>
+    <p className="mb-1 font-semibold text-gray-200">What&apos;s needed to resolve it:</p>
+    <ul className="list-disc list-inside space-y-0.5 text-gray-400">
+      <li>KeyBank PDF statements for account …0115 (Jan/Feb/Mar)</li>
+      <li>Upload them via the <em>Statement Upload</em> page — the parser will extract each debit by vendor</li>
+      <li>New categorization rules get added to transaction-categorizer.ts for any new vendors</li>
+    </ul>
+  </>
+);
 
 function fmt(n: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n);
@@ -184,16 +198,23 @@ export default function CFOOverview() {
               const pct = (amount / totalExpenses) * 100;
               const isPending = cat === "Unclassified Outflows (115)";
               return (
-                <button
+                <div
                   key={cat}
-                  onClick={() => setDrillCategory(cat)}
-                  className="w-full text-left rounded-lg p-1.5 -mx-1.5 hover:bg-gray-800/50 transition-colors group"
+                  className="w-full rounded-lg p-1.5 -mx-1.5 hover:bg-gray-800/50 transition-colors group"
                 >
-                  <div className="flex justify-between text-xs mb-1">
-                    <span className={`${CATEGORY_TEXT[cat] ?? "text-gray-400"} group-hover:underline`}>
-                      {cat}
+                  <div className="flex justify-between text-xs mb-1 items-center">
+                    <span className="flex items-center">
+                      <button
+                        onClick={() => setDrillCategory(cat)}
+                        className={`${CATEGORY_TEXT[cat] ?? "text-gray-400"} group-hover:underline text-left`}
+                      >
+                        {cat}
+                      </button>
+                      {isPending && <InfoTooltip title="Unclassified Outflows (115)">{UNCLASSIFIED_EXPLAINER}</InfoTooltip>}
                     </span>
-                    <span className="text-white font-medium">{fmt(amount)} <span className="text-gray-500">({pct.toFixed(0)}%)</span></span>
+                    <button onClick={() => setDrillCategory(cat)} className="text-white font-medium">
+                      {fmt(amount)} <span className="text-gray-500">({pct.toFixed(0)}%)</span>
+                    </button>
                   </div>
                   <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
                     <div
@@ -201,7 +222,7 @@ export default function CFOOverview() {
                       style={{ width: `${Math.min(pct, 100)}%` }}
                     />
                   </div>
-                </button>
+                </div>
               );
             })}
           </div>
@@ -242,8 +263,13 @@ export default function CFOOverview() {
                     onClick={() => setDrillCategory(cat)}
                     className={`hover:bg-gray-800/50 cursor-pointer transition-colors ${isPending ? "opacity-70" : ""}`}
                   >
-                    <td className={`py-2.5 px-4 font-medium text-xs ${CATEGORY_TEXT[cat] ?? "text-gray-400"} hover:underline`}>
-                      {cat} <span className="text-gray-600">→</span>
+                    <td className={`py-2.5 px-4 font-medium text-xs ${CATEGORY_TEXT[cat] ?? "text-gray-400"}`}>
+                      <span className="hover:underline">{cat}</span> <span className="text-gray-600">→</span>
+                      {isPending && (
+                        <span onClick={(e) => e.stopPropagation()} className="inline-block">
+                          <InfoTooltip title="Unclassified Outflows (115)">{UNCLASSIFIED_EXPLAINER}</InfoTooltip>
+                        </span>
+                      )}
                     </td>
                     <td className="py-2.5 px-4 text-right text-gray-300 text-xs">{jan ? fmt(jan) : "—"}</td>
                     <td className="py-2.5 px-4 text-right text-gray-300 text-xs">{feb ? fmt(feb) : "—"}</td>

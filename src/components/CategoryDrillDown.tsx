@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { statements, CATEGORY_TEXT, type ExpenseLineItem, type MonthData } from "@/lib/financial-data";
 
 function fmt(n: number) {
@@ -110,34 +110,7 @@ export default function CategoryDrillDown({ category, month, onClose }: Props) {
               </thead>
               <tbody className="divide-y divide-gray-800">
                 {transactions.map((t, i) => (
-                  <tr key={`${t.vendor}-${i}`} className="hover:bg-gray-800/40 transition-colors">
-                    <td className="py-3 px-5 text-gray-400 text-xs whitespace-nowrap">
-                      {t.shortMonth} {t.year}
-                    </td>
-                    <td className="py-3 px-5">
-                      <div className="text-white font-medium">{t.vendor}</div>
-                      {t.notes && <div className="text-xs text-gray-500 mt-0.5">{t.notes}</div>}
-                    </td>
-                    <td className="py-3 px-3 text-xs text-gray-500 font-mono">
-                      {t.account ? `…${t.account}` : "—"}
-                    </td>
-                    <td className="py-3 px-3 text-center">
-                      {t.pending ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-yellow-900/40 text-yellow-400 border border-yellow-800/40">
-                          <span className="w-1.5 h-1.5 rounded-full bg-yellow-400" />
-                          Pending
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-900/40 text-emerald-400 border border-emerald-800/40">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                          Confirmed
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-3 px-5 text-right text-white font-semibold whitespace-nowrap">
-                      {fmt(t.amount)}
-                    </td>
-                  </tr>
+                  <TransactionRow key={`${t.vendor}-${i}`} t={t} />
                 ))}
               </tbody>
               <tfoot>
@@ -156,5 +129,95 @@ export default function CategoryDrillDown({ category, month, onClose }: Props) {
         </div>
       </div>
     </div>
+  );
+}
+
+function TransactionRow({ t }: { t: DrillDownTransaction }) {
+  const [expanded, setExpanded] = useState(false);
+  const hasSubItems = t.subItems && t.subItems.length > 0;
+
+  return (
+    <>
+      <tr className="hover:bg-gray-800/40 transition-colors">
+        <td className="py-3 px-5 text-gray-400 text-xs whitespace-nowrap">
+          {t.shortMonth} {t.year}
+        </td>
+        <td className="py-3 px-5">
+          <div className="flex items-center gap-2">
+            {hasSubItems && (
+              <button
+                type="button"
+                onClick={() => setExpanded(v => !v)}
+                className="w-4 h-4 flex items-center justify-center rounded border border-gray-700 text-gray-400 hover:text-white hover:border-gray-500 text-[10px] leading-none transition-colors"
+                aria-expanded={expanded}
+                aria-label={expanded ? "Collapse breakdown" : "Expand breakdown"}
+              >
+                {expanded ? "−" : "+"}
+              </button>
+            )}
+            <div>
+              <div className="text-white font-medium">{t.vendor}</div>
+              {t.notes && <div className="text-xs text-gray-500 mt-0.5">{t.notes}</div>}
+              {hasSubItems && !expanded && (
+                <button
+                  type="button"
+                  onClick={() => setExpanded(true)}
+                  className="text-[10px] text-emerald-400 hover:text-emerald-300 mt-1 underline decoration-dotted underline-offset-2"
+                >
+                  Show breakdown ({t.subItems!.length} items) ↓
+                </button>
+              )}
+            </div>
+          </div>
+        </td>
+        <td className="py-3 px-3 text-xs text-gray-500 font-mono">
+          {t.account ? `…${t.account}` : "—"}
+        </td>
+        <td className="py-3 px-3 text-center">
+          {t.pending ? (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-yellow-900/40 text-yellow-400 border border-yellow-800/40">
+              <span className="w-1.5 h-1.5 rounded-full bg-yellow-400" />
+              Pending
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-900/40 text-emerald-400 border border-emerald-800/40">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              Confirmed
+            </span>
+          )}
+        </td>
+        <td className="py-3 px-5 text-right text-white font-semibold whitespace-nowrap">
+          {fmt(t.amount)}
+        </td>
+      </tr>
+      {hasSubItems && expanded && t.subItems!.map((sub, si) => (
+        <tr key={`sub-${si}`} className="bg-gray-900/60 border-l-2 border-emerald-800/40">
+          <td className="py-2 px-5 text-gray-600 text-[10px]">↳</td>
+          <td className="py-2 px-5 pl-10">
+            <div className="text-gray-300 text-xs font-medium">{sub.vendor}</div>
+            {sub.notes && <div className="text-[10px] text-gray-600 mt-0.5">{sub.notes}</div>}
+          </td>
+          <td className="py-2 px-3 text-[10px] text-gray-600 font-mono">
+            {t.account ? `…${t.account}` : "—"}
+          </td>
+          <td className="py-2 px-3 text-center">
+            {sub.estimated ? (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-medium bg-gray-800 text-gray-400 border border-gray-700">
+                <span className="w-1 h-1 rounded-full bg-gray-500" />
+                Est.
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-medium bg-emerald-900/30 text-emerald-500 border border-emerald-800/30">
+                <span className="w-1 h-1 rounded-full bg-emerald-500" />
+                Known
+              </span>
+            )}
+          </td>
+          <td className="py-2 px-5 text-right text-gray-300 text-xs tabular-nums whitespace-nowrap">
+            {fmt(sub.amount)}
+          </td>
+        </tr>
+      ))}
+    </>
   );
 }
