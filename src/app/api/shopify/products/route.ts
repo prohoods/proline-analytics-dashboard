@@ -1,25 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { shopifyFetch } from "@/lib/shopify";
-
-interface LineItem {
-  title: string;
-  sku: string;
-  quantity: number;
-  price: string;
-  variant_title: string | null;
-}
-
-interface Refund {
-  refund_line_items: { line_item: { sku: string }; quantity: number; subtotal: string }[];
-}
-
-interface Order {
-  id: number;
-  created_at: string;
-  financial_status: string;
-  line_items: LineItem[];
-  refunds: Refund[];
-}
+import { getOrders } from "@/lib/shopify";
+import { getCOGS } from "@/lib/cogs";
 
 export async function GET(request: NextRequest) {
   try {
@@ -31,11 +12,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "start and end required" }, { status: 400 });
     }
 
-    const params = `created_at_min=${start}T00:00:00-07:00&created_at_max=${end}T23:59:59-07:00&financial_status=any&status=any&limit=250`;
-    const data = await shopifyFetch<{ orders: Order[] }>(`orders.json?${params}`);
-    const orders = data.orders;
+    const params = `created_at_min=${start}T00:00:00-07:00&created_at_max=${end}T23:59:59-07:00&financial_status=any&status=any`;
+    const { orders } = await getOrders(params);
 
-    // Aggregate by SKU
     const skuMap: Record<string, {
       title: string;
       sku: string;
@@ -62,35 +41,61 @@ export async function GET(request: NextRequest) {
         skuMap[key].grossRevenue += parseFloat(item.price) * item.quantity;
       }
 
-      // Track refunds per SKU
-      for (const refund of order.refunds) {
-        for (const ri of refund.refund_line_items) {
-          const key = ri.line_item.sku;
-          if (skuMap[key]) {
+      for (const refund of order.refunds ?? []) {
+        for (const ri of refund.refund_line_items ?? []) {
+          const key = ri.line_item?.sku ?? "";
+          if (key && skuMap[key]) {
             skuMap[key].refundedUnits += ri.quantity;
-            skuMap[key].refundedRevenue += parseFloat(ri.subtotal);
+            skuMap[key].refundedRevenue += parseFloat(ri.subtotal ?? "0");
           }
         }
       }
     }
 
-    const products = Object.values(skuMap)
-      .map(p => ({
-        ...p,
-        netRevenue: p.grossRevenue - p.refundedRevenue,
-        netUnits: p.unitsSold - p.refundedUnits,
+    const products = Object.values(skuMap).map(p => {
+      const netRevenue = p.grossRevenue - p.refundedRevenue;
+      const netUnits = p.unitsSold - p.refundedUnits;
+      const costPerUnit = getCOGS(p.sku);
+      const totalCOGS = costPerUnit != null ? costPerUnit * Math.max(0, netUnits) : null;
+      const grossProfit = totalCOGS != null ? netRevenue - totalCOGS : null;
+      const grossMarginPct = grossProfit != null && netRevenue > 0 ? (grossProfit / netRevenue) * 100 : null;
+      return {
+        title: p.title,
+        sku: p.sku,
+        unitsSold: p.unitsSold,
+        netUnits,
+        grossRevenue: p.grossRevenue,
+        refundedUnits: p.refundedUnits,
+        refundedRevenue: p.refundedRevenue,
+        netRevenue,
         refundRate: p.unitsSold > 0 ? (p.refundedUnits / p.unitsSold) * 100 : 0,
-        avgOrderValue: p.unitsSold > 0 ? p.grossRevenue / p.unitsSold : 0,
-      }))
-      .sort((a, b) => b.grossRevenue - a.grossRevenue);
+        avgPrice: p.unitsSold > 0 ? p.grossRevenue / p.unitsSold : 0,
+        costPerUnit,
+        totalCOGS,
+        grossProfit,
+        grossMarginPct,
+      };
+    }).sort((a, b) => b.grossRevenue - a.grossRevenue);
 
     const totalGross = products.reduce((s, p) => s + p.grossRevenue, 0);
     const totalNet = products.reduce((s, p) => s + p.netRevenue, 0);
     const totalUnits = products.reduce((s, p) => s + p.unitsSold, 0);
+    const totalCOGS = products.reduce((s, p) => s + (p.totalCOGS ?? 0), 0);
+    const totalProfit = products.reduce((s, p) => s + (p.grossProfit ?? 0), 0);
+    const coveredProducts = products.filter(p => p.costPerUnit != null).length;
 
     return NextResponse.json({
       products,
-      summary: { totalGross, totalNet, totalUnits, productCount: products.length },
+      summary: {
+        totalGross,
+        totalNet,
+        totalUnits,
+        totalCOGS,
+        totalProfit,
+        overallMarginPct: totalNet > 0 ? (totalProfit / totalNet) * 100 : 0,
+        productCount: products.length,
+        coveredProducts,
+      },
     }, {
       headers: { "Cache-Control": "public, s-maxage=900, stale-while-revalidate=60" },
     });
