@@ -44,6 +44,47 @@ const fmtPct = (n: number) => (n * 100).toFixed(1) + "%";
 
 type SortKey = "adSpend" | "adRevenue" | "roas" | "clicks" | "conversions" | "ctr" | "cpc";
 
+function MethodologyNote() {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-2 w-full px-5 py-3 text-left text-sm text-gray-400 hover:text-gray-200 transition-colors"
+      >
+        <svg className="w-4 h-4 text-blue-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+        <span className="font-medium text-gray-300">How this data is calculated</span>
+        <svg className={`w-3 h-3 ml-auto transition-transform ${open ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+      </button>
+      {open && (
+        <div className="px-5 pb-5 grid grid-cols-1 md:grid-cols-2 gap-6 border-t border-gray-800 pt-4 text-sm text-gray-400">
+          <div>
+            <div className="text-white font-semibold mb-2">Metrics</div>
+            <ul className="space-y-1.5">
+              <li><span className="text-gray-200">Spend</span> — Total ad cost from Google Ads (Shopping + PMAX) in the selected period.</li>
+              <li><span className="text-gray-200">Ad Revenue</span> — Conversion value attributed to this product by Google (last-click). Not total Shopify revenue.</li>
+              <li><span className="text-gray-200">ROAS</span> — Ad Revenue ÷ Spend. A 4x ROAS means $4 attributed revenue per $1 spent.</li>
+              <li><span className="text-gray-200">Conversions</span> — Number of purchases Google attributed to clicks on this product&apos;s ad.</li>
+              <li><span className="text-gray-200">CTR</span> — Clicks ÷ Impressions. How often someone clicks after seeing the ad.</li>
+              <li><span className="text-gray-200">CPC</span> — Cost Per Click = Spend ÷ Clicks.</li>
+              <li><span className="text-gray-200">COGS / Unit</span> — Our static cost per unit from the cost sheet. Does not account for units sold per campaign.</li>
+            </ul>
+          </div>
+          <div>
+            <div className="text-white font-semibold mb-2">SKU Matching</div>
+            <ul className="space-y-1.5">
+              <li>Google embeds the Shopify variant ID in the product_item_id (e.g. <span className="font-mono text-xs text-gray-300">shopify_US_49014031024430</span>).</li>
+              <li>We look that variant ID up against all current Shopify products to get the SKU.</li>
+              <li>Products showing <span className="font-mono text-xs text-gray-300">—</span> have no matching variant in Shopify — this usually means the product variant was deleted or archived after it ran ads.</li>
+              <li>COGS is then looked up by SKU from our cost sheet. No SKU = no COGS shown.</li>
+            </ul>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RoasBadge({ roas }: { roas: number | null }) {
   if (roas === null) return <span className="text-gray-600">—</span>;
   const color = roas >= 4 ? "text-green-400" : roas >= 2 ? "text-yellow-400" : "text-red-400";
@@ -143,6 +184,8 @@ export default function ProductAdsPage() {
       </div>
 
       {error && <div className="bg-red-900/20 border border-red-700/30 rounded-xl p-4 text-red-400 text-sm">{error}</div>}
+
+      <MethodologyNote />
 
       {loading && (
         <div className="space-y-6">

@@ -43,6 +43,46 @@ const fmtPct = (n: number) => n.toFixed(1) + "%";
 
 type SortKey = "grossRevenue" | "netRevenue" | "unitsSold" | "refundRate" | "avgPrice" | "grossProfit" | "grossMarginPct" | "totalCOGS";
 
+function MethodologyNote() {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-2 w-full px-5 py-3 text-left text-sm text-gray-400 hover:text-gray-200 transition-colors"
+      >
+        <svg className="w-4 h-4 text-blue-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+        <span className="font-medium text-gray-300">How this data is calculated</span>
+        <svg className={`w-3 h-3 ml-auto transition-transform ${open ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+      </button>
+      {open && (
+        <div className="px-5 pb-5 grid grid-cols-1 md:grid-cols-2 gap-6 border-t border-gray-800 pt-4 text-sm text-gray-400">
+          <div>
+            <div className="text-white font-semibold mb-2">Revenue & Units</div>
+            <ul className="space-y-1.5">
+              <li><span className="text-gray-200">Gross Revenue</span> — Sum of line item prices × quantities from all Shopify orders in the selected date range.</li>
+              <li><span className="text-gray-200">Net Revenue</span> — Gross Revenue minus refunded amounts. Uses the refund date, not the original order date.</li>
+              <li><span className="text-gray-200">Units Sold</span> — Total quantity ordered. Net Units subtracts refunded quantities.</li>
+              <li><span className="text-gray-200">Avg Price</span> — Gross Revenue ÷ Units Sold.</li>
+              <li><span className="text-gray-200">Refund Rate</span> — Refunded Revenue ÷ Gross Revenue.</li>
+            </ul>
+          </div>
+          <div>
+            <div className="text-white font-semibold mb-2">COGS & Margin</div>
+            <ul className="space-y-1.5">
+              <li><span className="text-gray-200">COGS</span> — Matched by SKU from our static cost sheet. Products showing <span className="font-mono text-xs text-gray-300">—</span> have no cost entry yet.</li>
+              <li><span className="text-gray-200">Total COGS</span> — Cost Per Unit × Net Units sold (so refunded units are excluded).</li>
+              <li><span className="text-gray-200">Gross Profit</span> — Net Revenue − Total COGS.</li>
+              <li><span className="text-gray-200">Margin %</span> — Gross Profit ÷ Net Revenue. Only calculated for SKUs with COGS data — products without COGS are excluded from the overall margin figure.</li>
+              <li className="text-yellow-500/80">Note: this is gross margin only — it does not include ad spend, shipping, or overhead.</li>
+            </ul>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MarginBadge({ pct }: { pct: number | null }) {
   if (pct === null) return <span className="text-gray-600 text-xs">No COGS</span>;
   const color = pct >= 50 ? "text-green-400" : pct >= 30 ? "text-yellow-400" : "text-red-400";
@@ -138,6 +178,8 @@ export default function ProductsPage() {
       </div>
 
       {error && <div className="text-red-400 bg-red-900/20 rounded-xl p-4 text-sm">{error}</div>}
+
+      <MethodologyNote />
 
       {loading && (
         <div className="space-y-6">
