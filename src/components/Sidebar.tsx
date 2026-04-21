@@ -230,7 +230,7 @@ export default function Sidebar() {
                               Overview
                             </Link>
                             {item.children!.map((child) => {
-                              const childActive = pathname === child.href || pathname.startsWith(child.href + "/");
+                              const childActive = pathname === child.href;
                               return (
                                 <Link
                                   key={child.href}

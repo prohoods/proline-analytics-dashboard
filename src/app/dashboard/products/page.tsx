@@ -43,6 +43,125 @@ const fmtPct = (n: number) => n.toFixed(1) + "%";
 
 type SortKey = "grossRevenue" | "netRevenue" | "unitsSold" | "refundRate" | "avgPrice" | "grossProfit" | "grossMarginPct" | "totalCOGS";
 
+function MetricCard({ label, value, sub }: { label: string; value: React.ReactNode; sub?: string }) {
+  return (
+    <div className="bg-gray-800/60 rounded-lg p-3">
+      <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">{label}</div>
+      <div className="text-lg font-bold text-white">{value}</div>
+      {sub && <div className="text-xs text-gray-500 mt-0.5">{sub}</div>}
+    </div>
+  );
+}
+
+function ProductDetailPanel({ product, onClose }: { product: Product; onClose: () => void }) {
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const marginColor = product.grossMarginPct == null ? "text-gray-500"
+    : product.grossMarginPct >= 50 ? "text-green-400"
+    : product.grossMarginPct >= 30 ? "text-yellow-400"
+    : "text-red-400";
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/50 z-40 backdrop-blur-sm" onClick={onClose} />
+      <div className="fixed right-0 top-0 h-full w-full max-w-md bg-gray-900 border-l border-gray-700 z-50 overflow-y-auto shadow-2xl">
+        {/* Header */}
+        <div className="sticky top-0 bg-gray-900 border-b border-gray-800 px-5 py-4 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Product Detail</div>
+            <div className="font-mono text-white font-semibold">{product.sku || "—"}</div>
+            <div className="text-gray-400 text-sm mt-0.5 leading-snug">{product.title}</div>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors flex-shrink-0 mt-0.5">
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="px-5 py-5 space-y-5">
+          {/* Revenue */}
+          <div>
+            <div className="text-xs text-gray-500 uppercase tracking-wide mb-3">Revenue</div>
+            <div className="grid grid-cols-2 gap-2.5">
+              <MetricCard label="Gross Revenue" value={fmt(product.grossRevenue)} />
+              <MetricCard label="Net Revenue" value={fmt(product.netRevenue)} sub="After refunds" />
+              <MetricCard label="Avg Price" value={fmt2(product.avgPrice)} />
+              <MetricCard
+                label="Refund Rate"
+                value={
+                  <span className={product.refundRate > 10 ? "text-red-400" : product.refundRate > 5 ? "text-yellow-400" : "text-green-400"}>
+                    {fmtPct(product.refundRate)}
+                  </span>
+                }
+                sub={`${fmt(product.refundedRevenue)} refunded`}
+              />
+            </div>
+          </div>
+
+          <div className="border-t border-gray-800" />
+
+          {/* Volume */}
+          <div>
+            <div className="text-xs text-gray-500 uppercase tracking-wide mb-3">Volume</div>
+            <div className="grid grid-cols-3 gap-2.5">
+              <MetricCard label="Units Sold" value={fmtN(product.unitsSold)} />
+              <MetricCard label="Refunded" value={fmtN(product.refundedUnits)} />
+              <MetricCard label="Net Units" value={fmtN(product.netUnits)} />
+            </div>
+          </div>
+
+          <div className="border-t border-gray-800" />
+
+          {/* COGS & Margin */}
+          <div>
+            <div className="text-xs text-gray-500 uppercase tracking-wide mb-3">COGS & Margin</div>
+            {product.costPerUnit == null ? (
+              <div className="bg-gray-800/40 rounded-lg p-4 text-sm text-gray-500">
+                No COGS data for this SKU. Add it to the cost sheet to see margin analysis.
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                <div className="grid grid-cols-2 gap-2.5">
+                  <MetricCard label="Cost / Unit" value={fmt2(product.costPerUnit)} />
+                  <MetricCard label="Total COGS" value={<span className="text-red-400">{fmt(product.totalCOGS!)}</span>} sub={`${fmtN(product.netUnits)} net units`} />
+                  <MetricCard label="Gross Profit" value={
+                    <span className={product.grossProfit! >= 0 ? "text-green-400" : "text-red-400"}>{fmt(product.grossProfit!)}</span>
+                  } />
+                  <MetricCard label="Margin %" value={
+                    <span className={marginColor}>{fmtPct(product.grossMarginPct!)}</span>
+                  } sub="Profit ÷ Net Revenue" />
+                </div>
+                {/* Margin bar */}
+                <div className="bg-gray-800/60 rounded-lg p-3">
+                  <div className="flex justify-between text-xs text-gray-500 mb-1.5">
+                    <span>Margin breakdown</span>
+                    <span>{fmtPct(product.grossMarginPct!)} margin</span>
+                  </div>
+                  <div className="h-3 bg-gray-700 rounded-full overflow-hidden flex">
+                    <div
+                      className={`h-full rounded-full transition-all ${product.grossMarginPct! >= 50 ? "bg-green-500" : product.grossMarginPct! >= 30 ? "bg-yellow-500" : "bg-red-500"}`}
+                      style={{ width: `${Math.min(100, Math.max(0, product.grossMarginPct!))}%` }}
+                    />
+                  </div>
+                  <div className="flex justify-between text-xs mt-1.5 text-gray-500">
+                    <span>COGS {fmtPct(100 - product.grossMarginPct!)}</span>
+                    <span>Profit {fmtPct(product.grossMarginPct!)}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
 function MethodologyNote() {
   const [open, setOpen] = useState(false);
   return (
@@ -99,6 +218,7 @@ export default function ProductsPage() {
   const [sortBy, setSortBy] = useState<SortKey>("grossRevenue");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [showNoCOGS, setShowNoCOGS] = useState(true);
+  const [selected, setSelected] = useState<Product | null>(null);
 
   useEffect(() => {
     const { start, end } = getRange(rangeKey);
@@ -260,7 +380,7 @@ export default function ProductsPage() {
             >
               {showNoCOGS ? "Showing all SKUs" : "COGS only"}
             </button>
-            <span className="text-xs text-gray-500">{filtered.length} products</span>
+            <span className="text-xs text-gray-500">{filtered.length} products · click any row to expand</span>
           </div>
 
           {/* Table */}
@@ -285,7 +405,11 @@ export default function ProductsPage() {
                     <tr><td colSpan={9} className="px-4 py-8 text-center text-gray-500">No products found.</td></tr>
                   )}
                   {filtered.map((p, i) => (
-                    <tr key={i} className="hover:bg-gray-800/40 transition-colors">
+                    <tr
+                      key={i}
+                      onClick={() => setSelected(p)}
+                      className={`hover:bg-gray-800/60 transition-colors cursor-pointer ${selected?.sku === p.sku ? "bg-blue-900/20 ring-1 ring-inset ring-blue-700/40" : ""}`}
+                    >
                       <td className="px-4 py-2.5">
                         <div className="text-white font-mono font-medium truncate max-w-xs">{p.sku || "—"}</div>
                         <div className="text-gray-500 text-xs mt-0.5 truncate max-w-xs">{p.title}</div>
@@ -345,6 +469,8 @@ export default function ProductsPage() {
           )}
         </>
       )}
+
+      {selected && <ProductDetailPanel product={selected} onClose={() => setSelected(null)} />}
     </div>
   );
 }
