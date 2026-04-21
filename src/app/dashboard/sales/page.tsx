@@ -345,6 +345,9 @@ export default function SalesPage() {
 
       {error && <div className="text-red-400 bg-red-900/20 rounded-lg p-4 mb-6 text-sm">{error}</div>}
 
+      {/* Methodology note */}
+      <MethodologyNote />
+
       {/* Persistent header: YTD + Current Month */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
         {/* YTD */}
@@ -588,6 +591,67 @@ export default function SalesPage() {
 
       {!loading && !error && tableRows.length === 0 && (
         <div className="text-gray-500 text-sm text-center py-12">No data for this period.</div>
+      )}
+    </div>
+  );
+}
+
+function MethodologyNote() {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mb-6 bg-gray-900 border border-gray-700/50 rounded-xl overflow-hidden">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between px-4 py-3 text-sm text-gray-400 hover:text-gray-200 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <svg className="w-4 h-4 text-blue-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span className="font-medium text-gray-300">How these numbers are calculated</span>
+          <span className="text-xs text-gray-600">— Numbers will not match Shopify Analytics exactly. Click to understand why.</span>
+        </div>
+        <svg className={`w-4 h-4 transition-transform ${open ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {open && (
+        <div className="px-4 pb-4 border-t border-gray-800 pt-4 grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div>
+            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Column Definitions</h3>
+            <div className="space-y-2 text-xs text-gray-400">
+              <div><span className="text-gray-200 font-medium">PRH / PRO / PHONE / OTHER</span> — Shopify orders split by tag. No tag = PRH (website), tag <code className="bg-gray-800 px-1 rounded">[]</code> = Phone order, <code className="bg-gray-800 px-1 rounded">ProlinePro B2B</code> = PRO, anything else = Other. Values are post-discount subtotals.</div>
+              <div><span className="text-gray-200 font-medium">SHL</span> — Smart Home Luxury Shopify store (separate account). Net revenue by order date.</div>
+              <div><span className="text-gray-200 font-medium">MKTPLC</span> — Amazon, Wayfair, Home Depot. Pulled from Google Sheets (manually entered).</div>
+              <div><span className="text-gray-200 font-medium">GROSS</span> — Line item prices before discounts (<code className="bg-gray-800 px-1 rounded">subtotal + total_discounts</code>).</div>
+              <div><span className="text-gray-200 font-medium">DISCOUNTS</span> — <code className="bg-gray-800 px-1 rounded">total_discounts</code> from each order.</div>
+              <div><span className="text-gray-200 font-medium">RETURNS</span> — Refund amounts fetched per order, attributed to the <span className="text-yellow-400">date the refund was processed</span> (not the original order date).</div>
+              <div><span className="text-gray-200 font-medium">NET</span> — Gross − Discounts − Returns.</div>
+              <div><span className="text-gray-200 font-medium">TOTAL</span> — Net + Shipping + Tax + SHL + Marketplaces. <span className="text-orange-400">This includes SHL and Marketplace revenue which Shopify Analytics does not.</span></div>
+            </div>
+          </div>
+          <div>
+            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Why Numbers Differ from Shopify Analytics</h3>
+            <div className="space-y-3 text-xs text-gray-400">
+              <div className="flex gap-2">
+                <span className="text-yellow-400 font-bold flex-shrink-0">1.</span>
+                <div><span className="text-gray-200 font-medium">TOTAL is larger by design</span> — Shopify Analytics only shows Proline orders. Our TOTAL adds SHL and Marketplace revenue on top. These are intentionally included.</div>
+              </div>
+              <div className="flex gap-2">
+                <span className="text-yellow-400 font-bold flex-shrink-0">2.</span>
+                <div><span className="text-gray-200 font-medium">Returns may shift dates</span> — Refunds processed on a different day than the original order will appear on the refund date. A return processed today for a week-old order shows in today&apos;s row.</div>
+              </div>
+              <div className="flex gap-2">
+                <span className="text-yellow-400 font-bold flex-shrink-0">3.</span>
+                <div><span className="text-gray-200 font-medium">Timezone</span> — Orders are fetched using UTC-7 (Mountain Time). If your Shopify store is set to a different timezone, orders placed near midnight may land on a different date here vs Shopify Analytics.</div>
+              </div>
+              <div className="flex gap-2">
+                <span className="text-yellow-400 font-bold flex-shrink-0">4.</span>
+                <div><span className="text-gray-200 font-medium">Refund amount calculation</span> — We sum refund line items (subtotal + tax). Shopify Analytics may handle tax on refunds differently, causing small differences in the Returns and Tax columns.</div>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
