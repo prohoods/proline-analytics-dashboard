@@ -245,8 +245,8 @@ export default function ProductsPage() {
                   {filtered.map((p, i) => (
                     <tr key={i} className="hover:bg-gray-800/40 transition-colors">
                       <td className="px-4 py-2.5">
-                        <div className="text-white font-medium truncate max-w-xs">{p.title}</div>
-                        <div className="text-gray-500 text-xs font-mono mt-0.5">{p.sku || "—"}</div>
+                        <div className="text-white font-mono font-medium truncate max-w-xs">{p.sku || "—"}</div>
+                        <div className="text-gray-500 text-xs mt-0.5 truncate max-w-xs">{p.title}</div>
                       </td>
                       <td className="px-4 py-2.5 text-right text-gray-300">{fmtN(p.unitsSold)}</td>
                       <td className="px-4 py-2.5 text-right text-gray-300">{fmt(p.grossRevenue)}</td>

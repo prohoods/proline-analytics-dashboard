@@ -65,6 +65,33 @@ export async function getOrders(params: string): Promise<{ orders: ShopifyOrder[
   return { orders: allOrders };
 }
 
+// Build a variantId → SKU map from all Shopify products (auto-paginates)
+export async function getVariantSkuMap(): Promise<Record<string, string>> {
+  const map: Record<string, string> = {};
+
+  type ProductPage = { products: Array<{ id: number; variants: Array<{ id: number; sku: string }> }> };
+
+  const first = await shopifyRaw<ProductPage>("products.json?fields=id,variants&limit=250");
+  for (const p of first.data.products) {
+    for (const v of p.variants) {
+      if (v.sku) map[String(v.id)] = v.sku;
+    }
+  }
+
+  let nextPageInfo = getNextPageInfo(first.linkHeader);
+  while (nextPageInfo) {
+    const next = await shopifyRaw<ProductPage>(`products.json?page_info=${nextPageInfo}&limit=250`);
+    for (const p of next.data.products) {
+      for (const v of p.variants) {
+        if (v.sku) map[String(v.id)] = v.sku;
+      }
+    }
+    nextPageInfo = getNextPageInfo(next.linkHeader);
+  }
+
+  return map;
+}
+
 // Get full refund details for a specific order
 export async function getOrderRefunds(orderId: number) {
   const data = await shopifyFetch<{ refunds: FullRefund[] }>(`orders/${orderId}/refunds.json`);

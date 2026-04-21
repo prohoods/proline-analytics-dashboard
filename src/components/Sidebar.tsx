@@ -79,7 +79,6 @@ const navSections: NavSection[] = [
           { href: "/dashboard/customers/acquisition", label: "Acquisition & Retention", icon: "🎯" },
         ],
       },
-      { href: "/dashboard/shopping-feed", label: "Product Ad Performance", icon: "📋" },
     ],
   },
 ];
@@ -115,6 +114,7 @@ export default function Sidebar() {
     "/dashboard/google-ads": ["/dashboard/pmax","/dashboard/shopping","/dashboard/search","/dashboard/demand-gen","/dashboard/gclid","/dashboard/google-mer"].some(p => pathname.startsWith(p)),
     "/dashboard/customers":  pathname.startsWith("/dashboard/customers"),
     "/dashboard/email":      pathname.startsWith("/dashboard/email"),
+    "/dashboard/products":   pathname.startsWith("/dashboard/products"),
   }), []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(defaultOpenGroups);

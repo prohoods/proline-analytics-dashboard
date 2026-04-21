@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { googleAdsQuery } from "@/lib/google-ads";
-import { shopifyFetch } from "@/lib/shopify";
+import { getVariantSkuMap } from "@/lib/shopify";
 import { getCOGS } from "@/lib/cogs";
 
 interface ShoppingRow {
@@ -15,13 +15,6 @@ interface ShoppingRow {
     clicks: string;
     impressions: string;
   };
-}
-
-interface ShopifyVariant {
-  id: number;
-  sku: string;
-  product_id: number;
-  title: string;
 }
 
 // Extract numeric variant ID from Google Shopping product item IDs
@@ -94,32 +87,8 @@ export async function GET(request: NextRequest) {
 
     const aggregated = Object.values(aggMap).filter(r => r.costMicros > 0);
 
-    // Extract variant IDs and batch-fetch SKUs from Shopify
-    const variantIds = aggregated
-      .map(r => extractVariantId(r.productItemId))
-      .filter((id): id is string => id !== null);
-
-    const variantSkuMap: Record<string, string> = {};
-
-    if (variantIds.length > 0) {
-      // Shopify allows up to 100 IDs per request
-      const chunks: string[][] = [];
-      for (let i = 0; i < variantIds.length; i += 100) {
-        chunks.push(variantIds.slice(i, i + 100));
-      }
-      await Promise.all(chunks.map(async chunk => {
-        try {
-          const data = await shopifyFetch<{ variants: ShopifyVariant[] }>(
-            `variants.json?ids=${chunk.join(",")}&fields=id,sku,product_id,title`
-          );
-          for (const v of data.variants ?? []) {
-            if (v.sku) variantSkuMap[String(v.id)] = v.sku;
-          }
-        } catch {
-          // Non-fatal — we'll show Google data without SKU match
-        }
-      }));
-    }
+    // Fetch all Shopify variants to build variantId → SKU map
+    const variantSkuMap = await getVariantSkuMap();
 
     // Build final rows
     const products = aggregated.map(r => {

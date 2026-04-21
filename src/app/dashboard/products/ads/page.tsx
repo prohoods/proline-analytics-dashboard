@@ -278,13 +278,10 @@ export default function ProductAdsPage() {
                   {filtered.map(p => (
                     <tr key={p.productItemId} className="hover:bg-gray-800/40 transition-colors">
                       <td className="px-4 py-2.5">
-                        <div className="text-white font-medium truncate max-w-xs">{p.productTitle}</div>
-                        <div className="text-gray-500 text-xs font-mono mt-0.5">
-                          {p.sku
-                            ? <span className="text-blue-400">{p.sku}</span>
-                            : <span className="text-gray-600">SKU not matched</span>
-                          }
+                        <div className={`font-mono font-medium truncate max-w-xs ${p.sku ? "text-white" : "text-gray-600"}`}>
+                          {p.sku ?? "—"}
                         </div>
+                        <div className="text-gray-500 text-xs mt-0.5 truncate max-w-xs">{p.productTitle}</div>
                       </td>
                       <td className="px-4 py-2.5 text-right text-red-400">{fmt(p.adSpend)}</td>
                       <td className="px-4 py-2.5 text-right text-green-400">{fmt(p.adRevenue)}</td>
