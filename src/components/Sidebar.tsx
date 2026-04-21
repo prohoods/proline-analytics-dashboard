@@ -64,7 +64,13 @@ const navSections: NavSection[] = [
     label: "Operations", icon: "⚙️",
     items: [
       { href: "/dashboard/refunds",      label: "Shopify Refunds",      icon: "↩️" },
-      { href: "/dashboard/products",     label: "Product Profitability", icon: "📦" },
+      {
+        href: "/dashboard/products", label: "Products", icon: "📦",
+        children: [
+          { href: "/dashboard/products",     label: "Profitability",   icon: "📦" },
+          { href: "/dashboard/products/ads", label: "Ad Performance",  icon: "🎯" },
+        ],
+      },
       { href: "/dashboard/fulfillment",  label: "Order Fulfillment",    icon: "🚚" },
       {
         href: "/dashboard/customers", label: "Customers", icon: "👤",
