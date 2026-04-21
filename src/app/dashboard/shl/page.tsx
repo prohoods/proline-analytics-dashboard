@@ -3,16 +3,31 @@
 import { useEffect, useState, useCallback } from "react";
 import DateRangeDropdown from "@/components/DateRangeDropdown";
 import { RangeKey, getRange } from "@/lib/date-ranges";
+import { KPISkeleton, TableSkeleton } from "@/components/Skeleton";
+import { exportToCSV } from "@/lib/export-csv";
 
-type Brand = "proline" | "shl" | "combined";
+interface DayData {
+  date: string;
+  orders: number;
+  grossRevenue: number;
+  refunds: number;
+  netRevenue: number;
+}
 
-interface DayData { date: string; orders: number; grossRevenue: number; refunds: number; netRevenue: number; }
-interface Summary { totalOrders: number; grossRevenue: number; totalRefunds: number; netRevenue: number; }
-interface StoreData { daily: DayData[]; summary: Summary; }
+interface Summary {
+  totalOrders: number;
+  grossRevenue: number;
+  totalRefunds: number;
+  netRevenue: number;
+}
 
 const fmt = (n: number) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n);
+const fmt2 = (n: number) =>
+  new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 const fmtN = (n: number) => new Intl.NumberFormat("en-US").format(Math.round(n));
+const fmtPct = (n: number) => (n * 100).toFixed(1) + "%";
+
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 function fmtDate(d: string) {
   const dt = new Date(d + "T12:00:00Z");
@@ -22,8 +37,12 @@ function fmtMonth(d: string) {
   const dt = new Date(d + "-01T12:00:00Z");
   return `${MONTHS[dt.getMonth()]} ${dt.getFullYear()}`;
 }
+function fmtDow(d: string) {
+  const dt = new Date(d + "T12:00:00Z");
+  return ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][dt.getDay()];
+}
 
-function groupByMonth(daily: DayData[]): (DayData & { month: string })[] {
+function groupByMonth(daily: DayData[]) {
   const map: Record<string, DayData & { month: string }> = {};
   for (const d of daily) {
     const m = d.date.substring(0, 7);
@@ -36,214 +55,256 @@ function groupByMonth(daily: DayData[]): (DayData & { month: string })[] {
   return Object.values(map).sort((a, b) => b.month.localeCompare(a.month));
 }
 
-function combineDays(a: DayData[], b: DayData[]): DayData[] {
-  const map: Record<string, DayData> = {};
-  for (const d of [...a, ...b]) {
-    if (!map[d.date]) map[d.date] = { date: d.date, orders: 0, grossRevenue: 0, refunds: 0, netRevenue: 0 };
-    map[d.date].orders += d.orders;
-    map[d.date].grossRevenue += d.grossRevenue;
-    map[d.date].refunds += d.refunds;
-    map[d.date].netRevenue += d.netRevenue;
+function groupByDow(daily: DayData[]) {
+  const labels = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+  const map: Record<number, { orders: number; revenue: number; days: number }> = {};
+  for (let i = 0; i < 7; i++) map[i] = { orders: 0, revenue: 0, days: 0 };
+  for (const d of daily) {
+    if (d.orders === 0) continue;
+    const dow = new Date(d.date + "T12:00:00Z").getDay();
+    map[dow].orders += d.orders;
+    map[dow].revenue += d.netRevenue;
+    map[dow].days += 1;
   }
-  return Object.values(map).sort((a, b) => b.date.localeCompare(a.date));
+  return labels.map((label, i) => ({
+    label,
+    avgRevenue: map[i].days > 0 ? map[i].revenue / map[i].days : 0,
+    avgOrders: map[i].days > 0 ? map[i].orders / map[i].days : 0,
+    totalRevenue: map[i].revenue,
+  }));
 }
 
 export default function SHLPage() {
   const [rangeKey, setRangeKey] = useState<RangeKey>("30d");
-  const [brand, setBrand] = useState<Brand>("combined");
-  const [view, setView] = useState<"daily" | "monthly">("monthly");
-  const [proline, setProline] = useState<StoreData | null>(null);
-  const [shl, setShl] = useState<StoreData | null>(null);
+  const [view, setView] = useState<"daily" | "monthly">("daily");
+  const [daily, setDaily] = useState<DayData[]>([]);
+  const [summary, setSummary] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
-  const [errors, setErrors] = useState<{ proline?: string; shl?: string }>({});
+  const [error, setError] = useState<string | null>(null);
 
   const fetchData = useCallback(() => {
     const { start, end } = getRange(rangeKey);
     setLoading(true);
-    setErrors({});
-
-    Promise.allSettled([
-      fetch(`/api/shopify/orders?start=${start}&end=${end}`).then(r => r.json()).then(d => { if (d.error) throw new Error(d.error); setProline(d); }),
-      fetch(`/api/shopify-shl/orders?start=${start}&end=${end}`).then(r => r.json()).then(d => { if (d.error) throw new Error(d.error); setShl(d); }),
-    ]).then(([p, s]) => {
-      const errs: { proline?: string; shl?: string } = {};
-      if (p.status === "rejected") errs.proline = p.reason?.message ?? "Failed";
-      if (s.status === "rejected") errs.shl = s.reason?.message ?? "Failed";
-      setErrors(errs);
-      setLoading(false);
-    });
+    setError(null);
+    fetch(`/api/shopify-shl/orders?start=${start}&end=${end}`)
+      .then(r => r.json())
+      .then(d => {
+        if (d.error) { setError(d.error); return; }
+        setDaily(d.daily ?? []);
+        setSummary(d.summary ?? null);
+      })
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false));
   }, [rangeKey]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // Derive active data based on brand tab
-  const activeDays = brand === "proline" ? (proline?.daily ?? [])
-    : brand === "shl" ? (shl?.daily ?? [])
-    : combineDays(proline?.daily ?? [], shl?.daily ?? []);
+  const months = groupByMonth(daily);
+  const dowStats = groupByDow(daily);
+  const maxDowRevenue = Math.max(...dowStats.map(d => d.avgRevenue), 1);
 
-  const activeSummary: Summary = brand === "proline"
-    ? (proline?.summary ?? { totalOrders: 0, grossRevenue: 0, totalRefunds: 0, netRevenue: 0 })
-    : brand === "shl"
-      ? (shl?.summary ?? { totalOrders: 0, grossRevenue: 0, totalRefunds: 0, netRevenue: 0 })
-      : {
-          totalOrders: (proline?.summary.totalOrders ?? 0) + (shl?.summary.totalOrders ?? 0),
-          grossRevenue: (proline?.summary.grossRevenue ?? 0) + (shl?.summary.grossRevenue ?? 0),
-          totalRefunds: (proline?.summary.totalRefunds ?? 0) + (shl?.summary.totalRefunds ?? 0),
-          netRevenue: (proline?.summary.netRevenue ?? 0) + (shl?.summary.netRevenue ?? 0),
-        };
+  const aov = summary && summary.totalOrders > 0 ? summary.grossRevenue / summary.totalOrders : 0;
+  const refundRate = summary && summary.grossRevenue > 0 ? summary.totalRefunds / summary.grossRevenue : 0;
+  const activeDays = daily.filter(d => d.orders > 0).length;
+  const avgDailyRevenue = activeDays > 0 ? (summary?.netRevenue ?? 0) / activeDays : 0;
+  const bestDay = daily.reduce<DayData | null>((best, d) => (!best || d.netRevenue > best.netRevenue) ? d : best, null);
 
-  const months = groupByMonth(activeDays);
-  const Skeleton = () => <div className="h-5 bg-gray-800 rounded animate-pulse w-24" />;
-
-  const brandTabs: { key: Brand; label: string; color: string; activeClass: string }[] = [
-    { key: "proline", label: "Proline", color: "text-blue-400", activeClass: "bg-blue-600/20 text-blue-400 border-blue-700/40" },
-    { key: "shl", label: "Smart Home Luxury", color: "text-purple-400", activeClass: "bg-purple-600/20 text-purple-400 border-purple-700/40" },
-    { key: "combined", label: "Combined", color: "text-emerald-400", activeClass: "bg-emerald-600/20 text-emerald-400 border-emerald-700/40" },
-  ];
+  function handleExport() {
+    if (view === "daily") {
+      if (!daily.length) return;
+      exportToCSV(daily.map(d => ({
+        date: d.date,
+        day_of_week: fmtDow(d.date),
+        orders: d.orders,
+        gross_revenue: d.grossRevenue.toFixed(2),
+        refunds: d.refunds.toFixed(2),
+        net_revenue: d.netRevenue.toFixed(2),
+        aov: d.orders > 0 ? (d.grossRevenue / d.orders).toFixed(2) : "",
+      })), `shl-daily-${rangeKey}.csv`);
+    } else {
+      const m = groupByMonth(daily);
+      if (!m.length) return;
+      exportToCSV(m.map(d => ({
+        month: d.month,
+        orders: d.orders,
+        gross_revenue: d.grossRevenue.toFixed(2),
+        refunds: d.refunds.toFixed(2),
+        net_revenue: d.netRevenue.toFixed(2),
+        aov: d.orders > 0 ? (d.grossRevenue / d.orders).toFixed(2) : "",
+      })), `shl-monthly-${rangeKey}.csv`);
+    }
+  }
 
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
-      <div className="flex items-start justify-between">
+      <div className="flex items-start justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white">Sales — All Brands</h1>
-          <p className="text-gray-400 text-sm mt-1">Proline Range Hoods + Smart Home Luxury</p>
+          <h1 className="text-2xl font-bold text-white">Smart Home Luxury</h1>
+          <p className="text-gray-400 text-sm mt-1">Shopify sales — a11c08-ce.myshopify.com</p>
         </div>
         <DateRangeDropdown value={rangeKey} onChange={setRangeKey} />
       </div>
 
-      {/* Brand tabs */}
-      <div className="flex gap-2">
-        {brandTabs.map(tab => (
-          <button
-            key={tab.key}
-            onClick={() => setBrand(tab.key)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${
-              brand === tab.key ? tab.activeClass : "border-transparent text-gray-500 hover:text-gray-300 hover:bg-gray-800"
-            }`}
-          >
-            {tab.label}
-            {tab.key !== "combined" && errors[tab.key] && (
-              <span className="ml-1.5 text-xs text-red-400">error</span>
-            )}
-          </button>
-        ))}
-      </div>
+      {error && <div className="bg-red-900/20 border border-red-700/30 rounded-xl p-4 text-red-400 text-sm">{error}</div>}
 
-      {/* KPI cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {[
-          { label: "Gross Revenue", value: activeSummary.grossRevenue, color: "text-white" },
-          { label: "Refunds", value: activeSummary.totalRefunds, color: "text-red-400", neg: true },
-          { label: "Net Revenue", value: activeSummary.netRevenue, color: brand === "proline" ? "text-blue-400" : brand === "shl" ? "text-purple-400" : "text-emerald-400" },
-          { label: "Orders", value: activeSummary.totalOrders, color: "text-white", isCount: true },
-        ].map(card => (
-          <div key={card.label} className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-            <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">{card.label}</div>
-            {loading ? <Skeleton /> : (
-              <div className={`text-2xl font-bold ${card.color}`}>
-                {card.isCount ? fmtN(card.value) : fmt(card.value)}
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-
-      {/* Side-by-side KPIs when on Combined */}
-      {brand === "combined" && !loading && proline && shl && (
-        <div className="grid grid-cols-2 gap-4">
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-            <div className="text-xs text-blue-500 uppercase tracking-wide font-semibold mb-3">Proline Range Hoods</div>
-            <div className="grid grid-cols-3 gap-3">
-              <div><div className="text-xs text-gray-500 mb-1">Gross</div><div className="text-sm font-bold text-white">{fmt(proline.summary.grossRevenue)}</div></div>
-              <div><div className="text-xs text-gray-500 mb-1">Net</div><div className="text-sm font-bold text-blue-400">{fmt(proline.summary.netRevenue)}</div></div>
-              <div><div className="text-xs text-gray-500 mb-1">Orders</div><div className="text-sm font-bold text-white">{fmtN(proline.summary.totalOrders)}</div></div>
-            </div>
-          </div>
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-            <div className="text-xs text-purple-500 uppercase tracking-wide font-semibold mb-3">Smart Home Luxury</div>
-            <div className="grid grid-cols-3 gap-3">
-              <div><div className="text-xs text-gray-500 mb-1">Gross</div><div className="text-sm font-bold text-white">{fmt(shl.summary.grossRevenue)}</div></div>
-              <div><div className="text-xs text-gray-500 mb-1">Net</div><div className="text-sm font-bold text-purple-400">{fmt(shl.summary.netRevenue)}</div></div>
-              <div><div className="text-xs text-gray-500 mb-1">Orders</div><div className="text-sm font-bold text-white">{fmtN(shl.summary.totalOrders)}</div></div>
-            </div>
+      {loading && (
+        <div className="space-y-6">
+          <KPISkeleton count={4} />
+          <KPISkeleton count={4} />
+          <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+            <TableSkeleton rows={10} cols={6} />
           </div>
         </div>
       )}
 
-      {/* View toggle */}
-      <div className="flex gap-1">
-        {(["monthly", "daily"] as const).map(v => (
-          <button
-            key={v}
-            onClick={() => setView(v)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-              view === v ? "bg-gray-700 text-white" : "text-gray-500 hover:text-gray-300 hover:bg-gray-800"
-            }`}
-          >
-            {v.charAt(0).toUpperCase() + v.slice(1)}
-          </button>
-        ))}
-      </div>
+      {!loading && !error && summary && (
+        <>
+          {/* KPI row 1 — Revenue */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-gray-900 border border-purple-800/40 rounded-xl p-5">
+              <div className="text-xs text-purple-400 uppercase tracking-wide mb-1">Gross Revenue</div>
+              <div className="text-2xl font-bold text-white">{fmt(summary.grossRevenue)}</div>
+            </div>
+            <div className="bg-gray-900 border border-red-800/30 rounded-xl p-5">
+              <div className="text-xs text-red-400 uppercase tracking-wide mb-1">Refunds</div>
+              <div className="text-2xl font-bold text-red-400">{summary.totalRefunds > 0 ? `(${fmt(summary.totalRefunds)})` : "—"}</div>
+              <div className="text-xs text-gray-500 mt-1">{fmtPct(refundRate)} of gross</div>
+            </div>
+            <div className="bg-gray-900 border border-purple-800/40 rounded-xl p-5">
+              <div className="text-xs text-purple-400 uppercase tracking-wide mb-1">Net Revenue</div>
+              <div className="text-2xl font-bold text-purple-400">{fmt(summary.netRevenue)}</div>
+            </div>
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+              <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Orders</div>
+              <div className="text-2xl font-bold text-white">{fmtN(summary.totalOrders)}</div>
+            </div>
+          </div>
 
-      {/* Table */}
-      <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-gray-500 text-xs uppercase tracking-wider bg-gray-800/40 border-b border-gray-800">
-              <th className="py-2.5 px-4 text-left">{view === "monthly" ? "Month" : "Date"}</th>
-              <th className="py-2.5 px-4 text-right">Orders</th>
-              <th className="py-2.5 px-4 text-right">Gross Revenue</th>
-              <th className="py-2.5 px-4 text-right">Refunds</th>
-              <th className="py-2.5 px-4 text-right">Net Revenue</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-800">
-            {loading ? (
-              [...Array(6)].map((_, i) => (
-                <tr key={i}>
-                  {[...Array(5)].map((_, j) => (
-                    <td key={j} className="py-3 px-4">
-                      <div className="h-4 bg-gray-800 rounded animate-pulse" />
-                    </td>
-                  ))}
-                </tr>
-              ))
-            ) : view === "monthly" ? (
-              months.map(m => (
-                <tr key={m.month} className="hover:bg-gray-800/30">
-                  <td className="py-3 px-4 font-medium text-white">{fmtMonth(m.month)}</td>
-                  <td className="py-3 px-4 text-right text-gray-300">{fmtN(m.orders)}</td>
-                  <td className="py-3 px-4 text-right text-gray-300">{fmt(m.grossRevenue)}</td>
-                  <td className="py-3 px-4 text-right text-red-400">{m.refunds > 0 ? `(${fmt(m.refunds)})` : "—"}</td>
-                  <td className={`py-3 px-4 text-right font-semibold ${brand === "proline" ? "text-blue-400" : brand === "shl" ? "text-purple-400" : "text-emerald-400"}`}>{fmt(m.netRevenue)}</td>
-                </tr>
-              ))
-            ) : (
-              activeDays.slice(0, 90).map(d => (
-                <tr key={d.date} className="hover:bg-gray-800/30">
-                  <td className="py-2.5 px-4 text-gray-300">{fmtDate(d.date)}</td>
-                  <td className="py-2.5 px-4 text-right text-gray-300">{fmtN(d.orders)}</td>
-                  <td className="py-2.5 px-4 text-right text-gray-300">{fmt(d.grossRevenue)}</td>
-                  <td className="py-2.5 px-4 text-right text-red-400">{d.refunds > 0 ? `(${fmt(d.refunds)})` : "—"}</td>
-                  <td className={`py-2.5 px-4 text-right font-semibold ${brand === "proline" ? "text-blue-400" : brand === "shl" ? "text-purple-400" : "text-emerald-400"}`}>{fmt(d.netRevenue)}</td>
-                </tr>
-              ))
-            )}
-          </tbody>
-          {!loading && (
-            <tfoot>
-              <tr className="border-t-2 border-gray-700 bg-gray-800/50 font-bold text-white text-sm">
-                <td className="py-3 px-4">Total</td>
-                <td className="py-3 px-4 text-right">{fmtN(activeSummary.totalOrders)}</td>
-                <td className="py-3 px-4 text-right">{fmt(activeSummary.grossRevenue)}</td>
-                <td className="py-3 px-4 text-right text-red-400">{activeSummary.totalRefunds > 0 ? `(${fmt(activeSummary.totalRefunds)})` : "—"}</td>
-                <td className={`py-3 px-4 text-right ${brand === "proline" ? "text-blue-400" : brand === "shl" ? "text-purple-400" : "text-emerald-400"}`}>{fmt(activeSummary.netRevenue)}</td>
-              </tr>
-            </tfoot>
+          {/* KPI row 2 — Intelligence */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+              <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Avg Order Value</div>
+              <div className="text-2xl font-bold text-yellow-400">{fmt2(aov)}</div>
+            </div>
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+              <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Avg Daily Revenue</div>
+              <div className="text-2xl font-bold text-white">{fmt(avgDailyRevenue)}</div>
+              <div className="text-xs text-gray-500 mt-1">{activeDays} active days</div>
+            </div>
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+              <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Best Day</div>
+              <div className="text-2xl font-bold text-green-400">{bestDay ? fmt(bestDay.netRevenue) : "—"}</div>
+              <div className="text-xs text-gray-500 mt-1">{bestDay ? `${fmtDow(bestDay.date)}, ${fmtDate(bestDay.date)}` : ""}</div>
+            </div>
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+              <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Avg Orders / Day</div>
+              <div className="text-2xl font-bold text-white">
+                {activeDays > 0 ? (summary.totalOrders / activeDays).toFixed(1) : "—"}
+              </div>
+            </div>
+          </div>
+
+          {/* Day of week breakdown */}
+          {daily.length > 6 && (
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+              <h2 className="text-sm font-semibold text-white mb-4">Avg Revenue by Day of Week</h2>
+              <div className="grid grid-cols-7 gap-2">
+                {dowStats.map(d => {
+                  const pct = maxDowRevenue > 0 ? (d.avgRevenue / maxDowRevenue) * 100 : 0;
+                  return (
+                    <div key={d.label} className="flex flex-col items-center gap-1.5">
+                      <div className="text-xs text-white font-medium">{d.avgRevenue > 0 ? fmt(d.avgRevenue) : "—"}</div>
+                      <div className="w-full h-20 bg-gray-800 rounded-lg overflow-hidden flex items-end">
+                        <div
+                          className="w-full bg-purple-500/70 rounded-lg transition-all"
+                          style={{ height: `${pct}%` }}
+                        />
+                      </div>
+                      <div className="text-xs text-gray-400">{d.label}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           )}
-        </table>
-      </div>
+
+          {/* Table header row */}
+          <div className="flex items-center justify-between">
+            <div className="flex gap-1">
+              {(["daily", "monthly"] as const).map(v => (
+                <button
+                  key={v}
+                  onClick={() => setView(v)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                    view === v ? "bg-gray-700 text-white" : "text-gray-500 hover:text-gray-300 hover:bg-gray-800"
+                  }`}
+                >
+                  {v.charAt(0).toUpperCase() + v.slice(1)}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={handleExport}
+              className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs rounded-lg transition-colors"
+            >Export CSV</button>
+          </div>
+
+          {/* Table */}
+          <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 z-10 bg-gray-900 border-b border-gray-800">
+                  <tr className="text-gray-500 text-xs uppercase tracking-wider">
+                    <th className="py-2.5 px-4 text-left">{view === "monthly" ? "Month" : "Date"}</th>
+                    {view === "daily" && <th className="py-2.5 px-4 text-left">Day</th>}
+                    <th className="py-2.5 px-4 text-right">Orders</th>
+                    <th className="py-2.5 px-4 text-right">AOV</th>
+                    <th className="py-2.5 px-4 text-right">Gross Revenue</th>
+                    <th className="py-2.5 px-4 text-right">Refunds</th>
+                    <th className="py-2.5 px-4 text-right">Net Revenue</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-800">
+                  {view === "monthly"
+                    ? months.map(m => (
+                        <tr key={m.month} className="hover:bg-gray-800/30">
+                          <td className="py-3 px-4 font-medium text-white">{fmtMonth(m.month)}</td>
+                          <td className="py-3 px-4 text-right text-gray-300">{fmtN(m.orders)}</td>
+                          <td className="py-3 px-4 text-right text-yellow-400">{m.orders > 0 ? fmt2(m.grossRevenue / m.orders) : "—"}</td>
+                          <td className="py-3 px-4 text-right text-gray-300">{fmt(m.grossRevenue)}</td>
+                          <td className="py-3 px-4 text-right text-red-400">{m.refunds > 0 ? `(${fmt(m.refunds)})` : "—"}</td>
+                          <td className="py-3 px-4 text-right font-semibold text-purple-400">{fmt(m.netRevenue)}</td>
+                        </tr>
+                      ))
+                    : daily.map(d => (
+                        <tr key={d.date} className={`hover:bg-gray-800/30 ${d.orders === 0 ? "opacity-40" : ""}`}>
+                          <td className="py-2.5 px-4 text-gray-300">{fmtDate(d.date)}</td>
+                          <td className="py-2.5 px-4 text-gray-500 text-xs">{fmtDow(d.date)}</td>
+                          <td className="py-2.5 px-4 text-right text-gray-300">{d.orders > 0 ? fmtN(d.orders) : "—"}</td>
+                          <td className="py-2.5 px-4 text-right text-yellow-400">{d.orders > 0 ? fmt2(d.grossRevenue / d.orders) : "—"}</td>
+                          <td className="py-2.5 px-4 text-right text-gray-300">{d.orders > 0 ? fmt(d.grossRevenue) : "—"}</td>
+                          <td className="py-2.5 px-4 text-right text-red-400">{d.refunds > 0 ? `(${fmt(d.refunds)})` : "—"}</td>
+                          <td className="py-2.5 px-4 text-right font-semibold text-purple-400">{d.orders > 0 ? fmt(d.netRevenue) : "—"}</td>
+                        </tr>
+                      ))
+                  }
+                </tbody>
+                <tfoot>
+                  <tr className="border-t-2 border-gray-700 bg-gray-800/50 font-bold text-sm">
+                    <td className="py-3 px-4 text-white" colSpan={view === "daily" ? 2 : 1}>Total</td>
+                    <td className="py-3 px-4 text-right text-white">{fmtN(summary.totalOrders)}</td>
+                    <td className="py-3 px-4 text-right text-yellow-400">{fmt2(aov)}</td>
+                    <td className="py-3 px-4 text-right text-white">{fmt(summary.grossRevenue)}</td>
+                    <td className="py-3 px-4 text-right text-red-400">{summary.totalRefunds > 0 ? `(${fmt(summary.totalRefunds)})` : "—"}</td>
+                    <td className="py-3 px-4 text-right text-purple-400">{fmt(summary.netRevenue)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
