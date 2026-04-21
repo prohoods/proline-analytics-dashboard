@@ -61,24 +61,24 @@ const navSections: NavSection[] = [
     ],
   },
   {
+    label: "Products", icon: "📦",
+    items: [
+      { href: "/dashboard/products",     label: "Profitability",  icon: "📦" },
+      { href: "/dashboard/products/ads", label: "Ad Performance", icon: "🎯" },
+    ],
+  },
+  {
+    label: "Customers", icon: "👤",
+    items: [
+      { href: "/dashboard/customers",             label: "Customer Directory",      icon: "👤" },
+      { href: "/dashboard/customers/acquisition", label: "Acquisition & Retention", icon: "🎯" },
+    ],
+  },
+  {
     label: "Operations", icon: "⚙️",
     items: [
-      { href: "/dashboard/refunds",      label: "Shopify Refunds",      icon: "↩️" },
-      {
-        href: "/dashboard/products", label: "Products", icon: "📦",
-        children: [
-          { href: "/dashboard/products",     label: "Profitability",   icon: "📦" },
-          { href: "/dashboard/products/ads", label: "Ad Performance",  icon: "🎯" },
-        ],
-      },
-      { href: "/dashboard/fulfillment",  label: "Order Fulfillment",    icon: "🚚" },
-      {
-        href: "/dashboard/customers", label: "Customers", icon: "👤",
-        children: [
-          { href: "/dashboard/customers",             label: "Customer Directory",    icon: "👤" },
-          { href: "/dashboard/customers/acquisition", label: "Acquisition & Retention", icon: "🎯" },
-        ],
-      },
+      { href: "/dashboard/refunds",     label: "Shopify Refunds",  icon: "↩️" },
+      { href: "/dashboard/fulfillment", label: "Order Fulfillment", icon: "🚚" },
     ],
   },
 ];
@@ -112,9 +112,7 @@ export default function Sidebar() {
   // Item-level expandable groups (Google Ads sub-pages, Customers, Email)
   const defaultOpenGroups = useMemo(() => ({
     "/dashboard/google-ads": ["/dashboard/pmax","/dashboard/shopping","/dashboard/search","/dashboard/demand-gen","/dashboard/gclid","/dashboard/google-mer"].some(p => pathname.startsWith(p)),
-    "/dashboard/customers":  pathname.startsWith("/dashboard/customers"),
     "/dashboard/email":      pathname.startsWith("/dashboard/email"),
-    "/dashboard/products":   pathname.startsWith("/dashboard/products"),
   }), []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(defaultOpenGroups);
