@@ -67,8 +67,8 @@ function ProductDetailPanel({ product, onClose }: { product: Product; onClose: (
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/50 z-40 backdrop-blur-sm" onClick={onClose} />
-      <div className="fixed right-0 top-0 h-full w-full max-w-md bg-gray-900 border-l border-gray-700 z-50 overflow-y-auto shadow-2xl">
+      <div className="fixed inset-0 bg-black/50 z-40 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+        <div className="w-full max-w-lg max-h-[90vh] bg-gray-900 border border-gray-700 rounded-xl z-50 overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div className="sticky top-0 bg-gray-900 border-b border-gray-800 px-5 py-4 flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -156,6 +156,7 @@ function ProductDetailPanel({ product, onClose }: { product: Product; onClose: (
               </div>
             )}
           </div>
+        </div>
         </div>
       </div>
     </>

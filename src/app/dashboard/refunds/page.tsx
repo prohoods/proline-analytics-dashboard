@@ -1,7 +1,27 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import MetricCard from "@/components/MetricCard";
+
+// Buckets raw merchant notes into a short set of themes so we can see where
+// the refund dollars are actually going. Order matters — first match wins.
+// "No note" is a real signal (staff didn't leave a reason), so we keep it.
+const REASON_RULES: { label: string; match: RegExp }[] = [
+  { label: "Backorder / Out of stock", match: /\b(b\/?o|back ?order|out of stock|oos|not in stock|discontinued)\b/i },
+  { label: "Customer canceled", match: /\b(cancel(l)?ed?|no longer need|changed (his |her |their )?mind|customer (wants|asked) to cancel)\b/i },
+  { label: "Wrong item / swap", match: /\b(wrong|swap(ping)?|switch(ing)?|exchange|incorrect|mis-?ordered|ordered (the )?wrong)\b/i },
+  { label: "Damaged / defective", match: /\b(damag|defect|broken|cracked|dented|scratch|malfunction|not working|doesn'?t work)\b/i },
+  { label: "Duplicate order", match: /\b(duplicate|double charged|accident(al)?(ly)? (ordered|bought)|2x|twice)\b/i },
+  { label: "Shipping / delivery", match: /\b(shipping|delivery|lost|never arrived|carrier|freight|ups|fedex|usps)\b/i },
+  { label: "Pricing / promo", match: /\b(price|discount|coupon|promo|refund (the )?difference|price match)\b/i },
+  { label: "Fit / size", match: /\b(too (big|small|large|wide|narrow|tall|short)|doesn'?t fit|wrong size|size)\b/i },
+];
+
+function categorizeNote(note: string): string {
+  if (!note || !note.trim()) return "No note";
+  for (const rule of REASON_RULES) if (rule.match.test(note)) return rule.label;
+  return "Other";
+}
 
 interface RefundItem { title: string; sku: string; quantity: number; subtotal: number; }
 interface Refund {
@@ -65,6 +85,20 @@ export default function RefundsPage() {
       )
     : refunds;
 
+  const reasonBreakdown = useMemo(() => {
+    const map: Record<string, { label: string; count: number; amount: number }> = {};
+    for (const r of refunds) {
+      const label = categorizeNote(r.note);
+      if (!map[label]) map[label] = { label, count: 0, amount: 0 };
+      map[label].count += 1;
+      map[label].amount += r.refundAmount;
+    }
+    const total = refunds.reduce((s, r) => s + r.refundAmount, 0);
+    return Object.values(map)
+      .map(b => ({ ...b, pct: total > 0 ? (b.amount / total) * 100 : 0 }))
+      .sort((a, b) => b.amount - a.amount);
+  }, [refunds]);
+
   return (
     <div className="p-8">
       <div className="mb-6 flex items-start justify-between flex-wrap gap-4">
@@ -97,6 +131,42 @@ export default function RefundsPage() {
             <MetricCard label="Orders Affected" value={summary.totalOrders.toString()} subtext="Unique orders" />
             <MetricCard label="Items Refunded" value={summary.totalItemsRefunded.toString()} subtext="Total units" />
           </div>
+
+          {reasonBreakdown.length > 0 && (
+            <div className="bg-gray-900 rounded-xl border border-gray-800 mb-6 overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-800 flex items-center justify-between">
+                <div>
+                  <h2 className="text-sm font-semibold text-white">Why we&apos;re refunding</h2>
+                  <p className="text-xs text-gray-500 mt-0.5">Bucketed from staff refund notes — where the money is going</p>
+                </div>
+                <span className="text-xs text-gray-500">{reasonBreakdown.length} categories</span>
+              </div>
+              <div className="divide-y divide-gray-800">
+                {reasonBreakdown.map(b => (
+                  <div key={b.label} className="px-6 py-3">
+                    <div className="flex items-center justify-between mb-1.5 text-sm">
+                      <div className="flex items-center gap-3">
+                        <span className={`font-medium ${b.label === "No note" ? "text-gray-500" : b.label === "Other" ? "text-gray-400" : "text-white"}`}>
+                          {b.label}
+                        </span>
+                        <span className="text-xs text-gray-500">{b.count} refunds</span>
+                      </div>
+                      <div className="flex items-center gap-3 text-xs">
+                        <span className="text-gray-500 tabular-nums">{b.pct.toFixed(1)}%</span>
+                        <span className="text-red-400 font-semibold tabular-nums">({fmt(b.amount)})</span>
+                      </div>
+                    </div>
+                    <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full ${b.label === "No note" ? "bg-gray-600" : b.label === "Other" ? "bg-gray-500" : "bg-red-500/70"}`}
+                        style={{ width: `${Math.min(100, b.pct)}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Search */}
           <div className="mb-4">
