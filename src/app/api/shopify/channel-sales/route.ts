@@ -11,6 +11,14 @@ function classifyOrder(order: ShopifyOrder): Channel {
   return "other";
 }
 
+// Redo is the shipping protection / returns SaaS. We collect the fee at
+// checkout but remit it to Redo — it's not Proline revenue. Exposed in its
+// own column and subtracted from Net / Total so the dashboard reflects the
+// cash Proline actually keeps.
+function isRedoSku(sku: string | undefined | null): boolean {
+  return !!sku && sku.toLowerCase().startsWith("x-redo");
+}
+
 // ISO week key: YYYY-Www (e.g. "2026-W15")
 function isoWeek(dateStr: string): string {
   const d = new Date(dateStr + "T12:00:00Z");
@@ -42,14 +50,15 @@ export interface SalesBucket {
   grossSales: number;    // subtotal + discounts (before discounts)
   discounts: number;     // total_discounts (positive number)
   returns: number;       // refund amounts
-  netSales: number;      // grossSales - discounts - returns
+  netSales: number;      // grossSales - discounts - returns - redo
   shipping: number;      // total_price - subtotal - tax
   salesTax: number;
+  redo: number;          // pass-through to Redo (collected − refunded)
   totalSales: number;    // netSales + shipping + salesTax
 }
 
 function emptyBucket(date: string): SalesBucket {
-  return { date, prh: 0, prolinePro: 0, phone: 0, other: 0, grossSales: 0, discounts: 0, returns: 0, netSales: 0, shipping: 0, salesTax: 0, totalSales: 0 };
+  return { date, prh: 0, prolinePro: 0, phone: 0, other: 0, grossSales: 0, discounts: 0, returns: 0, netSales: 0, shipping: 0, salesTax: 0, redo: 0, totalSales: 0 };
 }
 
 function rollup(buckets: SalesBucket[], key: string): SalesBucket {
@@ -57,7 +66,8 @@ function rollup(buckets: SalesBucket[], key: string): SalesBucket {
   for (const d of buckets) {
     b.prh += d.prh; b.prolinePro += d.prolinePro; b.phone += d.phone; b.other += d.other;
     b.grossSales += d.grossSales; b.discounts += d.discounts; b.returns += d.returns;
-    b.netSales += d.netSales; b.shipping += d.shipping; b.salesTax += d.salesTax; b.totalSales += d.totalSales;
+    b.netSales += d.netSales; b.shipping += d.shipping; b.salesTax += d.salesTax;
+    b.redo += d.redo; b.totalSales += d.totalSales;
   }
   return b;
 }
@@ -81,6 +91,7 @@ export async function GET(request: NextRequest) {
     // subtotal-only and subtracts refunded tax from the Taxes line instead.
     const returnsByDate: Record<string, number> = {};
     const refundTaxByDate: Record<string, number> = {};
+    const redoRefundedByDate: Record<string, number> = {};
     const ordersWithRefunds = orders.filter(o =>
       (o.refunds && o.refunds.length > 0) ||
       o.financial_status === "refunded" ||
@@ -99,6 +110,9 @@ export async function GET(request: NextRequest) {
           const lineItemTax = r.refund_line_items?.reduce(
             (s, li) => s + parseFloat(li.total_tax ?? "0"), 0
           ) ?? 0;
+          const redoRefund = r.refund_line_items?.reduce(
+            (s, li) => s + (isRedoSku(li.line_item?.sku) ? parseFloat(li.subtotal ?? "0") : 0), 0
+          ) ?? 0;
           // Fallback when line items are absent: use transaction total (no tax split).
           const txTotal = lineItemSubtotal === 0 && lineItemTax === 0
             ? r.transactions?.reduce((s, t) => s + parseFloat(t.amount ?? "0"), 0) ?? 0
@@ -107,6 +121,9 @@ export async function GET(request: NextRequest) {
           if (subtotalAmt <= 0 && lineItemTax <= 0) continue;
           returnsByDate[refundDate] = (returnsByDate[refundDate] ?? 0) + subtotalAmt;
           refundTaxByDate[refundDate] = (refundTaxByDate[refundDate] ?? 0) + lineItemTax;
+          if (redoRefund > 0) {
+            redoRefundedByDate[refundDate] = (redoRefundedByDate[refundDate] ?? 0) + redoRefund;
+          }
         }
       });
 
@@ -124,9 +141,15 @@ export async function GET(request: NextRequest) {
       const shipping   = Math.max(0, totalPrice - subtotal - tax);
       const channel    = classifyOrder(order);
 
+      // Redo fee rides as a line item — split it out so we can show the
+      // pass-through separately and back it out of Net/Total.
+      const redoCollected = (order.line_items ?? []).reduce(
+        (s, li) => s + (isRedoSku(li.sku) ? parseFloat(li.price ?? "0") * (li.quantity ?? 1) : 0), 0
+      );
+
       // Gross = subtotal + discounts (line items before discount)
       const gross = subtotal + discounts;
-      const net   = gross - discounts; // returns applied separately below
+      const net   = gross - discounts - redoCollected; // returns applied below
 
       dailyMap[date][channel]      += subtotal; // channel columns show post-discount subtotal
       dailyMap[date].grossSales    += gross;
@@ -134,21 +157,30 @@ export async function GET(request: NextRequest) {
       dailyMap[date].netSales      += net;
       dailyMap[date].shipping      += shipping;
       dailyMap[date].salesTax      += tax;
+      dailyMap[date].redo          += redoCollected;
       dailyMap[date].totalSales    += net + shipping + tax;
     }
 
     // Apply returns to the date the refund was actually processed.
     // Returns = refunded subtotal. Refunded tax is subtracted from salesTax
     // so the Taxes column matches Shopify's net-tax Total sales breakdown.
-    const refundDates = new Set([...Object.keys(returnsByDate), ...Object.keys(refundTaxByDate)]);
+    // Redo portion of refunds is backed out of the Redo column (and added back
+    // to netSales, since we already subtracted it from returns implicitly).
+    const refundDates = new Set([
+      ...Object.keys(returnsByDate),
+      ...Object.keys(refundTaxByDate),
+      ...Object.keys(redoRefundedByDate),
+    ]);
     for (const date of refundDates) {
       if (!dailyMap[date]) dailyMap[date] = emptyBucket(date);
       const subAmt = returnsByDate[date] ?? 0;
       const taxAmt = refundTaxByDate[date] ?? 0;
+      const redoAmt = redoRefundedByDate[date] ?? 0;
       dailyMap[date].returns    += subAmt;
-      dailyMap[date].netSales   -= subAmt;
+      dailyMap[date].netSales   -= (subAmt - redoAmt);
       dailyMap[date].salesTax   -= taxAmt;
-      dailyMap[date].totalSales -= (subAmt + taxAmt);
+      dailyMap[date].redo       -= redoAmt;
+      dailyMap[date].totalSales -= (subAmt - redoAmt + taxAmt);
     }
 
     const daily = Object.values(dailyMap).sort((a, b) => b.date.localeCompare(a.date));

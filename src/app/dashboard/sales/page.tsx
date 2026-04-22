@@ -20,6 +20,7 @@ interface SalesBucket {
   netSales: number;
   shipping: number;
   salesTax: number;
+  redo: number;
   totalSales: number;
   marketplaces?: number;
   shl?: number;
@@ -85,6 +86,7 @@ function sumBuckets(buckets: SalesBucket[]) {
     netSales: buckets.reduce((s, r) => s + r.netSales, 0),
     shipping: buckets.reduce((s, r) => s + r.shipping, 0),
     salesTax: buckets.reduce((s, r) => s + r.salesTax, 0),
+    redo: buckets.reduce((s, r) => s + (r.redo ?? 0), 0),
     totalSales: buckets.reduce((s, r) => s + r.totalSales, 0),
   };
 }
@@ -542,7 +544,7 @@ export default function SalesPage() {
                     Date: r.date, PRH: r.prh, Pro: r.prolinePro, Phone: r.phone,
                     SHL: r.shl ?? 0, Other: r.other, Marketplace: r.marketplaces ?? 0,
                     Gross: r.grossSales, Discounts: r.discounts, Returns: r.returns,
-                    Net: r.netSales, Shipping: r.shipping, Tax: r.salesTax,
+                    Redo: r.redo, Net: r.netSales, Shipping: r.shipping, Tax: r.salesTax,
                     Total: r.totalSales + (r.marketplaces ?? 0) + (r.shl ?? 0),
                   })),
                   `proline-sales-${range.start}-${range.end}`
@@ -570,6 +572,7 @@ export default function SalesPage() {
                   <th className="py-3 px-3 text-right border-l border-gray-800">Gross</th>
                   <th className="py-3 px-3 text-right text-red-400">Discounts</th>
                   <th className="py-3 px-3 text-right text-red-400">Returns</th>
+                  <th className="py-3 px-3 text-right text-cyan-400" title="Redo shipping protection fees — collected at checkout, remitted to Redo. Not Proline revenue.">Redo</th>
                   <th className="py-3 px-3 text-right font-semibold text-white">Net</th>
                   <th className="py-3 px-3 text-right">Shipping</th>
                   <th className="py-3 px-3 text-right" title="Combined DTC + SHL net sales tax (tax collected − refunded tax)">Tax <span className="text-gray-600 normal-case">(DTC+SHL)</span></th>
@@ -597,6 +600,7 @@ export default function SalesPage() {
                       <td className="py-2 px-3 text-right border-l border-gray-800">{fmt(row.grossSales)}</td>
                       <td className="py-2 px-3 text-right">{neg(row.discounts)}</td>
                       <td className="py-2 px-3 text-right">{neg(row.returns)}</td>
+                      <td className="py-2 px-3 text-right text-cyan-400">{row.redo > 0 ? fmt(row.redo) : <span className="text-gray-600">—</span>}</td>
                       <td className="py-2 px-3 text-right font-semibold text-white">{fmt(row.netSales)}</td>
                       <td className="py-2 px-3 text-right text-gray-400">{row.shipping > 0 ? fmt(row.shipping) : <span className="text-gray-600">—</span>}</td>
                       <td className="py-2 px-3 text-right text-gray-400">{row.salesTax > 0 ? fmt(row.salesTax) : <span className="text-gray-600">—</span>}</td>
@@ -617,6 +621,7 @@ export default function SalesPage() {
                   <td className="py-3 px-3 text-right border-l border-gray-800">{fmt(totals.grossSales)}</td>
                   <td className="py-3 px-3 text-right text-red-400">({fmt(totals.discounts)})</td>
                   <td className="py-3 px-3 text-right text-red-400">({fmt(totals.returns)})</td>
+                  <td className="py-3 px-3 text-right text-cyan-400">{fmt(totals.redo)}</td>
                   <td className="py-3 px-3 text-right">{fmt(totals.netSales)}</td>
                   <td className="py-3 px-3 text-right text-gray-400">{fmt(totals.shipping)}</td>
                   <td className="py-3 px-3 text-right text-gray-400">{fmt(totals.salesTax)}</td>

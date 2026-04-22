@@ -9,6 +9,14 @@ interface DatedRefund {
   refundDate: string;   // YYYY-MM-DD (based on refund.created_at)
   amount: number;       // subtotal + tax from refund_line_items (or tx fallback)
   tax: number;          // refunded tax portion — needed for sales-tax reporting
+  redo: number;         // redo line items refunded — pass-through to Redo
+}
+
+// Redo is the shipping-protection SaaS — fees ride as line items with an
+// x-redo SKU. We collect at checkout and remit to Redo, so the money isn't
+// ours; surface it separately and back it out of net.
+function isRedoSku(sku: string | undefined | null): boolean {
+  return !!sku && sku.toLowerCase().startsWith("x-redo");
 }
 
 export async function GET(request: NextRequest) {
@@ -43,6 +51,9 @@ export async function GET(request: NextRequest) {
           const lineItemTax = r.refund_line_items?.reduce(
             (s, li) => s + parseFloat(li.total_tax ?? "0"), 0
           ) ?? 0;
+          const redoRefund = r.refund_line_items?.reduce(
+            (s, li) => s + (isRedoSku(li.line_item?.sku) ? parseFloat(li.subtotal ?? "0") : 0), 0
+          ) ?? 0;
           const lineItemTotal = lineItemSubtotal + lineItemTax;
           // Fallback: if no line items, use transaction amount (no tax split available)
           const txTotal = lineItemTotal === 0
@@ -55,6 +66,7 @@ export async function GET(request: NextRequest) {
             refundDate: (r.created_at ?? order.created_at).substring(0, 10),
             amount,
             tax: lineItemTax,
+            redo: redoRefund,
           });
         }
       });
@@ -67,13 +79,14 @@ export async function GET(request: NextRequest) {
       grossRevenue: number;
       refunds: number;
       refundTax: number;    // sales tax refunded this day — subtract from tax liability
-      netRevenue: number;   // gross on this day minus refunds on this day
+      netRevenue: number;   // gross on this day minus refunds on this day, ex Redo
       tax: number;          // gross tax collected this day (pre-refund)
+      redo: number;         // Redo pass-through (collected − refunded, by day)
     }> = {};
 
     const ensureDay = (date: string) => {
       if (!dailyMap[date]) {
-        dailyMap[date] = { date, orders: 0, grossRevenue: 0, refunds: 0, refundTax: 0, netRevenue: 0, tax: 0 };
+        dailyMap[date] = { date, orders: 0, grossRevenue: 0, refunds: 0, refundTax: 0, netRevenue: 0, tax: 0, redo: 0 };
       }
       return dailyMap[date];
     };
@@ -83,20 +96,26 @@ export async function GET(request: NextRequest) {
     let totalRefundTax = 0;
     let totalTax = 0;
     let totalOrders = 0;
+    let totalRedo = 0;
 
     for (const order of orders) {
       const date = order.created_at.substring(0, 10);
       const day = ensureDay(date);
       const gross = parseFloat(order.total_price);
       const tax = parseFloat(order.total_tax);
+      const redoCollected = (order.line_items ?? []).reduce(
+        (s, li) => s + (isRedoSku(li.sku) ? parseFloat(li.price ?? "0") * (li.quantity ?? 1) : 0), 0
+      );
 
       day.orders += 1;
       day.grossRevenue += gross;
       day.tax += tax;
-      day.netRevenue += gross; // refunds subtracted below on refund date
+      day.redo += redoCollected;
+      day.netRevenue += gross - redoCollected; // refunds subtracted below on refund date
 
       totalGross += gross;
       totalTax += tax;
+      totalRedo += redoCollected;
       totalOrders += 1;
     }
 
@@ -104,9 +123,13 @@ export async function GET(request: NextRequest) {
       const day = ensureDay(r.refundDate);
       day.refunds += r.amount;
       day.refundTax += r.tax;
-      day.netRevenue -= r.amount;
+      day.redo -= r.redo;
+      // Net drops by the refund but Redo-portion of that refund isn't ours
+      // to lose (we never kept it); add it back so net reflects Proline only.
+      day.netRevenue -= (r.amount - r.redo);
       totalRefunds += r.amount;
       totalRefundTax += r.tax;
+      totalRedo -= r.redo;
     }
 
     const daily = Object.values(dailyMap).sort((a, b) => b.date.localeCompare(a.date));
@@ -117,10 +140,11 @@ export async function GET(request: NextRequest) {
         totalOrders,
         grossRevenue: totalGross,
         totalRefunds,
-        netRevenue: totalGross - totalRefunds,
+        netRevenue: totalGross - totalRefunds - totalRedo,
         grossTax: totalTax,
         refundTax: totalRefundTax,
         netTax: totalTax - totalRefundTax,
+        redo: totalRedo,
         dateRange: { start, end },
       },
     }, {

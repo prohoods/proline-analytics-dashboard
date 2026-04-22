@@ -13,6 +13,7 @@ interface DailySummary {
   netRevenue: number;
   tax: number;
   refundTax: number;
+  redo: number;
 }
 
 interface Summary {
@@ -23,6 +24,7 @@ interface Summary {
   grossTax: number;
   refundTax: number;
   netTax: number;
+  redo: number;
   dateRange: { start: string; end: string };
 }
 
@@ -84,12 +86,13 @@ export default function ShopifyPage() {
             <MetricCard label="Total Orders" value={summary.totalOrders.toString()} subtext={range.label} />
             <MetricCard label="Gross Revenue" value={fmt(summary.grossRevenue)} subtext={range.label} highlight />
             <MetricCard label="Refunds" value={fmt(summary.totalRefunds)} subtext="Bucketed on refund date" trend="down" />
-            <MetricCard label="Net Revenue" value={fmt(summary.netRevenue)} subtext="After refunds" trend="up" />
+            <MetricCard label="Net Revenue" value={fmt(summary.netRevenue)} subtext="After refunds, ex Redo" trend="up" />
           </div>
-          <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
             <MetricCard label="Sales Tax Collected" value={fmt(summary.grossTax ?? 0)} subtext="On orders in range" />
             <MetricCard label="Sales Tax Refunded" value={fmt(summary.refundTax ?? 0)} subtext="Bucketed on refund date" trend="down" />
             <MetricCard label="Net Sales Tax" value={fmt(summary.netTax ?? 0)} subtext="Due on filings" highlight />
+            <MetricCard label="Redo Pass-Through" value={fmt(summary.redo ?? 0)} subtext="Collected on behalf of Redo" />
           </div>
 
           <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
@@ -105,6 +108,7 @@ export default function ShopifyPage() {
                     <th className="py-3 px-4 text-right">Orders</th>
                     <th className="py-3 px-4 text-right">Gross Revenue</th>
                     <th className="py-3 px-4 text-right text-red-400">Refunds</th>
+                    <th className="py-3 px-4 text-right text-cyan-400">Redo</th>
                     <th className="py-3 px-4 text-right">Net Revenue</th>
                     <th className="py-3 px-4 text-right">Sales Tax</th>
                   </tr>
@@ -120,6 +124,7 @@ export default function ShopifyPage() {
                         <td className="py-2.5 px-4 text-right text-red-400">
                           {row.refunds > 0 ? `(${fmt(row.refunds)})` : "—"}
                         </td>
+                        <td className="py-2.5 px-4 text-right text-cyan-400">{(row.redo ?? 0) > 0 ? fmt(row.redo) : <span className="text-gray-600">—</span>}</td>
                         <td className="py-2.5 px-4 text-right font-semibold text-white">{fmt(row.netRevenue)}</td>
                         <td className="py-2.5 px-4 text-right text-yellow-400">{netDayTax !== 0 ? fmt(netDayTax) : "—"}</td>
                       </tr>
@@ -132,6 +137,7 @@ export default function ShopifyPage() {
                     <td className="py-3 px-4 text-right">{summary.totalOrders}</td>
                     <td className="py-3 px-4 text-right">{fmt(summary.grossRevenue)}</td>
                     <td className="py-3 px-4 text-right text-red-400">({fmt(summary.totalRefunds)})</td>
+                    <td className="py-3 px-4 text-right text-cyan-400">{fmt(summary.redo ?? 0)}</td>
                     <td className="py-3 px-4 text-right text-green-400">{fmt(summary.netRevenue)}</td>
                     <td className="py-3 px-4 text-right text-yellow-400">{fmt(summary.netTax ?? 0)}</td>
                   </tr>
