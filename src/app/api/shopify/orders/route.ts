@@ -1,6 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getOrders, getOrderRefunds } from "@/lib/shopify";
 
+// Each refund carries its own date — we bucket refunds on the refund date,
+// not the original order date. This keeps historical weeks stable (Shopify's
+// own reports do the same) and makes the dashboard reconcile to Shopify.
+interface DatedRefund {
+  orderId: number;
+  refundDate: string;   // YYYY-MM-DD (based on refund.created_at)
+  amount: number;       // subtotal + tax from refund_line_items (or tx fallback)
+  tax: number;          // refunded tax portion — needed for sales-tax reporting
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -15,73 +25,90 @@ export async function GET(request: NextRequest) {
     const data = await getOrders(params);
     const orders = data.orders;
 
-    // Fetch real refund amounts for orders that have refunds
-    const refundMap: Record<number, number> = {};
-    // Bulk orders API often returns refunds:[] even for refunded orders
-    // Use financial_status as the reliable indicator
+    // Pull full refund details for any order flagged as refunded.
     const ordersWithRefunds = orders.filter(o =>
       (o.refunds && o.refunds.length > 0) ||
       o.financial_status === "refunded" ||
       o.financial_status === "partially_refunded"
     );
 
-    console.log(`Found ${ordersWithRefunds.length} orders with refunds`);
+    const datedRefunds: DatedRefund[] = [];
 
     await Promise.all(
       ordersWithRefunds.map(async (order) => {
         const refunds = await getOrderRefunds(order.id);
-        console.log(`Order ${order.id} refunds:`, JSON.stringify(refunds.map(r => ({
-          txCount: r.transactions?.length,
-          txAmounts: r.transactions?.map(t => ({ kind: t.kind, status: t.status, amount: t.amount })),
-          lineItems: r.refund_line_items?.map(li => ({ subtotal: li.subtotal, tax: li.total_tax })),
-        }))));
-        // Sum all refund line items (subtotal + tax) — most reliable source
-        const amount = refunds.reduce((sum, r) => {
-          const lineItemTotal = r.refund_line_items?.reduce(
-            (s, li) => s + parseFloat(li.subtotal ?? "0") + parseFloat(li.total_tax ?? "0"), 0
+        for (const r of refunds) {
+          const lineItemSubtotal = r.refund_line_items?.reduce(
+            (s, li) => s + parseFloat(li.subtotal ?? "0"), 0
           ) ?? 0;
-          // Fall back to any transaction amount if no line items
+          const lineItemTax = r.refund_line_items?.reduce(
+            (s, li) => s + parseFloat(li.total_tax ?? "0"), 0
+          ) ?? 0;
+          const lineItemTotal = lineItemSubtotal + lineItemTax;
+          // Fallback: if no line items, use transaction amount (no tax split available)
           const txTotal = lineItemTotal === 0
             ? r.transactions?.reduce((s, t) => s + parseFloat(t.amount ?? "0"), 0) ?? 0
             : 0;
-          return sum + (lineItemTotal > 0 ? lineItemTotal : txTotal);
-        }, 0);
-        refundMap[order.id] = amount;
+          const amount = lineItemTotal > 0 ? lineItemTotal : txTotal;
+          if (amount <= 0) continue;
+          datedRefunds.push({
+            orderId: order.id,
+            refundDate: (r.created_at ?? order.created_at).substring(0, 10),
+            amount,
+            tax: lineItemTax,
+          });
+        }
       })
     );
 
-    // Aggregate daily totals
+    // Aggregate daily totals. Gross revenue buckets on order date; refunds
+    // bucket on refund date so historical days don't mutate when a return comes in.
     const dailyMap: Record<string, {
       date: string;
       orders: number;
       grossRevenue: number;
       refunds: number;
-      netRevenue: number;
-      tax: number;
+      refundTax: number;    // sales tax refunded this day — subtract from tax liability
+      netRevenue: number;   // gross on this day minus refunds on this day
+      tax: number;          // gross tax collected this day (pre-refund)
     }> = {};
+
+    const ensureDay = (date: string) => {
+      if (!dailyMap[date]) {
+        dailyMap[date] = { date, orders: 0, grossRevenue: 0, refunds: 0, refundTax: 0, netRevenue: 0, tax: 0 };
+      }
+      return dailyMap[date];
+    };
 
     let totalGross = 0;
     let totalRefunds = 0;
+    let totalRefundTax = 0;
+    let totalTax = 0;
     let totalOrders = 0;
 
     for (const order of orders) {
       const date = order.created_at.substring(0, 10);
-      if (!dailyMap[date]) {
-        dailyMap[date] = { date, orders: 0, grossRevenue: 0, refunds: 0, netRevenue: 0, tax: 0 };
-      }
+      const day = ensureDay(date);
       const gross = parseFloat(order.total_price);
       const tax = parseFloat(order.total_tax);
-      const refundAmount = refundMap[order.id] ?? 0;
 
-      dailyMap[date].orders += 1;
-      dailyMap[date].grossRevenue += gross;
-      dailyMap[date].refunds += refundAmount;
-      dailyMap[date].tax += tax;
-      dailyMap[date].netRevenue += gross - refundAmount;
+      day.orders += 1;
+      day.grossRevenue += gross;
+      day.tax += tax;
+      day.netRevenue += gross; // refunds subtracted below on refund date
 
       totalGross += gross;
-      totalRefunds += refundAmount;
+      totalTax += tax;
       totalOrders += 1;
+    }
+
+    for (const r of datedRefunds) {
+      const day = ensureDay(r.refundDate);
+      day.refunds += r.amount;
+      day.refundTax += r.tax;
+      day.netRevenue -= r.amount;
+      totalRefunds += r.amount;
+      totalRefundTax += r.tax;
     }
 
     const daily = Object.values(dailyMap).sort((a, b) => b.date.localeCompare(a.date));
@@ -93,6 +120,9 @@ export async function GET(request: NextRequest) {
         grossRevenue: totalGross,
         totalRefunds,
         netRevenue: totalGross - totalRefunds,
+        grossTax: totalTax,
+        refundTax: totalRefundTax,
+        netTax: totalTax - totalRefundTax,
         dateRange: { start, end },
       },
     }, {

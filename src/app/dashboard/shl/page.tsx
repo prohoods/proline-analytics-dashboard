@@ -12,6 +12,8 @@ interface DayData {
   grossRevenue: number;
   refunds: number;
   netRevenue: number;
+  tax: number;        // gross sales tax collected on orders created this day
+  refundTax: number;  // sales tax refunded on this day (bucketed by refund date)
 }
 
 interface Summary {
@@ -19,6 +21,9 @@ interface Summary {
   grossRevenue: number;
   totalRefunds: number;
   netRevenue: number;
+  grossTax: number;
+  refundTax: number;
+  netTax: number;
 }
 
 const fmt = (n: number) =>
@@ -46,11 +51,13 @@ function groupByMonth(daily: DayData[]) {
   const map: Record<string, DayData & { month: string }> = {};
   for (const d of daily) {
     const m = d.date.substring(0, 7);
-    if (!map[m]) map[m] = { date: m, month: m, orders: 0, grossRevenue: 0, refunds: 0, netRevenue: 0 };
+    if (!map[m]) map[m] = { date: m, month: m, orders: 0, grossRevenue: 0, refunds: 0, netRevenue: 0, tax: 0, refundTax: 0 };
     map[m].orders += d.orders;
     map[m].grossRevenue += d.grossRevenue;
     map[m].refunds += d.refunds;
     map[m].netRevenue += d.netRevenue;
+    map[m].tax += d.tax ?? 0;
+    map[m].refundTax += d.refundTax ?? 0;
   }
   return Object.values(map).sort((a, b) => b.month.localeCompare(a.month));
 }
@@ -119,6 +126,9 @@ export default function SHLPage() {
         gross_revenue: d.grossRevenue.toFixed(2),
         refunds: d.refunds.toFixed(2),
         net_revenue: d.netRevenue.toFixed(2),
+        gross_tax: (d.tax ?? 0).toFixed(2),
+        refund_tax: (d.refundTax ?? 0).toFixed(2),
+        net_tax: ((d.tax ?? 0) - (d.refundTax ?? 0)).toFixed(2),
         aov: d.orders > 0 ? (d.grossRevenue / d.orders).toFixed(2) : "",
       })), `shl-daily-${rangeKey}.csv`);
     } else {
@@ -130,6 +140,9 @@ export default function SHLPage() {
         gross_revenue: d.grossRevenue.toFixed(2),
         refunds: d.refunds.toFixed(2),
         net_revenue: d.netRevenue.toFixed(2),
+        gross_tax: (d.tax ?? 0).toFixed(2),
+        refund_tax: (d.refundTax ?? 0).toFixed(2),
+        net_tax: ((d.tax ?? 0) - (d.refundTax ?? 0)).toFixed(2),
         aov: d.orders > 0 ? (d.grossRevenue / d.orders).toFixed(2) : "",
       })), `shl-monthly-${rangeKey}.csv`);
     }
@@ -205,6 +218,32 @@ export default function SHLPage() {
             </div>
           </div>
 
+          {/* Sales Tax row — SHL wholesale tax collected/refunded for sales-tax reporting */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-gray-900 border border-yellow-800/30 rounded-xl p-5">
+              <div className="text-xs text-yellow-400 uppercase tracking-wide mb-1">Sales Tax Collected</div>
+              <div className="text-2xl font-bold text-yellow-400">{fmt(summary.grossTax ?? 0)}</div>
+              <div className="text-xs text-gray-500 mt-1">On orders in range</div>
+            </div>
+            <div className="bg-gray-900 border border-red-800/30 rounded-xl p-5">
+              <div className="text-xs text-red-400 uppercase tracking-wide mb-1">Sales Tax Refunded</div>
+              <div className="text-2xl font-bold text-red-400">{(summary.refundTax ?? 0) > 0 ? `(${fmt(summary.refundTax)})` : "—"}</div>
+              <div className="text-xs text-gray-500 mt-1">Bucketed by refund date</div>
+            </div>
+            <div className="bg-gray-900 border border-yellow-800/30 rounded-xl p-5">
+              <div className="text-xs text-yellow-400 uppercase tracking-wide mb-1">Net Sales Tax</div>
+              <div className="text-2xl font-bold text-yellow-400">{fmt(summary.netTax ?? 0)}</div>
+              <div className="text-xs text-gray-500 mt-1">Due on filings (gross − refunded)</div>
+            </div>
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+              <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Effective Tax Rate</div>
+              <div className="text-2xl font-bold text-white">
+                {summary.grossRevenue > 0 ? ((summary.grossTax ?? 0) / summary.grossRevenue * 100).toFixed(2) + "%" : "—"}
+              </div>
+              <div className="text-xs text-gray-500 mt-1">Tax ÷ gross revenue</div>
+            </div>
+          </div>
+
           {/* Day of week breakdown */}
           {daily.length > 6 && (
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
@@ -263,31 +302,40 @@ export default function SHLPage() {
                     <th className="py-2.5 px-4 text-right">Gross Revenue</th>
                     <th className="py-2.5 px-4 text-right">Refunds</th>
                     <th className="py-2.5 px-4 text-right">Net Revenue</th>
+                    <th className="py-2.5 px-4 text-right">Sales Tax</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-800">
                   {view === "monthly"
-                    ? months.map(m => (
-                        <tr key={m.month} className="hover:bg-gray-800/30">
-                          <td className="py-3 px-4 font-medium text-white">{fmtMonth(m.month)}</td>
-                          <td className="py-3 px-4 text-right text-gray-300">{fmtN(m.orders)}</td>
-                          <td className="py-3 px-4 text-right text-yellow-400">{m.orders > 0 ? fmt2(m.grossRevenue / m.orders) : "—"}</td>
-                          <td className="py-3 px-4 text-right text-gray-300">{fmt(m.grossRevenue)}</td>
-                          <td className="py-3 px-4 text-right text-red-400">{m.refunds > 0 ? `(${fmt(m.refunds)})` : "—"}</td>
-                          <td className="py-3 px-4 text-right font-semibold text-purple-400">{fmt(m.netRevenue)}</td>
-                        </tr>
-                      ))
-                    : daily.map(d => (
-                        <tr key={d.date} className={`hover:bg-gray-800/30 ${d.orders === 0 ? "opacity-40" : ""}`}>
-                          <td className="py-2.5 px-4 text-gray-300">{fmtDate(d.date)}</td>
-                          <td className="py-2.5 px-4 text-gray-500 text-xs">{fmtDow(d.date)}</td>
-                          <td className="py-2.5 px-4 text-right text-gray-300">{d.orders > 0 ? fmtN(d.orders) : "—"}</td>
-                          <td className="py-2.5 px-4 text-right text-yellow-400">{d.orders > 0 ? fmt2(d.grossRevenue / d.orders) : "—"}</td>
-                          <td className="py-2.5 px-4 text-right text-gray-300">{d.orders > 0 ? fmt(d.grossRevenue) : "—"}</td>
-                          <td className="py-2.5 px-4 text-right text-red-400">{d.refunds > 0 ? `(${fmt(d.refunds)})` : "—"}</td>
-                          <td className="py-2.5 px-4 text-right font-semibold text-purple-400">{d.orders > 0 ? fmt(d.netRevenue) : "—"}</td>
-                        </tr>
-                      ))
+                    ? months.map(m => {
+                        const netMonthTax = (m.tax ?? 0) - (m.refundTax ?? 0);
+                        return (
+                          <tr key={m.month} className="hover:bg-gray-800/30">
+                            <td className="py-3 px-4 font-medium text-white">{fmtMonth(m.month)}</td>
+                            <td className="py-3 px-4 text-right text-gray-300">{fmtN(m.orders)}</td>
+                            <td className="py-3 px-4 text-right text-yellow-400">{m.orders > 0 ? fmt2(m.grossRevenue / m.orders) : "—"}</td>
+                            <td className="py-3 px-4 text-right text-gray-300">{fmt(m.grossRevenue)}</td>
+                            <td className="py-3 px-4 text-right text-red-400">{m.refunds > 0 ? `(${fmt(m.refunds)})` : "—"}</td>
+                            <td className="py-3 px-4 text-right font-semibold text-purple-400">{fmt(m.netRevenue)}</td>
+                            <td className="py-3 px-4 text-right text-yellow-400">{netMonthTax !== 0 ? fmt(netMonthTax) : "—"}</td>
+                          </tr>
+                        );
+                      })
+                    : daily.map(d => {
+                        const netDayTax = (d.tax ?? 0) - (d.refundTax ?? 0);
+                        return (
+                          <tr key={d.date} className={`hover:bg-gray-800/30 ${d.orders === 0 && netDayTax === 0 ? "opacity-40" : ""}`}>
+                            <td className="py-2.5 px-4 text-gray-300">{fmtDate(d.date)}</td>
+                            <td className="py-2.5 px-4 text-gray-500 text-xs">{fmtDow(d.date)}</td>
+                            <td className="py-2.5 px-4 text-right text-gray-300">{d.orders > 0 ? fmtN(d.orders) : "—"}</td>
+                            <td className="py-2.5 px-4 text-right text-yellow-400">{d.orders > 0 ? fmt2(d.grossRevenue / d.orders) : "—"}</td>
+                            <td className="py-2.5 px-4 text-right text-gray-300">{d.orders > 0 ? fmt(d.grossRevenue) : "—"}</td>
+                            <td className="py-2.5 px-4 text-right text-red-400">{d.refunds > 0 ? `(${fmt(d.refunds)})` : "—"}</td>
+                            <td className="py-2.5 px-4 text-right font-semibold text-purple-400">{d.orders > 0 || d.refunds > 0 ? fmt(d.netRevenue) : "—"}</td>
+                            <td className="py-2.5 px-4 text-right text-yellow-400">{netDayTax !== 0 ? fmt(netDayTax) : "—"}</td>
+                          </tr>
+                        );
+                      })
                   }
                 </tbody>
                 <tfoot>
@@ -298,6 +346,7 @@ export default function SHLPage() {
                     <td className="py-3 px-4 text-right text-white">{fmt(summary.grossRevenue)}</td>
                     <td className="py-3 px-4 text-right text-red-400">{summary.totalRefunds > 0 ? `(${fmt(summary.totalRefunds)})` : "—"}</td>
                     <td className="py-3 px-4 text-right text-purple-400">{fmt(summary.netRevenue)}</td>
+                    <td className="py-3 px-4 text-right text-yellow-400">{fmt(summary.netTax ?? 0)}</td>
                   </tr>
                 </tfoot>
               </table>

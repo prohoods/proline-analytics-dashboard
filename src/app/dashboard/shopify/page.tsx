@@ -12,6 +12,7 @@ interface DailySummary {
   refunds: number;
   netRevenue: number;
   tax: number;
+  refundTax: number;
 }
 
 interface Summary {
@@ -19,6 +20,9 @@ interface Summary {
   grossRevenue: number;
   totalRefunds: number;
   netRevenue: number;
+  grossTax: number;
+  refundTax: number;
+  netTax: number;
   dateRange: { start: string; end: string };
 }
 
@@ -76,11 +80,16 @@ export default function ShopifyPage() {
 
       {!loading && !error && summary && (
         <>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
             <MetricCard label="Total Orders" value={summary.totalOrders.toString()} subtext={range.label} />
             <MetricCard label="Gross Revenue" value={fmt(summary.grossRevenue)} subtext={range.label} highlight />
-            <MetricCard label="Refunds" value={fmt(summary.totalRefunds)} subtext={range.label} trend="down" />
+            <MetricCard label="Refunds" value={fmt(summary.totalRefunds)} subtext="Bucketed on refund date" trend="down" />
             <MetricCard label="Net Revenue" value={fmt(summary.netRevenue)} subtext="After refunds" trend="up" />
+          </div>
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+            <MetricCard label="Sales Tax Collected" value={fmt(summary.grossTax ?? 0)} subtext="On orders in range" />
+            <MetricCard label="Sales Tax Refunded" value={fmt(summary.refundTax ?? 0)} subtext="Bucketed on refund date" trend="down" />
+            <MetricCard label="Net Sales Tax" value={fmt(summary.netTax ?? 0)} subtext="Due on filings" highlight />
           </div>
 
           <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
@@ -97,20 +106,25 @@ export default function ShopifyPage() {
                     <th className="py-3 px-4 text-right">Gross Revenue</th>
                     <th className="py-3 px-4 text-right text-red-400">Refunds</th>
                     <th className="py-3 px-4 text-right">Net Revenue</th>
+                    <th className="py-3 px-4 text-right">Sales Tax</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-800">
-                  {daily.map(row => (
-                    <tr key={row.date} className="text-gray-300 hover:bg-gray-800/40">
-                      <td className="py-2.5 px-4 text-gray-400">{row.date}</td>
-                      <td className="py-2.5 px-4 text-right">{row.orders}</td>
-                      <td className="py-2.5 px-4 text-right">{fmt(row.grossRevenue)}</td>
-                      <td className="py-2.5 px-4 text-right text-red-400">
-                        {row.refunds > 0 ? `(${fmt(row.refunds)})` : "—"}
-                      </td>
-                      <td className="py-2.5 px-4 text-right font-semibold text-white">{fmt(row.netRevenue)}</td>
-                    </tr>
-                  ))}
+                  {daily.map(row => {
+                    const netDayTax = (row.tax ?? 0) - (row.refundTax ?? 0);
+                    return (
+                      <tr key={row.date} className="text-gray-300 hover:bg-gray-800/40">
+                        <td className="py-2.5 px-4 text-gray-400">{row.date}</td>
+                        <td className="py-2.5 px-4 text-right">{row.orders}</td>
+                        <td className="py-2.5 px-4 text-right">{fmt(row.grossRevenue)}</td>
+                        <td className="py-2.5 px-4 text-right text-red-400">
+                          {row.refunds > 0 ? `(${fmt(row.refunds)})` : "—"}
+                        </td>
+                        <td className="py-2.5 px-4 text-right font-semibold text-white">{fmt(row.netRevenue)}</td>
+                        <td className="py-2.5 px-4 text-right text-yellow-400">{netDayTax !== 0 ? fmt(netDayTax) : "—"}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
                 <tfoot>
                   <tr className="bg-gray-800/50 border-t border-gray-700 font-semibold text-white text-xs">
@@ -119,6 +133,7 @@ export default function ShopifyPage() {
                     <td className="py-3 px-4 text-right">{fmt(summary.grossRevenue)}</td>
                     <td className="py-3 px-4 text-right text-red-400">({fmt(summary.totalRefunds)})</td>
                     <td className="py-3 px-4 text-right text-green-400">{fmt(summary.netRevenue)}</td>
+                    <td className="py-3 px-4 text-right text-yellow-400">{fmt(summary.netTax ?? 0)}</td>
                   </tr>
                 </tfoot>
               </table>
