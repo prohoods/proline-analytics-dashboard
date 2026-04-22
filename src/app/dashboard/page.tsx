@@ -58,9 +58,12 @@ export default function DashboardOverview() {
     const errs: Record<string, string> = {};
 
     function filterSheet(data: { rows: SheetRow[]; totals: { cost: number; revenue: number; roas: number } }): SheetData {
+      // Non-Google sheets only track cost — row.revenue is undefined on those
+      // and `s + undefined` becomes NaN. Coerce to 0 so Blended ROAS, ROAS
+      // cards, and totals stay numeric.
       const rows = data.rows.filter(row => row.month >= r.startYM && row.month <= r.endYM);
-      const cost = rows.reduce((s, row) => s + row.cost, 0);
-      const revenue = rows.reduce((s, row) => s + row.revenue, 0);
+      const cost = rows.reduce((s, row) => s + (row.cost ?? 0), 0);
+      const revenue = rows.reduce((s, row) => s + (row.revenue ?? 0), 0);
       return { totals: { cost, revenue, roas: cost > 0 ? revenue / cost : 0 }, rows };
     }
 
