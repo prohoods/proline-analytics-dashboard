@@ -15,6 +15,14 @@ export async function GET(request: NextRequest) {
     const params = `created_at_min=${start}T00:00:00-07:00&created_at_max=${end}T23:59:59-07:00&financial_status=any&status=any`;
     const { orders } = await getOrders(params);
 
+    interface RefundIncident {
+      orderName: string;
+      date: string;
+      quantity: number;
+      amount: number;
+      note: string;
+    }
+
     const skuMap: Record<string, {
       title: string;
       sku: string;
@@ -22,6 +30,7 @@ export async function GET(request: NextRequest) {
       grossRevenue: number;
       refundedUnits: number;
       refundedRevenue: number;
+      refundIncidents: RefundIncident[];
     }> = {};
 
     for (const order of orders) {
@@ -35,6 +44,7 @@ export async function GET(request: NextRequest) {
             grossRevenue: 0,
             refundedUnits: 0,
             refundedRevenue: 0,
+            refundIncidents: [],
           };
         }
         skuMap[key].unitsSold += item.quantity;
@@ -45,8 +55,16 @@ export async function GET(request: NextRequest) {
         for (const ri of refund.refund_line_items ?? []) {
           const key = ri.line_item?.sku ?? "";
           if (key && skuMap[key]) {
+            const amount = parseFloat(ri.subtotal ?? "0");
             skuMap[key].refundedUnits += ri.quantity;
-            skuMap[key].refundedRevenue += parseFloat(ri.subtotal ?? "0");
+            skuMap[key].refundedRevenue += amount;
+            skuMap[key].refundIncidents.push({
+              orderName: order.name,
+              date: (refund.created_at ?? order.created_at).substring(0, 10),
+              quantity: ri.quantity,
+              amount,
+              note: refund.note ?? "",
+            });
           }
         }
       }
@@ -74,6 +92,7 @@ export async function GET(request: NextRequest) {
         totalCOGS,
         grossProfit,
         grossMarginPct,
+        refundIncidents: p.refundIncidents.sort((a, b) => b.date.localeCompare(a.date)),
       };
     }).sort((a, b) => b.grossRevenue - a.grossRevenue);
 

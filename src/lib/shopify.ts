@@ -142,6 +142,7 @@ export async function mapLimit<T, R>(
 export interface FullRefund {
   id: number;
   created_at: string;
+  note?: string;
   transactions: { amount: string; kind: string; status: string }[];
   refund_line_items: { subtotal: string; total_tax: string; quantity: number; line_item: { sku: string } }[];
 }
@@ -170,6 +171,7 @@ export interface ShopifyOrder {
 export interface ShopifyRefund {
   id: number;
   created_at: string;
+  note?: string;
   transactions: { amount: string; kind: string; status: string }[];
   refund_line_items: { subtotal: string; total_tax: string; quantity: number; line_item: { sku: string } }[];
 }

@@ -6,6 +6,14 @@ import { RangeKey, getRange } from "@/lib/date-ranges";
 import { KPISkeleton, TableSkeleton } from "@/components/Skeleton";
 import { exportToCSV } from "@/lib/export-csv";
 
+interface RefundIncident {
+  orderName: string;
+  date: string;
+  quantity: number;
+  amount: number;
+  note: string;
+}
+
 interface Product {
   title: string;
   sku: string;
@@ -21,6 +29,7 @@ interface Product {
   totalCOGS: number | null;
   grossProfit: number | null;
   grossMarginPct: number | null;
+  refundIncidents: RefundIncident[];
 }
 
 interface Summary {
@@ -114,6 +123,35 @@ function ProductDetailPanel({ product, onClose }: { product: Product; onClose: (
               <MetricCard label="Net Units" value={fmtN(product.netUnits)} />
             </div>
           </div>
+
+          {product.refundIncidents.length > 0 && (
+            <>
+              <div className="border-t border-gray-800" />
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="text-xs text-gray-500 uppercase tracking-wide">Why it was refunded</div>
+                  <div className="text-xs text-gray-600">{product.refundIncidents.length} {product.refundIncidents.length === 1 ? "refund" : "refunds"}</div>
+                </div>
+                <div className="bg-gray-800/40 rounded-lg divide-y divide-gray-800 max-h-64 overflow-y-auto">
+                  {product.refundIncidents.map((inc, i) => (
+                    <div key={i} className="px-3 py-2.5 text-xs">
+                      <div className="flex items-center justify-between gap-3 mb-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-blue-400">{inc.orderName}</span>
+                          <span className="text-gray-500">{inc.date}</span>
+                          <span className="text-gray-600">· {inc.quantity}×</span>
+                        </div>
+                        <span className="text-red-400 font-medium tabular-nums">({fmt2(inc.amount)})</span>
+                      </div>
+                      <div className={`${inc.note ? "text-gray-300" : "text-gray-600 italic"} leading-snug`}>
+                        {inc.note || "No reason provided"}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
 
           <div className="border-t border-gray-800" />
 
