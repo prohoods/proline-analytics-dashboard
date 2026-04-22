@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getOrders, getOrderRefunds, mapLimit, ShopifyOrder } from "@/lib/shopify";
+import { getOrders, resolveOrderRefunds, mapLimit, ShopifyOrder } from "@/lib/shopify";
 
 type Channel = "prh" | "prolinePro" | "phone" | "other";
 
@@ -88,7 +88,7 @@ export async function GET(request: NextRequest) {
     );
 
     await mapLimit(ordersWithRefunds, 2, async (order) => {
-        const refunds = await getOrderRefunds(order.id);
+        const refunds = await resolveOrderRefunds(order);
         for (const r of refunds) {
           const refundDate = r.created_at.substring(0, 10);
           // Only attribute to dates within the requested range

@@ -105,6 +105,21 @@ export async function getOrderRefunds(orderId: number) {
   return data.refunds;
 }
 
+// /orders.json already inlines refund_line_items + transactions. Using that
+// avoids an N+1 refund fetch per refunded order — the real bottleneck on YTD
+// ranges. Fall back to the explicit endpoint only when the inline payload is
+// missing line items (rare, but seen on older orders).
+export async function resolveOrderRefunds(order: ShopifyOrder): Promise<FullRefund[]> {
+  const inline = order.refunds;
+  if (!inline || inline.length === 0) return [];
+  const hasInlineData = inline.some(r =>
+    (r.refund_line_items && r.refund_line_items.length > 0) ||
+    (r.transactions && r.transactions.length > 0)
+  );
+  if (hasInlineData) return inline as FullRefund[];
+  return getOrderRefunds(order.id);
+}
+
 // Shopify REST leaks bucket at 2 req/sec on standard plans; bursting via
 // Promise.all over every order throws 429. Cap in-flight requests instead.
 export async function mapLimit<T, R>(

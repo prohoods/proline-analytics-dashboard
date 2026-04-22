@@ -56,6 +56,18 @@ export async function getSHLOrderRefunds(orderId: number) {
   return data.data.refunds;
 }
 
+// Prefer inline order.refunds to avoid N+1 fetches — see shopify.ts counterpart.
+export async function resolveSHLOrderRefunds(order: SHLOrder): Promise<SHLRefund[]> {
+  const inline = order.refunds;
+  if (!inline || inline.length === 0) return [];
+  const hasInlineData = inline.some(r =>
+    (r.refund_line_items && r.refund_line_items.length > 0) ||
+    (r.transactions && r.transactions.length > 0)
+  );
+  if (hasInlineData) return inline;
+  return getSHLOrderRefunds(order.id);
+}
+
 export interface SHLOrder {
   id: number;
   name: string;

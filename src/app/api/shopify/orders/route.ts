@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getOrders, getOrderRefunds, mapLimit } from "@/lib/shopify";
+import { getOrders, resolveOrderRefunds, mapLimit } from "@/lib/shopify";
 
 // Each refund carries its own date — we bucket refunds on the refund date,
 // not the original order date. This keeps historical weeks stable (Shopify's
@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
     const datedRefunds: DatedRefund[] = [];
 
     await mapLimit(ordersWithRefunds, 2, async (order) => {
-      const refunds = await getOrderRefunds(order.id);
+      const refunds = await resolveOrderRefunds(order);
       for (const r of refunds) {
           const lineItemSubtotal = r.refund_line_items?.reduce(
             (s, li) => s + parseFloat(li.subtotal ?? "0"), 0
