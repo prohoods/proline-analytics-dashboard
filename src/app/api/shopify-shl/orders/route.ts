@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSHLOrders, getSHLOrderRefunds } from "@/lib/shl-shopify";
+import { mapLimit } from "@/lib/shopify";
 
 // See DTC /api/shopify/orders for rationale — refunds bucket on refund date,
 // not order date, so historical weeks don't mutate.
@@ -31,8 +32,7 @@ export async function GET(request: NextRequest) {
 
     const datedRefunds: DatedRefund[] = [];
 
-    await Promise.all(
-      ordersWithRefunds.map(async (order) => {
+    await mapLimit(ordersWithRefunds, 2, async (order) => {
         const refunds = await getSHLOrderRefunds(order.id);
         for (const r of refunds) {
           const lineItemSubtotal = r.refund_line_items?.reduce(
@@ -54,8 +54,7 @@ export async function GET(request: NextRequest) {
             tax: lineItemTax,
           });
         }
-      })
-    );
+      });
 
     const dailyMap: Record<string, {
       date: string;

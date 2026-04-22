@@ -4,19 +4,25 @@ const API_VERSION = "2025-01";
 
 async function shlRaw<T>(endpoint: string): Promise<{ data: T; linkHeader: string | null }> {
   const url = `https://${SHL_DOMAIN}/admin/api/${API_VERSION}/${endpoint}`;
-  const res = await fetch(url, {
-    headers: {
-      "X-Shopify-Access-Token": SHL_TOKEN,
-      "Content-Type": "application/json",
-    },
-    cache: "no-store",
-  });
-
-  if (!res.ok) {
-    throw new Error(`SHL Shopify API error: ${res.status} ${res.statusText}`);
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const res = await fetch(url, {
+      headers: {
+        "X-Shopify-Access-Token": SHL_TOKEN,
+        "Content-Type": "application/json",
+      },
+      cache: "no-store",
+    });
+    if (res.status === 429 && attempt < 3) {
+      const retryAfter = parseFloat(res.headers.get("retry-after") ?? "2");
+      await new Promise(r => setTimeout(r, Math.max(retryAfter, 0.5) * 1000));
+      continue;
+    }
+    if (!res.ok) {
+      throw new Error(`SHL Shopify API error: ${res.status} ${res.statusText}`);
+    }
+    return { data: await res.json(), linkHeader: res.headers.get("link") };
   }
-
-  return { data: await res.json(), linkHeader: res.headers.get("link") };
+  throw new Error("SHL Shopify API error: retry limit exceeded");
 }
 
 function getNextPageInfo(linkHeader: string | null): string | null {

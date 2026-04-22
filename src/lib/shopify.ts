@@ -5,20 +5,27 @@ const API_VERSION = "2025-01";
 // Internal fetch — returns data + Link header for pagination
 async function shopifyRaw<T>(endpoint: string): Promise<{ data: T; linkHeader: string | null }> {
   const url = `https://${SHOPIFY_DOMAIN}/admin/api/${API_VERSION}/${endpoint}`;
-  const res = await fetch(url, {
-    headers: {
-      "X-Shopify-Access-Token": SHOPIFY_TOKEN,
-      "Content-Type": "application/json",
-    },
-    cache: "no-store",
-  });
-
-  if (!res.ok) {
-    throw new Error(`Shopify API error: ${res.status} ${res.statusText}`);
+  // Retry on 429 — Shopify honors Retry-After; otherwise exponential backoff.
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const res = await fetch(url, {
+      headers: {
+        "X-Shopify-Access-Token": SHOPIFY_TOKEN,
+        "Content-Type": "application/json",
+      },
+      cache: "no-store",
+    });
+    if (res.status === 429 && attempt < 3) {
+      const retryAfter = parseFloat(res.headers.get("retry-after") ?? "2");
+      await new Promise(r => setTimeout(r, Math.max(retryAfter, 0.5) * 1000));
+      continue;
+    }
+    if (!res.ok) {
+      throw new Error(`Shopify API error: ${res.status} ${res.statusText}`);
+    }
+    const data = await res.json();
+    return { data, linkHeader: res.headers.get("link") };
   }
-
-  const data = await res.json();
-  return { data, linkHeader: res.headers.get("link") };
+  throw new Error("Shopify API error: retry limit exceeded");
 }
 
 // Public simple fetch — for routes that just need data, no pagination
@@ -96,6 +103,25 @@ export async function getVariantSkuMap(): Promise<Record<string, string>> {
 export async function getOrderRefunds(orderId: number) {
   const data = await shopifyFetch<{ refunds: FullRefund[] }>(`orders/${orderId}/refunds.json`);
   return data.refunds;
+}
+
+// Shopify REST leaks bucket at 2 req/sec on standard plans; bursting via
+// Promise.all over every order throws 429. Cap in-flight requests instead.
+export async function mapLimit<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i]);
+    }
+  });
+  await Promise.all(workers);
+  return results;
 }
 
 export interface FullRefund {

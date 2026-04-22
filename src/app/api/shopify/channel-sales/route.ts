@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getOrders, getOrderRefunds, ShopifyOrder } from "@/lib/shopify";
+import { getOrders, getOrderRefunds, mapLimit, ShopifyOrder } from "@/lib/shopify";
 
 type Channel = "prh" | "prolinePro" | "phone" | "other";
 
@@ -84,8 +84,7 @@ export async function GET(request: NextRequest) {
       o.financial_status === "partially_refunded"
     );
 
-    await Promise.all(
-      ordersWithRefunds.map(async (order) => {
+    await mapLimit(ordersWithRefunds, 2, async (order) => {
         const refunds = await getOrderRefunds(order.id);
         for (const r of refunds) {
           const refundDate = r.created_at.substring(0, 10);
@@ -100,8 +99,7 @@ export async function GET(request: NextRequest) {
           const amount = lineItemTotal > 0 ? lineItemTotal : txTotal;
           returnsByDate[refundDate] = (returnsByDate[refundDate] ?? 0) + amount;
         }
-      })
-    );
+      });
 
     // Aggregate by day
     const dailyMap: Record<string, SalesBucket> = {};

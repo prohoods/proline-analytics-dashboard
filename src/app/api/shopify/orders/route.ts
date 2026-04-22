@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getOrders, getOrderRefunds } from "@/lib/shopify";
+import { getOrders, getOrderRefunds, mapLimit } from "@/lib/shopify";
 
 // Each refund carries its own date — we bucket refunds on the refund date,
 // not the original order date. This keeps historical weeks stable (Shopify's
@@ -34,10 +34,9 @@ export async function GET(request: NextRequest) {
 
     const datedRefunds: DatedRefund[] = [];
 
-    await Promise.all(
-      ordersWithRefunds.map(async (order) => {
-        const refunds = await getOrderRefunds(order.id);
-        for (const r of refunds) {
+    await mapLimit(ordersWithRefunds, 2, async (order) => {
+      const refunds = await getOrderRefunds(order.id);
+      for (const r of refunds) {
           const lineItemSubtotal = r.refund_line_items?.reduce(
             (s, li) => s + parseFloat(li.subtotal ?? "0"), 0
           ) ?? 0;
@@ -58,8 +57,7 @@ export async function GET(request: NextRequest) {
             tax: lineItemTax,
           });
         }
-      })
-    );
+      });
 
     // Aggregate daily totals. Gross revenue buckets on order date; refunds
     // bucket on refund date so historical days don't mutate when a return comes in.
