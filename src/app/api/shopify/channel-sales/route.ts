@@ -76,8 +76,11 @@ export async function GET(request: NextRequest) {
     const { orders } = await getOrders(params);
 
     // Fetch refunds and bucket by the refund's own created_at date
-    // (matches Shopify Analytics which attributes returns to when the refund was processed)
+    // (matches Shopify Analytics which attributes returns to when the refund was processed).
+    // Split subtotal and tax — Shopify's Total sales breakdown shows Returns as
+    // subtotal-only and subtracts refunded tax from the Taxes line instead.
     const returnsByDate: Record<string, number> = {};
+    const refundTaxByDate: Record<string, number> = {};
     const ordersWithRefunds = orders.filter(o =>
       (o.refunds && o.refunds.length > 0) ||
       o.financial_status === "refunded" ||
@@ -90,14 +93,20 @@ export async function GET(request: NextRequest) {
           const refundDate = r.created_at.substring(0, 10);
           // Only attribute to dates within the requested range
           if (refundDate < start || refundDate > end) continue;
-          const lineItemTotal = r.refund_line_items?.reduce(
-            (s, li) => s + parseFloat(li.subtotal ?? "0") + parseFloat(li.total_tax ?? "0"), 0
+          const lineItemSubtotal = r.refund_line_items?.reduce(
+            (s, li) => s + parseFloat(li.subtotal ?? "0"), 0
           ) ?? 0;
-          const txTotal = lineItemTotal === 0
+          const lineItemTax = r.refund_line_items?.reduce(
+            (s, li) => s + parseFloat(li.total_tax ?? "0"), 0
+          ) ?? 0;
+          // Fallback when line items are absent: use transaction total (no tax split).
+          const txTotal = lineItemSubtotal === 0 && lineItemTax === 0
             ? r.transactions?.reduce((s, t) => s + parseFloat(t.amount ?? "0"), 0) ?? 0
             : 0;
-          const amount = lineItemTotal > 0 ? lineItemTotal : txTotal;
-          returnsByDate[refundDate] = (returnsByDate[refundDate] ?? 0) + amount;
+          const subtotalAmt = lineItemSubtotal > 0 ? lineItemSubtotal : txTotal;
+          if (subtotalAmt <= 0 && lineItemTax <= 0) continue;
+          returnsByDate[refundDate] = (returnsByDate[refundDate] ?? 0) + subtotalAmt;
+          refundTaxByDate[refundDate] = (refundTaxByDate[refundDate] ?? 0) + lineItemTax;
         }
       });
 
@@ -128,12 +137,18 @@ export async function GET(request: NextRequest) {
       dailyMap[date].totalSales    += net + shipping + tax;
     }
 
-    // Apply returns to the date the refund was actually processed
-    for (const [date, amount] of Object.entries(returnsByDate)) {
+    // Apply returns to the date the refund was actually processed.
+    // Returns = refunded subtotal. Refunded tax is subtracted from salesTax
+    // so the Taxes column matches Shopify's net-tax Total sales breakdown.
+    const refundDates = new Set([...Object.keys(returnsByDate), ...Object.keys(refundTaxByDate)]);
+    for (const date of refundDates) {
       if (!dailyMap[date]) dailyMap[date] = emptyBucket(date);
-      dailyMap[date].returns    += amount;
-      dailyMap[date].netSales   -= amount;
-      dailyMap[date].totalSales -= amount;
+      const subAmt = returnsByDate[date] ?? 0;
+      const taxAmt = refundTaxByDate[date] ?? 0;
+      dailyMap[date].returns    += subAmt;
+      dailyMap[date].netSales   -= subAmt;
+      dailyMap[date].salesTax   -= taxAmt;
+      dailyMap[date].totalSales -= (subAmt + taxAmt);
     }
 
     const daily = Object.values(dailyMap).sort((a, b) => b.date.localeCompare(a.date));
