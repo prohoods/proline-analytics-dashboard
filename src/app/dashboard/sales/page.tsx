@@ -25,7 +25,7 @@ interface SalesBucket {
   shl?: number;
 }
 
-interface SHLDay { date: string; netRevenue: number; }
+interface SHLDay { date: string; netRevenue: number; tax?: number; refundTax?: number; }
 
 interface MarketplaceDay { date: string; net: number; }
 interface MarketplaceSummary { days: MarketplaceDay[]; }
@@ -219,6 +219,19 @@ export default function SalesPage() {
     return map;
   }, [shlDays, range.start, range.end]);
 
+  // SHL net tax (gross tax collected − tax refunded) keyed by date.
+  // Folded into the Sales Tax column so the dashboard reflects combined
+  // DTC + SHL tax liability across the business.
+  const shlTaxMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const d of shlDays) {
+      if (d.date >= range.start && d.date <= range.end) {
+        map[d.date] = (d.tax ?? 0) - (d.refundTax ?? 0);
+      }
+    }
+    return map;
+  }, [shlDays, range.start, range.end]);
+
   const shlYtdMap = useMemo(() => {
     const map: Record<string, number> = {};
     const year = new Date().getFullYear();
@@ -230,14 +243,27 @@ export default function SalesPage() {
     return map;
   }, [shlDays, today]);
 
-  // Enrich daily with marketplace + SHL
+  const shlTaxYtdMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    const year = new Date().getFullYear();
+    for (const d of shlDays) {
+      if (d.date >= `${year}-01-01` && d.date <= today) {
+        map[d.date] = (d.tax ?? 0) - (d.refundTax ?? 0);
+      }
+    }
+    return map;
+  }, [shlDays, today]);
+
+  // Enrich daily with marketplace + SHL. SHL net tax folds into salesTax
+  // so the tax column represents the business-wide remittance liability.
   const daily = useMemo(() =>
     (shopifyData?.daily ?? []).map(d => ({
       ...d,
       marketplaces: mktMap[d.date] ?? 0,
       shl: shlMap[d.date] ?? 0,
+      salesTax: d.salesTax + (shlTaxMap[d.date] ?? 0),
     })),
-  [shopifyData, mktMap, shlMap]);
+  [shopifyData, mktMap, shlMap, shlTaxMap]);
 
   // Enrich weekly with marketplace + SHL
   const weekly = useMemo(() => {
@@ -252,12 +278,18 @@ export default function SalesPage() {
       const wk = isoWeek(date);
       shlWkMap[wk] = (shlWkMap[wk] ?? 0) + val;
     }
+    const shlTaxWkMap: Record<string, number> = {};
+    for (const [date, val] of Object.entries(shlTaxMap)) {
+      const wk = isoWeek(date);
+      shlTaxWkMap[wk] = (shlTaxWkMap[wk] ?? 0) + val;
+    }
     return shopifyData.weekly.map(w => ({
       ...w,
       marketplaces: wkMap[w.date] ?? 0,
       shl: shlWkMap[w.date] ?? 0,
+      salesTax: w.salesTax + (shlTaxWkMap[w.date] ?? 0),
     }));
-  }, [shopifyData, mktMap, shlMap]);
+  }, [shopifyData, mktMap, shlMap, shlTaxMap]);
 
   // Enrich monthly with marketplace + SHL
   const monthly = useMemo(() => {
@@ -272,12 +304,18 @@ export default function SalesPage() {
       const ym = date.substring(0, 7);
       shlM[ym] = (shlM[ym] ?? 0) + val;
     }
+    const shlTaxM: Record<string, number> = {};
+    for (const [date, val] of Object.entries(shlTaxMap)) {
+      const ym = date.substring(0, 7);
+      shlTaxM[ym] = (shlTaxM[ym] ?? 0) + val;
+    }
     return shopifyData.monthly.map(m => ({
       ...m,
       marketplaces: mktM[m.date] ?? 0,
       shl: shlM[m.date] ?? 0,
+      salesTax: m.salesTax + (shlTaxM[m.date] ?? 0),
     }));
-  }, [shopifyData, mktMap, shlMap]);
+  }, [shopifyData, mktMap, shlMap, shlTaxMap]);
 
   // For the weekly view: daily rows for the selected week
   const weekDailyRows = useMemo(() => {
@@ -295,8 +333,9 @@ export default function SalesPage() {
       ...d,
       marketplaces: mktYtdMap[d.date] ?? 0,
       shl: shlYtdMap[d.date] ?? 0,
+      salesTax: d.salesTax + (shlTaxYtdMap[d.date] ?? 0),
     })),
-  [ytdData, mktYtdMap, shlYtdMap]);
+  [ytdData, mktYtdMap, shlYtdMap, shlTaxYtdMap]);
 
   const ytdTotals = useMemo(() => sumBuckets(ytdDailyWithMkt), [ytdDailyWithMkt]);
 
@@ -533,7 +572,7 @@ export default function SalesPage() {
                   <th className="py-3 px-3 text-right text-red-400">Returns</th>
                   <th className="py-3 px-3 text-right font-semibold text-white">Net</th>
                   <th className="py-3 px-3 text-right">Shipping</th>
-                  <th className="py-3 px-3 text-right">Tax</th>
+                  <th className="py-3 px-3 text-right" title="Combined DTC + SHL net sales tax (tax collected − refunded tax)">Tax <span className="text-gray-600 normal-case">(DTC+SHL)</span></th>
                   <th className="py-3 px-3 text-right font-semibold text-green-400">Total</th>
                 </tr>
               </thead>
