@@ -25,8 +25,12 @@ interface Product {
   netRevenue: number;
   refundRate: number;
   avgPrice: number;
-  costPerUnit: number | null;
-  totalCOGS: number | null;
+  costPerUnit: number | null;          // base supplier cost
+  tariffPerUnit: number | null;        // base × TARIFF_RATE
+  landedCostPerUnit: number | null;    // base + tariff
+  baseCOGS: number | null;             // base × billable units
+  totalTariff: number | null;          // tariff × billable units
+  totalCOGS: number | null;            // landed × billable units (used for margin)
   grossProfit: number | null;
   grossMarginPct: number | null;
   refundIncidents: RefundIncident[];
@@ -36,11 +40,14 @@ interface Summary {
   totalGross: number;
   totalNet: number;
   totalUnits: number;
+  totalBaseCOGS: number;
+  totalTariff: number;
   totalCOGS: number;
   totalProfit: number;
   overallMarginPct: number;
   productCount: number;
   coveredProducts: number;
+  tariffRate: number;
 }
 
 const fmt = (n: number) =>
@@ -164,15 +171,22 @@ function ProductDetailPanel({ product, onClose }: { product: Product; onClose: (
               </div>
             ) : (
               <div className="space-y-2.5">
+                <div className="grid grid-cols-3 gap-2.5">
+                  <MetricCard label="Base Cost / Unit" value={fmt2(product.costPerUnit)} sub="Supplier price" />
+                  <MetricCard label={`Tariff / Unit (45%)`} value={<span className="text-orange-400">{fmt2(product.tariffPerUnit ?? 0)}</span>} sub="Import duty" />
+                  <MetricCard label="Landed / Unit" value={<span className="text-red-400">{fmt2(product.landedCostPerUnit ?? 0)}</span>} sub="Base + tariff" />
+                </div>
                 <div className="grid grid-cols-2 gap-2.5">
-                  <MetricCard label="Cost / Unit" value={fmt2(product.costPerUnit)} />
-                  <MetricCard label="Total COGS" value={<span className="text-red-400">{fmt(product.totalCOGS!)}</span>} sub={`${fmtN(product.netUnits)} net units`} />
+                  <MetricCard label="Total COGS (landed)" value={<span className="text-red-400">{fmt(product.totalCOGS!)}</span>} sub={`${fmtN(product.netUnits)} net units · incl. ${fmt(product.totalTariff ?? 0)} tariff`} />
                   <MetricCard label="Gross Profit" value={
                     <span className={product.grossProfit! >= 0 ? "text-green-400" : "text-red-400"}>{fmt(product.grossProfit!)}</span>
                   } />
                   <MetricCard label="Margin %" value={
                     <span className={marginColor}>{fmtPct(product.grossMarginPct!)}</span>
                   } sub="Profit ÷ Net Revenue" />
+                  <MetricCard label="Margin without tariff" value={
+                    <span className="text-gray-300">{product.netRevenue > 0 && product.baseCOGS != null ? fmtPct(((product.netRevenue - product.baseCOGS) / product.netRevenue) * 100) : "—"}</span>
+                  } sub="Hypothetical, base cost only" />
                 </div>
                 {/* Margin bar */}
                 <div className="bg-gray-800/60 rounded-lg p-3">
@@ -226,12 +240,14 @@ function MethodologyNote() {
             </ul>
           </div>
           <div>
-            <div className="text-white font-semibold mb-2">COGS & Margin</div>
+            <div className="text-white font-semibold mb-2">COGS, Tariffs & Margin</div>
             <ul className="space-y-1.5">
-              <li><span className="text-gray-200">COGS</span> — Matched by SKU from our static cost sheet. Products showing <span className="font-mono text-xs text-gray-300">—</span> have no cost entry yet.</li>
-              <li><span className="text-gray-200">Total COGS</span> — Cost Per Unit × Net Units sold (so refunded units are excluded).</li>
-              <li><span className="text-gray-200">Gross Profit</span> — Net Revenue − Total COGS.</li>
-              <li><span className="text-gray-200">Margin %</span> — Gross Profit ÷ Net Revenue. Only calculated for SKUs with COGS data — products without COGS are excluded from the overall margin figure.</li>
+              <li><span className="text-gray-200">Base Cost / Unit</span> — Supplier price, matched by SKU from our static cost sheet. Products showing <span className="font-mono text-xs text-gray-300">—</span> have no cost entry yet.</li>
+              <li><span className="text-gray-200">Tariff / Unit</span> — 45% import duty applied on base cost. The rate lives in <code className="bg-gray-800 px-1 rounded">src/lib/constants.ts</code> (<code className="bg-gray-800 px-1 rounded">TARIFF_RATE</code>) so a single edit updates every margin calc on the dashboard.</li>
+              <li><span className="text-gray-200">Landed / Unit</span> — Base + Tariff. The actual cash cost we incur per unit.</li>
+              <li><span className="text-gray-200">Total COGS</span> — Landed cost × Net Units sold (refunded units excluded).</li>
+              <li><span className="text-gray-200">Gross Profit</span> — Net Revenue − Total COGS (landed).</li>
+              <li><span className="text-gray-200">Margin %</span> — Gross Profit ÷ Net Revenue. Reflects landed cost, so it&apos;s the real margin we&apos;re earning. Only calculated for SKUs with COGS data; products without COGS are excluded from the overall margin figure.</li>
               <li className="text-yellow-500/80">Note: this is gross margin only — it does not include ad spend, shipping, or overhead.</li>
             </ul>
           </div>
@@ -311,8 +327,12 @@ export default function ProductsPage() {
       net_revenue: p.netRevenue.toFixed(2),
       refund_rate: fmtPct(p.refundRate),
       avg_price: p.avgPrice.toFixed(2),
-      cost_per_unit: p.costPerUnit != null ? p.costPerUnit.toFixed(2) : "",
-      total_cogs: p.totalCOGS != null ? p.totalCOGS.toFixed(2) : "",
+      base_cost_per_unit: p.costPerUnit != null ? p.costPerUnit.toFixed(2) : "",
+      tariff_per_unit: p.tariffPerUnit != null ? p.tariffPerUnit.toFixed(2) : "",
+      landed_cost_per_unit: p.landedCostPerUnit != null ? p.landedCostPerUnit.toFixed(2) : "",
+      base_cogs: p.baseCOGS != null ? p.baseCOGS.toFixed(2) : "",
+      total_tariff: p.totalTariff != null ? p.totalTariff.toFixed(2) : "",
+      total_cogs_landed: p.totalCOGS != null ? p.totalCOGS.toFixed(2) : "",
       gross_profit: p.grossProfit != null ? p.grossProfit.toFixed(2) : "",
       gross_margin_pct: p.grossMarginPct != null ? fmtPct(p.grossMarginPct) : "",
     })), `product-profitability-${rangeKey}.csv`);
@@ -365,9 +385,11 @@ export default function ProductsPage() {
               <div className="text-xs text-gray-500 mt-1">After refunds</div>
             </div>
             <div className="bg-gray-900 border border-red-800/30 rounded-xl p-5">
-              <div className="text-xs text-red-400 uppercase tracking-wide mb-1">Total COGS</div>
+              <div className="text-xs text-red-400 uppercase tracking-wide mb-1">Total COGS (landed)</div>
               <div className="text-2xl font-bold text-red-400">{fmt(summary.totalCOGS)}</div>
-              <div className="text-xs text-gray-500 mt-1">{summary.coveredProducts} of {summary.productCount} SKUs covered</div>
+              <div className="text-xs text-gray-500 mt-1">
+                {fmt(summary.totalBaseCOGS)} base + <span className="text-orange-400">{fmt(summary.totalTariff)} tariff</span> ({fmtPct(summary.tariffRate * 100)})
+              </div>
             </div>
             <div className="bg-gray-900 border border-green-800/40 rounded-xl p-5">
               <div className="text-xs text-green-400 uppercase tracking-wide mb-1">Gross Profit</div>

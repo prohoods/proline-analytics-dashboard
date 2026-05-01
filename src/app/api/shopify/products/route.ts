@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getOrdersWithRefundsInWindow } from "@/lib/shopify";
 import { getCOGS } from "@/lib/cogs";
+import { TARIFF_RATE } from "@/lib/constants";
 
 export async function GET(request: NextRequest) {
   try {
@@ -97,8 +98,15 @@ export async function GET(request: NextRequest) {
     const products = Object.values(skuMap).map(p => {
       const netRevenue = p.grossRevenue - p.refundedRevenue;
       const netUnits = p.unitsSold - p.refundedUnits;
-      const costPerUnit = getCOGS(p.sku);
-      const totalCOGS = costPerUnit != null ? costPerUnit * Math.max(0, netUnits) : null;
+      const baseCostPerUnit = getCOGS(p.sku);
+      // Tariff is applied as a multiplier on supplier cost. Margin is computed
+      // on the LANDED cost (base + tariff) since tariff is a real cash outflow.
+      const tariffPerUnit = baseCostPerUnit != null ? baseCostPerUnit * TARIFF_RATE : null;
+      const landedCostPerUnit = baseCostPerUnit != null ? baseCostPerUnit + (tariffPerUnit ?? 0) : null;
+      const billableUnits = Math.max(0, netUnits);
+      const baseCOGS = baseCostPerUnit != null ? baseCostPerUnit * billableUnits : null;
+      const totalTariff = tariffPerUnit != null ? tariffPerUnit * billableUnits : null;
+      const totalCOGS = landedCostPerUnit != null ? landedCostPerUnit * billableUnits : null;
       const grossProfit = totalCOGS != null ? netRevenue - totalCOGS : null;
       const grossMarginPct = grossProfit != null && netRevenue > 0 ? (grossProfit / netRevenue) * 100 : null;
       return {
@@ -112,7 +120,11 @@ export async function GET(request: NextRequest) {
         netRevenue,
         refundRate: p.unitsSold > 0 ? (p.refundedUnits / p.unitsSold) * 100 : 0,
         avgPrice: p.unitsSold > 0 ? p.grossRevenue / p.unitsSold : 0,
-        costPerUnit,
+        costPerUnit: baseCostPerUnit,
+        tariffPerUnit,
+        landedCostPerUnit,
+        baseCOGS,
+        totalTariff,
         totalCOGS,
         grossProfit,
         grossMarginPct,
@@ -123,6 +135,8 @@ export async function GET(request: NextRequest) {
     const totalGross = products.reduce((s, p) => s + p.grossRevenue, 0);
     const totalNet = products.reduce((s, p) => s + p.netRevenue, 0);
     const totalUnits = products.reduce((s, p) => s + p.unitsSold, 0);
+    const totalBaseCOGS = products.reduce((s, p) => s + (p.baseCOGS ?? 0), 0);
+    const totalTariff = products.reduce((s, p) => s + (p.totalTariff ?? 0), 0);
     const totalCOGS = products.reduce((s, p) => s + (p.totalCOGS ?? 0), 0);
     const totalProfit = products.reduce((s, p) => s + (p.grossProfit ?? 0), 0);
     const coveredProducts = products.filter(p => p.costPerUnit != null).length;
@@ -133,11 +147,14 @@ export async function GET(request: NextRequest) {
         totalGross,
         totalNet,
         totalUnits,
+        totalBaseCOGS,
+        totalTariff,
         totalCOGS,
         totalProfit,
         overallMarginPct: totalNet > 0 ? (totalProfit / totalNet) * 100 : 0,
         productCount: products.length,
         coveredProducts,
+        tariffRate: TARIFF_RATE,
       },
     }, {
       headers: { "Cache-Control": "public, s-maxage=900, stale-while-revalidate=60" },
