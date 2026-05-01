@@ -90,7 +90,8 @@ export async function GET() {
       return NextResponse.json({ error: "SALES_REPORT_SHEET_ID not configured" }, { status: 500 });
     }
 
-    const rows = await getSheetData(sheetId, "Monthly P&L!A2:R200");
+    // Tab name contains '&' so it must be single-quoted for the Sheets API.
+    const rows = await getSheetData(sheetId, "'Monthly P&L'!A2:R200");
 
     const data: MonthlyPnlRow[] = rows
       .filter(row => row[0] && row[0].trim() && toYMKey(row[0]))

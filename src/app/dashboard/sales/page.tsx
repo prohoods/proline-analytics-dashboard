@@ -399,15 +399,16 @@ function MetricBreakdownModal({
           {metric === "marketplaces" && (
             <>
               <Section title="Formula">
-                <code className="text-blue-300">Σ (Amazon + Wayfair + Home Depot − marketplace returns)</code> for every day in this row&apos;s window.
+                <code className="text-blue-300">Σ (Amazon + Wayfair + Home Depot)</code> for every day in this row&apos;s window — gross marketplace revenue.
               </Section>
               <Section title="Calculation">
                 <CalcRow label="Amazon" value={mktAmazon} />
                 <CalcRow label="Wayfair" value={mktWayfair} />
                 <CalcRow label="Home Depot" value={mktHomeDepot} />
-                <CalcRow label="= Marketplace Gross" value={mktGross} />
-                <CalcRow label="− Returns" value={-mktReturns} />
-                <CalcRow label="= Net" value={row.marketplaces ?? 0} bold />
+                <CalcRow label="= Marketplace Gross" value={mktGross} bold />
+              </Section>
+              <Section title="Returns">
+                Marketplace returns ({fmt(mktReturns)} this row) are rolled into the business-wide <span className="text-red-400">Refunds</span> column alongside Proline + SHL refunds, so they aren&apos;t subtracted here — that would double-count them.
               </Section>
               <Section title="Source">
                 Google Sheets — <em>2026 Daily Sales Report</em>, &quot;Marketplace Sales&quot; tab. Manually entered by the team because Amazon/Wayfair/Home Depot revenue lives on those platforms, not in Shopify.
@@ -786,7 +787,6 @@ export default function SalesPage() {
     const shlNet = shl?.net ?? 0;
     const mktGross = mkt?.gross ?? 0;
     const mktReturns = mkt?.returns ?? 0;
-    const mktNet = mkt?.net ?? 0;
 
     const grossSales = proline.grossSales + shlGross + mktGross;
     const discounts = proline.discounts + shlDiscounts;
@@ -808,7 +808,10 @@ export default function SalesPage() {
       netSales,
       totalSales,
       shl: shlNet,
-      marketplaces: mktNet,
+      // Show marketplace gross in the Marketplace column. Returns are already
+      // counted in the business-wide Refunds line, so subtracting them here
+      // would visually double-count them.
+      marketplaces: mktGross,
     };
   }
 
