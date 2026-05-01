@@ -26,7 +26,16 @@ interface SalesBucket {
   shl?: number;
 }
 
-interface SHLDay { date: string; netRevenue: number; tax?: number; refundTax?: number; }
+interface SHLDay {
+  date: string;
+  grossRevenue: number;
+  discounts: number;
+  refunds: number;
+  refundTax?: number;
+  netRevenue: number;
+  shipping: number;
+  tax?: number;
+}
 
 interface MarketplaceDay {
   date: string;
@@ -38,6 +47,21 @@ interface MarketplaceDay {
   net: number;
 }
 interface MarketplaceSummary { days: MarketplaceDay[]; }
+
+interface ShlContribution {
+  gross: number;
+  discounts: number;
+  refunds: number;
+  shipping: number;
+  netTax: number; // tax collected − tax refunded
+  net: number;
+}
+
+interface MktContribution {
+  gross: number;
+  returns: number;
+  net: number;
+}
 
 type ViewTab = "daily" | "weekly" | "monthly";
 
@@ -205,12 +229,16 @@ const METRIC_META: Record<Metric, { label: string; color: string }> = {
 function MetricBreakdownModal({
   metric,
   row,
+  shl,
+  mkt,
   rowLabel,
   marketplaceDays,
   onClose,
 }: {
   metric: Metric;
   row: SalesBucket;
+  shl?: ShlContribution;
+  mkt?: MktContribution;
   rowLabel: string;
   marketplaceDays: MarketplaceDay[];
   onClose: () => void;
@@ -223,14 +251,15 @@ function MetricBreakdownModal({
 
   const meta = METRIC_META[metric];
 
-  // Top-of-modal value: matches what the user sees in the table cell.
+  // Top-of-modal value: matches what the user sees in the table cell. With
+  // Option B, totalSales/grossSales/etc are already business-wide.
   const value =
     metric === "gross" ? row.grossSales
     : metric === "refunds" ? row.returns
     : metric === "redo" ? row.redo
     : metric === "net" ? row.netSales
     : metric === "marketplaces" ? (row.marketplaces ?? 0)
-    : row.totalSales + (row.marketplaces ?? 0) + (row.shl ?? 0);
+    : row.totalSales;
 
   // Per-platform marketplace breakdown for this row's date range.
   const { start: mktStart, end: mktEnd } = rowDateRange(row.date);
@@ -238,11 +267,24 @@ function MetricBreakdownModal({
   const mktAmazon = mktInRange.reduce((s, d) => s + d.amazon, 0);
   const mktWayfair = mktInRange.reduce((s, d) => s + d.wayfair, 0);
   const mktHomeDepot = mktInRange.reduce((s, d) => s + d.homeDepot, 0);
-  const mktGross = mktInRange.reduce((s, d) => s + d.gross, 0);
-  const mktReturns = mktInRange.reduce((s, d) => s + d.returns, 0);
+  const mktGross = mkt?.gross ?? mktInRange.reduce((s, d) => s + d.gross, 0);
+  const mktReturns = mkt?.returns ?? mktInRange.reduce((s, d) => s + d.returns, 0);
 
-  // Sum of channel subtotals — equals Gross − Discounts (channels are
-  // post-discount). Useful as a sanity check on the Gross breakdown.
+  // Per-source decomposition of business-wide totals, derived by subtracting
+  // SHL + Marketplace contributions from the merged row.
+  const shlGross = shl?.gross ?? 0;
+  const shlDiscounts = shl?.discounts ?? 0;
+  const shlRefunds = shl?.refunds ?? 0;
+  const shlShipping = shl?.shipping ?? 0;
+  const shlNetTax = shl?.netTax ?? 0;
+  const prolineGross = row.grossSales - shlGross - mktGross;
+  const prolineDiscounts = row.discounts - shlDiscounts;
+  const prolineRefunds = row.returns - shlRefunds - mktReturns;
+  const prolineShipping = row.shipping - shlShipping;
+  const prolineNetTax = row.salesTax - shlNetTax;
+
+  // Sum of channel subtotals — equals Proline Gross − Proline Discounts (channels
+  // are post-discount). Useful as a sanity check on the Proline gross row.
   const channelSubtotalSum = row.prh + row.prolinePro + row.phone + row.other;
 
   return (
@@ -264,24 +306,27 @@ function MetricBreakdownModal({
           {metric === "gross" && (
             <>
               <Section title="Formula">
-                <code className="text-blue-300">Σ (subtotal + total_discounts)</code> for every non-marketplace Proline order created in the window.
+                <code className="text-blue-300">Proline gross + SHL gross + Marketplace gross</code> — the full business&apos;s line-item revenue before discounts.
               </Section>
               <Section title="Calculation">
-                <CalcRow label="Channel subtotals (post-discount)" value={channelSubtotalSum} />
+                <CalcRow label="Proline (Shopify 861fdb)" value={prolineGross} />
                 <CalcSubRow label="PRH" value={row.prh} />
                 <CalcSubRow label="ProlinePro" value={row.prolinePro} />
                 <CalcSubRow label="Phone" value={row.phone} />
                 {row.other > 0 && <CalcSubRow label="Other" value={row.other} />}
-                <CalcRow label="+ Discounts added back" value={row.discounts} />
+                <CalcSubRow label="+ Proline discounts added back" value={prolineDiscounts} />
+                <CalcRow label="+ SHL (Shopify a11c08-ce)" value={shlGross} />
+                <CalcRow label="+ Marketplaces (Amazon/Wayfair/HD)" value={mktGross} />
                 <CalcRow label="= Gross" value={row.grossSales} bold />
+                <div className="text-xs text-gray-500 mt-2">
+                  Channel subtotals are post-discount, so Proline discounts are added back to recover line-item gross. Sanity: PRH+Pro+Phone{row.other > 0 ? "+Other" : ""} = {fmt(channelSubtotalSum)}.
+                </div>
               </Section>
-              <Section title="Source">
-                Shopify Admin REST API — Proline store <code className="text-gray-300">861fdb</code> · <code className="text-gray-300">/orders.json</code>.
-              </Section>
-              <Section title="Excluded from this column">
+              <Section title="Sources">
                 <ul className="list-disc list-inside text-gray-400 space-y-1">
-                  <li>SHL Shopify orders — see SHL column ({fmt(row.shl ?? 0)})</li>
-                  <li>Marketplace-tagged orders (Amazon/Wayfair/Home Depot inventory syncs) — see Mktplc column ({fmt(row.marketplaces ?? 0)})</li>
+                  <li>Proline — Shopify Admin REST API, store <code className="text-gray-300">861fdb</code></li>
+                  <li>SHL — Shopify Admin REST API, store <code className="text-gray-300">a11c08-ce</code> (separate account)</li>
+                  <li>Marketplaces — Google Sheets &quot;Marketplace Sales&quot; tab (manually entered Amazon/Wayfair/Home Depot revenue)</li>
                 </ul>
               </Section>
             </>
@@ -290,21 +335,27 @@ function MetricBreakdownModal({
           {metric === "refunds" && (
             <>
               <Section title="Formula">
-                <code className="text-blue-300">Σ refund_line_items.subtotal</code> for every refund whose <code className="text-gray-300">created_at</code> falls in this window — including refunds on orders placed before the window.
+                <code className="text-blue-300">Proline refunds + SHL refunds + Marketplace returns</code>, all bucketed on the date the refund was processed.
               </Section>
               <Section title="Calculation">
-                <CalcRow label="Refunded subtotal" value={row.returns} bold />
+                <CalcRow label="Proline refunds (Shopify 861fdb)" value={prolineRefunds} />
+                <CalcRow label="+ SHL refunds (Shopify a11c08-ce)" value={shlRefunds} />
+                <CalcRow label="+ Marketplace returns" value={mktReturns} />
+                <CalcRow label="= Refunds" value={row.returns} bold />
                 <div className="text-xs text-gray-500 mt-2">
                   Refunded sales tax is netted out of the Tax column instead of subtracted here, matching Shopify&apos;s own &quot;Total sales&quot; breakdown.
                 </div>
               </Section>
-              <Section title="Source">
-                Shopify Admin REST API — refunds inlined on each <code className="text-gray-300">/orders.json</code> response (falls back to <code className="text-gray-300">/orders/:id/refunds.json</code> on older orders).
+              <Section title="Sources">
+                <ul className="list-disc list-inside text-gray-400 space-y-1">
+                  <li>Proline + SHL — Shopify <code className="text-gray-300">refund_line_items.subtotal</code> per refund</li>
+                  <li>Marketplaces — Google Sheets &quot;Marketplace Sales&quot; tab (returns column)</li>
+                </ul>
               </Section>
               <Section title="Why it might differ from Shopify Analytics">
                 <ul className="list-disc list-inside text-gray-400 space-y-1">
-                  <li>Refunds are bucketed on refund date, not original order date — same as Shopify, but timezone differences (we use UTC-7) can shift a midnight refund by a day.</li>
-                  <li>Excludes SHL refunds (folded into the SHL column net).</li>
+                  <li>Refunds are bucketed on refund date, not original order date — same as Shopify, but UTC-7 timezone can shift a midnight refund by a day.</li>
+                  <li>Includes both Proline and SHL stores; Shopify Analytics only sees one store at a time.</li>
                 </ul>
               </Section>
             </>
@@ -330,17 +381,17 @@ function MetricBreakdownModal({
           {metric === "net" && (
             <>
               <Section title="Formula">
-                <code className="text-blue-300">Gross − Discounts − Refunds − Redo</code>
+                <code className="text-blue-300">Gross − Discounts − Refunds − Redo</code> — applied across the full business (Proline + SHL + Marketplaces).
               </Section>
               <Section title="Calculation">
-                <CalcRow label="Gross" value={row.grossSales} />
+                <CalcRow label="Gross (business-wide)" value={row.grossSales} />
                 <CalcRow label="− Discounts" value={-row.discounts} />
                 <CalcRow label="− Refunds" value={-row.returns} />
                 <CalcRow label="− Redo (pass-through)" value={-row.redo} />
                 <CalcRow label="= Net" value={row.netSales} bold />
               </Section>
               <Section title="Source">
-                Computed from values in this row. Each component is sourced from Shopify&apos;s Proline store <code className="text-gray-300">861fdb</code>; SHL net lives in its own column.
+                Computed from this row&apos;s business-wide Gross/Discounts/Refunds. See the Gross and Refunds breakdowns for per-source splits.
               </Section>
             </>
           )}
@@ -370,22 +421,23 @@ function MetricBreakdownModal({
           {metric === "total" && (
             <>
               <Section title="Formula">
-                <code className="text-blue-300">Net + Shipping + Tax + SHL + Marketplaces</code>
+                <code className="text-blue-300">Net + Shipping + Tax</code> — Net already includes SHL and Marketplace revenue, so this is the full business total.
               </Section>
               <Section title="Calculation">
-                <CalcRow label="Net (Proline)" value={row.netSales} />
-                <CalcRow label="+ Shipping (Proline)" value={row.shipping} />
-                <CalcRow label="+ Tax (Proline + SHL combined)" value={row.salesTax} />
-                <CalcRow label="+ SHL net revenue" value={row.shl ?? 0} />
-                <CalcRow label="+ Marketplaces (Amazon/Wayfair/HD)" value={row.marketplaces ?? 0} />
-                <CalcRow label="= Total" value={row.totalSales + (row.marketplaces ?? 0) + (row.shl ?? 0)} bold />
+                <CalcRow label="Net (business-wide)" value={row.netSales} />
+                <CalcRow label="+ Shipping" value={row.shipping} />
+                <CalcSubRow label="Proline" value={prolineShipping} />
+                <CalcSubRow label="SHL" value={shlShipping} />
+                <CalcRow label="+ Sales Tax (collected − refunded)" value={row.salesTax} />
+                <CalcSubRow label="Proline" value={prolineNetTax} />
+                <CalcSubRow label="SHL" value={shlNetTax} />
+                <CalcRow label="= Total" value={row.totalSales} bold />
               </Section>
               <Section title="Sources">
                 <ul className="list-disc list-inside text-gray-400 space-y-1">
-                  <li>Proline Net/Shipping — Shopify store <code className="text-gray-300">861fdb</code></li>
-                  <li>SHL net — Shopify store <code className="text-gray-300">a11c08-ce</code> (separate account)</li>
-                  <li>Tax — Proline <code className="text-gray-300">total_tax</code> + SHL <code className="text-gray-300">total_tax</code>, minus refunded tax on both</li>
-                  <li>Marketplaces — Google Sheets (manually entered Amazon/Wayfair/Home Depot revenue)</li>
+                  <li>Proline Net/Shipping/Tax — Shopify store <code className="text-gray-300">861fdb</code></li>
+                  <li>SHL Net/Shipping/Tax — Shopify store <code className="text-gray-300">a11c08-ce</code> (separate account)</li>
+                  <li>Marketplaces — folded into Net via the business-wide Gross/Refunds rollup (Google Sheets manual entry)</li>
                 </ul>
               </Section>
               <Section title="Why this differs from Shopify Analytics">
@@ -620,12 +672,30 @@ export default function SalesPage() {
       fetch(`/api/shopify/channel-sales?start=${prev.start}&end=${prev.end}&_=${refreshKey}`).then(r => r.json()),
     ]).then(([d]) => {
       if (!d.error && d.daily) {
-        // Build prev daily with marketplace + SHL
-        const prevDaily: SalesBucket[] = d.daily.map((row: SalesBucket) => ({
-          ...row,
-          marketplaces: marketplace?.days.filter(m => m.date >= prev.start && m.date <= prev.end).reduce((s: number, m: MarketplaceDay) => m.date === row.date ? s + m.net : s, 0) ?? 0,
-          shl: shlDays.filter((s: SHLDay) => s.date === row.date).reduce((acc: number, s: SHLDay) => acc + s.netRevenue, 0),
-        }));
+        // Build prev daily with full business-wide merge so the comparison
+        // matches the current-period math (Proline + SHL + Marketplaces).
+        const prevShl: Record<string, ShlContribution> = {};
+        for (const day of shlDays) {
+          if (day.date >= prev.start && day.date <= prev.end) {
+            prevShl[day.date] = {
+              gross: day.grossRevenue ?? 0,
+              discounts: day.discounts ?? 0,
+              refunds: day.refunds ?? 0,
+              shipping: day.shipping ?? 0,
+              netTax: (day.tax ?? 0) - (day.refundTax ?? 0),
+              net: day.netRevenue ?? 0,
+            };
+          }
+        }
+        const prevMkt: Record<string, { gross: number; returns: number; net: number }> = {};
+        for (const m of marketplace?.days ?? []) {
+          if (m.date >= prev.start && m.date <= prev.end) {
+            prevMkt[m.date] = { gross: m.gross, returns: m.returns, net: m.net };
+          }
+        }
+        const prevDaily: SalesBucket[] = d.daily.map((row: SalesBucket) =>
+          mergeBucket(row, prevShl[row.date], prevMkt[row.date])
+        );
         setPrevTotals(sumBuckets(prevDaily));
       }
     }).finally(() => setPrevLoading(false));
@@ -637,139 +707,157 @@ export default function SalesPage() {
   const today = new Date().toISOString().substring(0, 10);
   const currentYM = today.substring(0, 7);
 
-  // Marketplace map keyed by date (for range)
+  // Per-source per-day contributions, keyed by date. Folding all three sources
+  // into Gross/Discounts/Refunds/Shipping/Tax means the math columns are
+  // truly business-wide (Proline + SHL + Marketplaces). The SHL and Mktplc
+  // columns still exist as a per-source split for visibility.
   const mktMap = useMemo(() => {
-    const map: Record<string, number> = {};
+    const map: Record<string, { gross: number; returns: number; net: number }> = {};
     if (!marketplace) return map;
     for (const d of marketplace.days) {
       if (d.date >= range.start && d.date <= range.end) {
-        map[d.date] = (map[d.date] ?? 0) + d.net;
+        map[d.date] = { gross: d.gross, returns: d.returns, net: d.net };
       }
     }
     return map;
   }, [marketplace, range.start, range.end]);
 
-  // Marketplace map for YTD
   const mktYtdMap = useMemo(() => {
-    const map: Record<string, number> = {};
+    const map: Record<string, { gross: number; returns: number; net: number }> = {};
     if (!marketplace) return map;
     const year = new Date().getFullYear();
     for (const d of marketplace.days) {
       if (d.date >= `${year}-01-01` && d.date <= today) {
-        map[d.date] = (map[d.date] ?? 0) + d.net;
+        map[d.date] = { gross: d.gross, returns: d.returns, net: d.net };
       }
     }
     return map;
   }, [marketplace, today]);
 
-  // SHL maps keyed by date
   const shlMap = useMemo(() => {
-    const map: Record<string, number> = {};
+    const map: Record<string, ShlContribution> = {};
     for (const d of shlDays) {
       if (d.date >= range.start && d.date <= range.end) {
-        map[d.date] = d.netRevenue;
-      }
-    }
-    return map;
-  }, [shlDays, range.start, range.end]);
-
-  // SHL net tax (gross tax collected − tax refunded) keyed by date.
-  // Folded into the Sales Tax column so the dashboard reflects combined
-  // DTC + SHL tax liability across the business.
-  const shlTaxMap = useMemo(() => {
-    const map: Record<string, number> = {};
-    for (const d of shlDays) {
-      if (d.date >= range.start && d.date <= range.end) {
-        map[d.date] = (d.tax ?? 0) - (d.refundTax ?? 0);
+        map[d.date] = {
+          gross: d.grossRevenue ?? 0,
+          discounts: d.discounts ?? 0,
+          refunds: d.refunds ?? 0,
+          shipping: d.shipping ?? 0,
+          netTax: (d.tax ?? 0) - (d.refundTax ?? 0),
+          net: d.netRevenue ?? 0,
+        };
       }
     }
     return map;
   }, [shlDays, range.start, range.end]);
 
   const shlYtdMap = useMemo(() => {
-    const map: Record<string, number> = {};
+    const map: Record<string, ShlContribution> = {};
     const year = new Date().getFullYear();
     for (const d of shlDays) {
       if (d.date >= `${year}-01-01` && d.date <= today) {
-        map[d.date] = d.netRevenue;
+        map[d.date] = {
+          gross: d.grossRevenue ?? 0,
+          discounts: d.discounts ?? 0,
+          refunds: d.refunds ?? 0,
+          shipping: d.shipping ?? 0,
+          netTax: (d.tax ?? 0) - (d.refundTax ?? 0),
+          net: d.netRevenue ?? 0,
+        };
       }
     }
     return map;
   }, [shlDays, today]);
 
-  const shlTaxYtdMap = useMemo(() => {
-    const map: Record<string, number> = {};
-    const year = new Date().getFullYear();
-    for (const d of shlDays) {
-      if (d.date >= `${year}-01-01` && d.date <= today) {
-        map[d.date] = (d.tax ?? 0) - (d.refundTax ?? 0);
-      }
-    }
-    return map;
-  }, [shlDays, today]);
+  // Fold a per-day Proline bucket together with that day's SHL + marketplace
+  // contributions. After this, every "math" field on the bucket represents
+  // the full business; PRH/PRO/Phone/SHL/Mktplc columns continue to expose
+  // per-source breakdown for visibility.
+  function mergeBucket(
+    proline: SalesBucket,
+    shl: ShlContribution | undefined,
+    mkt: { gross: number; returns: number; net: number } | undefined,
+  ): SalesBucket {
+    const shlGross = shl?.gross ?? 0;
+    const shlDiscounts = shl?.discounts ?? 0;
+    const shlRefunds = shl?.refunds ?? 0;
+    const shlShipping = shl?.shipping ?? 0;
+    const shlNetTax = shl?.netTax ?? 0;
+    const shlNet = shl?.net ?? 0;
+    const mktGross = mkt?.gross ?? 0;
+    const mktReturns = mkt?.returns ?? 0;
+    const mktNet = mkt?.net ?? 0;
 
-  // Enrich daily with marketplace + SHL. SHL net tax folds into salesTax
-  // so the tax column represents the business-wide remittance liability.
+    const grossSales = proline.grossSales + shlGross + mktGross;
+    const discounts = proline.discounts + shlDiscounts;
+    const returns = proline.returns + shlRefunds + mktReturns;
+    const shipping = proline.shipping + shlShipping;
+    const salesTax = proline.salesTax + shlNetTax;
+    const redo = proline.redo;
+    const netSales = grossSales - discounts - returns - redo;
+    const totalSales = netSales + shipping + salesTax;
+
+    return {
+      ...proline,
+      grossSales,
+      discounts,
+      returns,
+      shipping,
+      salesTax,
+      redo,
+      netSales,
+      totalSales,
+      shl: shlNet,
+      marketplaces: mktNet,
+    };
+  }
+
+  // Roll daily contributions into week/month buckets so we can fold into
+  // Shopify's pre-aggregated weekly/monthly buckets without re-summing daily.
+  function rollShl(src: Record<string, ShlContribution>, keyOf: (d: string) => string): Record<string, ShlContribution> {
+    const out: Record<string, ShlContribution> = {};
+    for (const [date, c] of Object.entries(src)) {
+      const k = keyOf(date);
+      if (!out[k]) out[k] = { gross: 0, discounts: 0, refunds: 0, shipping: 0, netTax: 0, net: 0 };
+      out[k].gross += c.gross;
+      out[k].discounts += c.discounts;
+      out[k].refunds += c.refunds;
+      out[k].shipping += c.shipping;
+      out[k].netTax += c.netTax;
+      out[k].net += c.net;
+    }
+    return out;
+  }
+  function rollMkt(src: Record<string, { gross: number; returns: number; net: number }>, keyOf: (d: string) => string) {
+    const out: Record<string, { gross: number; returns: number; net: number }> = {};
+    for (const [date, c] of Object.entries(src)) {
+      const k = keyOf(date);
+      if (!out[k]) out[k] = { gross: 0, returns: 0, net: 0 };
+      out[k].gross += c.gross;
+      out[k].returns += c.returns;
+      out[k].net += c.net;
+    }
+    return out;
+  }
+
+  const shlWeekMap = useMemo(() => rollShl(shlMap, isoWeek), [shlMap]);
+  const mktWeekMap = useMemo(() => rollMkt(mktMap, isoWeek), [mktMap]);
+  const shlMonthMap = useMemo(() => rollShl(shlMap, d => d.substring(0, 7)), [shlMap]);
+  const mktMonthMap = useMemo(() => rollMkt(mktMap, d => d.substring(0, 7)), [mktMap]);
+
   const daily = useMemo(() =>
-    (shopifyData?.daily ?? []).map(d => ({
-      ...d,
-      marketplaces: mktMap[d.date] ?? 0,
-      shl: shlMap[d.date] ?? 0,
-      salesTax: d.salesTax + (shlTaxMap[d.date] ?? 0),
-    })),
-  [shopifyData, mktMap, shlMap, shlTaxMap]);
+    (shopifyData?.daily ?? []).map(d => mergeBucket(d, shlMap[d.date], mktMap[d.date])),
+  [shopifyData, shlMap, mktMap]);
 
-  // Enrich weekly with marketplace + SHL
   const weekly = useMemo(() => {
     if (!shopifyData) return [];
-    const wkMap: Record<string, number> = {};
-    for (const [date, val] of Object.entries(mktMap)) {
-      const wk = isoWeek(date);
-      wkMap[wk] = (wkMap[wk] ?? 0) + val;
-    }
-    const shlWkMap: Record<string, number> = {};
-    for (const [date, val] of Object.entries(shlMap)) {
-      const wk = isoWeek(date);
-      shlWkMap[wk] = (shlWkMap[wk] ?? 0) + val;
-    }
-    const shlTaxWkMap: Record<string, number> = {};
-    for (const [date, val] of Object.entries(shlTaxMap)) {
-      const wk = isoWeek(date);
-      shlTaxWkMap[wk] = (shlTaxWkMap[wk] ?? 0) + val;
-    }
-    return shopifyData.weekly.map(w => ({
-      ...w,
-      marketplaces: wkMap[w.date] ?? 0,
-      shl: shlWkMap[w.date] ?? 0,
-      salesTax: w.salesTax + (shlTaxWkMap[w.date] ?? 0),
-    }));
-  }, [shopifyData, mktMap, shlMap, shlTaxMap]);
+    return shopifyData.weekly.map(w => mergeBucket(w, shlWeekMap[w.date], mktWeekMap[w.date]));
+  }, [shopifyData, shlWeekMap, mktWeekMap]);
 
-  // Enrich monthly with marketplace + SHL
   const monthly = useMemo(() => {
     if (!shopifyData) return [];
-    const mktM: Record<string, number> = {};
-    for (const [date, val] of Object.entries(mktMap)) {
-      const ym = date.substring(0, 7);
-      mktM[ym] = (mktM[ym] ?? 0) + val;
-    }
-    const shlM: Record<string, number> = {};
-    for (const [date, val] of Object.entries(shlMap)) {
-      const ym = date.substring(0, 7);
-      shlM[ym] = (shlM[ym] ?? 0) + val;
-    }
-    const shlTaxM: Record<string, number> = {};
-    for (const [date, val] of Object.entries(shlTaxMap)) {
-      const ym = date.substring(0, 7);
-      shlTaxM[ym] = (shlTaxM[ym] ?? 0) + val;
-    }
-    return shopifyData.monthly.map(m => ({
-      ...m,
-      marketplaces: mktM[m.date] ?? 0,
-      shl: shlM[m.date] ?? 0,
-      salesTax: m.salesTax + (shlTaxM[m.date] ?? 0),
-    }));
-  }, [shopifyData, mktMap, shlMap, shlTaxMap]);
+    return shopifyData.monthly.map(m => mergeBucket(m, shlMonthMap[m.date], mktMonthMap[m.date]));
+  }, [shopifyData, shlMonthMap, mktMonthMap]);
 
   // For the weekly view: daily rows for the selected week
   const weekDailyRows = useMemo(() => {
@@ -783,7 +871,13 @@ export default function SalesPage() {
 
   // Drill-in modal state
   const [drillIn, setDrillIn] = useState<{ channel: DrillChannel; start: string; end: string; rowLabel: string } | null>(null);
-  const [metricDrill, setMetricDrill] = useState<{ metric: Metric; row: SalesBucket; rowLabel: string } | null>(null);
+  const [metricDrill, setMetricDrill] = useState<{
+    metric: Metric;
+    row: SalesBucket;
+    shl?: ShlContribution;
+    mkt?: { gross: number; returns: number; net: number };
+    rowLabel: string;
+  } | null>(null);
 
   function openDrill(channel: DrillChannel, rowDate: string) {
     const { start, end } = rowDateRange(rowDate);
@@ -791,7 +885,12 @@ export default function SalesPage() {
   }
 
   function openMetric(metric: Metric, row: SalesBucket) {
-    setMetricDrill({ metric, row, rowLabel: row.date });
+    // Daily rows ("YYYY-MM-DD") look up daily contributions; monthly rows
+    // ("YYYY-MM") look up the month-rolled maps. Weekly view uses daily rows.
+    const isMonthly = row.date.length === 7;
+    const shl = isMonthly ? shlMonthMap[row.date] : shlMap[row.date];
+    const mkt = isMonthly ? mktMonthMap[row.date] : mktMap[row.date];
+    setMetricDrill({ metric, row, shl, mkt, rowLabel: row.date });
   }
 
   // Hide the Other column when it's all zeros — the marketplace skip + status
@@ -802,13 +901,8 @@ export default function SalesPage() {
 
   // ── Persistent header stats ──────────────────────────────────────────────
   const ytdDailyWithMkt = useMemo(() =>
-    (ytdData?.daily ?? []).map(d => ({
-      ...d,
-      marketplaces: mktYtdMap[d.date] ?? 0,
-      shl: shlYtdMap[d.date] ?? 0,
-      salesTax: d.salesTax + (shlTaxYtdMap[d.date] ?? 0),
-    })),
-  [ytdData, mktYtdMap, shlYtdMap, shlTaxYtdMap]);
+    (ytdData?.daily ?? []).map(d => mergeBucket(d, shlYtdMap[d.date], mktYtdMap[d.date])),
+  [ytdData, mktYtdMap, shlYtdMap]);
 
   const ytdTotals = useMemo(() => sumBuckets(ytdDailyWithMkt), [ytdDailyWithMkt]);
 
@@ -879,7 +973,7 @@ export default function SalesPage() {
             </div>
             <div>
               <div className="text-xs text-gray-500 mb-0.5">Total</div>
-              <div className="text-base font-bold text-green-400">{fmt(ytdTotals.totalSales + ytdTotals.marketplaces + ytdTotals.shl)}</div>
+              <div className="text-base font-bold text-green-400">{fmt(ytdTotals.totalSales)}</div>
             </div>
             <div>
               <div className="text-xs text-gray-500 mb-0.5">Discounts</div>
@@ -913,7 +1007,7 @@ export default function SalesPage() {
             </div>
             <div>
               <div className="text-xs text-gray-500 mb-0.5">Total</div>
-              <div className="text-base font-bold text-green-400">{fmt(currentMonthTotals.totalSales + currentMonthTotals.marketplaces + currentMonthTotals.shl)}</div>
+              <div className="text-base font-bold text-green-400">{fmt(currentMonthTotals.totalSales)}</div>
             </div>
             <div>
               <div className="text-xs text-gray-500 mb-0.5">Discounts</div>
@@ -939,7 +1033,7 @@ export default function SalesPage() {
             { label: "Discounts",    cur: totals.discounts,                                prev: prevTotals?.discounts,   inverted: true,  color: "text-red-400",  display: `(${fmt(totals.discounts)})`,                        sub: "promo codes & sales" },
             { label: "Refunds",      cur: totals.returns,                                  prev: prevTotals?.returns,     inverted: true,  color: "text-red-400",  display: `(${fmt(totals.returns)})`,                          sub: "bucketed on refund date" },
             { label: "Net Sales",    cur: totals.netSales,                                 prev: prevTotals?.netSales,    inverted: false, color: "text-white",     display: fmt(totals.netSales),                                sub: "after discounts & refunds" },
-            { label: "Total Sales",  cur: totals.totalSales + totals.marketplaces + totals.shl, prev: prevTotals ? prevTotals.totalSales + prevTotals.marketplaces + prevTotals.shl : undefined, inverted: false, color: "text-green-400", display: fmt(totals.totalSales + totals.marketplaces + totals.shl), sub: "net + shipping + tax + mktplc + SHL" },
+            { label: "Total Sales",  cur: totals.totalSales, prev: prevTotals?.totalSales, inverted: false, color: "text-green-400", display: fmt(totals.totalSales), sub: "Proline + SHL + Mktplc, net + shipping + tax" },
           ].map(card => (
             <div key={card.label} className="bg-gray-900 border border-gray-800 rounded-xl p-4">
               <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">{card.label}</div>
@@ -1045,7 +1139,7 @@ export default function SalesPage() {
                     SHL: r.shl ?? 0, Other: r.other, Marketplace: r.marketplaces ?? 0,
                     Gross: r.grossSales, Discounts: r.discounts, Refunds: r.returns,
                     Redo: r.redo, Net: r.netSales, Shipping: r.shipping, Tax: r.salesTax,
-                    Total: r.totalSales + (r.marketplaces ?? 0) + (r.shl ?? 0),
+                    Total: r.totalSales,
                   })),
                   `proline-sales-${range.start}-${range.end}`
                 )}
@@ -1108,7 +1202,7 @@ export default function SalesPage() {
                       <MetricCell value={row.netSales} onClick={() => openMetric("net", row)} className="font-semibold text-white" />
                       <td className="py-2 px-3 text-right text-gray-400">{row.shipping > 0 ? fmt(row.shipping) : <span className="text-gray-600">—</span>}</td>
                       <td className="py-2 px-3 text-right text-gray-400">{row.salesTax > 0 ? fmt(row.salesTax) : <span className="text-gray-600">—</span>}</td>
-                      <MetricCell value={row.totalSales + (row.marketplaces ?? 0) + (row.shl ?? 0)} onClick={() => openMetric("total", row)} className="font-semibold text-green-400" />
+                      <MetricCell value={row.totalSales} onClick={() => openMetric("total", row)} className="font-semibold text-green-400" />
                     </tr>
                   );
                 })}
@@ -1129,7 +1223,7 @@ export default function SalesPage() {
                   <td className="py-3 px-3 text-right">{fmt(totals.netSales)}</td>
                   <td className="py-3 px-3 text-right text-gray-400">{fmt(totals.shipping)}</td>
                   <td className="py-3 px-3 text-right text-gray-400">{fmt(totals.salesTax)}</td>
-                  <td className="py-3 px-3 text-right text-green-400">{fmt(totals.totalSales + totals.marketplaces + totals.shl)}</td>
+                  <td className="py-3 px-3 text-right text-green-400">{fmt(totals.totalSales)}</td>
                 </tr>
               </tfoot>
             </table>
@@ -1155,6 +1249,8 @@ export default function SalesPage() {
         <MetricBreakdownModal
           metric={metricDrill.metric}
           row={metricDrill.row}
+          shl={metricDrill.shl}
+          mkt={metricDrill.mkt}
           rowLabel={metricDrill.rowLabel}
           marketplaceDays={marketplace?.days ?? []}
           onClose={() => setMetricDrill(null)}
@@ -1191,11 +1287,11 @@ function MethodologyNote() {
               <div><span className="text-gray-200 font-medium">PRH / PRO / PHONE / OTHER</span> — Shopify orders split by tag, in priority order: <code className="bg-gray-800 px-1 rounded">ProlinePro B2B</code> = PRO (wins over phone if both tags are present), <code className="bg-gray-800 px-1 rounded">[]</code> alone = Phone, no tags = PRH (website), anything else = Other. Status tags (<code className="bg-gray-800 px-1 rounded">REFUNDED</code>, <code className="bg-gray-800 px-1 rounded">redo_claim</code>) are stripped before classification — they describe what happened to the order, not how the sale came in. Orders tagged <code className="bg-gray-800 px-1 rounded">Market Place Order</code>/<code className="bg-gray-800 px-1 rounded">Marketplace</code> are excluded entirely (tracked via the Mktplc column from Sheets).</div>
               <div><span className="text-gray-200 font-medium">SHL</span> — Smart Home Luxury Shopify store (separate account). Net revenue by order date.</div>
               <div><span className="text-gray-200 font-medium">MKTPLC</span> — Amazon, Wayfair, Home Depot. Pulled from Google Sheets (manually entered).</div>
-              <div><span className="text-gray-200 font-medium">GROSS</span> — Line item prices before discounts (<code className="bg-gray-800 px-1 rounded">subtotal + total_discounts</code>).</div>
-              <div><span className="text-gray-200 font-medium">DISCOUNTS</span> — <code className="bg-gray-800 px-1 rounded">total_discounts</code> from each order.</div>
-              <div><span className="text-gray-200 font-medium">REFUNDS</span> — Refund amounts fetched per order, attributed to the <span className="text-yellow-400">date the refund was processed</span> (not the original order date). Includes refunds processed in the window for orders placed before the window.</div>
-              <div><span className="text-gray-200 font-medium">NET</span> — Gross − Discounts − Refunds.</div>
-              <div><span className="text-gray-200 font-medium">TOTAL</span> — Net + Shipping + Tax + SHL + Marketplaces. <span className="text-orange-400">This includes SHL and Marketplace revenue which Shopify Analytics does not.</span></div>
+              <div><span className="text-gray-200 font-medium">GROSS</span> — Business-wide line-item revenue before discounts: <code className="bg-gray-800 px-1 rounded">Proline (subtotal + total_discounts) + SHL (subtotal + total_discounts) + Marketplaces gross</code>.</div>
+              <div><span className="text-gray-200 font-medium">DISCOUNTS</span> — Proline + SHL <code className="bg-gray-800 px-1 rounded">total_discounts</code>. Marketplaces aren&apos;t broken out by discount in Sheets.</div>
+              <div><span className="text-gray-200 font-medium">REFUNDS</span> — Business-wide: Proline + SHL refund line-item subtotals plus Marketplace returns. Attributed to the <span className="text-yellow-400">date the refund was processed</span> (not the original order date). Includes refunds processed in the window for orders placed before the window.</div>
+              <div><span className="text-gray-200 font-medium">NET</span> — Gross − Discounts − Refunds − Redo. All four are business-wide.</div>
+              <div><span className="text-gray-200 font-medium">TOTAL</span> — Net + Shipping + Tax. Net already folds in SHL and Marketplaces, so Total is the full business in a single number. <span className="text-orange-400">Larger than Shopify Analytics by design — it sees one store at a time.</span></div>
             </div>
           </div>
           <div>
@@ -1203,7 +1299,7 @@ function MethodologyNote() {
             <div className="space-y-3 text-xs text-gray-400">
               <div className="flex gap-2">
                 <span className="text-yellow-400 font-bold flex-shrink-0">1.</span>
-                <div><span className="text-gray-200 font-medium">TOTAL is larger by design</span> — Shopify Analytics only shows Proline orders. Our TOTAL adds SHL and Marketplace revenue on top. These are intentionally included.</div>
+                <div><span className="text-gray-200 font-medium">All math columns are business-wide by design</span> — Shopify Analytics only shows one store at a time. Our Gross, Refunds, Net, and Total fold in Proline + SHL + Marketplaces so the dashboard reflects the full business in a single row.</div>
               </div>
               <div className="flex gap-2">
                 <span className="text-yellow-400 font-bold flex-shrink-0">2.</span>

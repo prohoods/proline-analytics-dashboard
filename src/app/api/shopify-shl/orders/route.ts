@@ -56,51 +56,69 @@ export async function GET(request: NextRequest) {
         }
       });
 
+    // Same per-day shape as Proline channel-sales so the dashboard can fold
+    // SHL into business-wide Gross/Discounts/Refunds/Net columns. Gross is
+    // line-items-before-discounts (subtotal + total_discounts), matching how
+    // Proline's gross is computed; netRevenue = gross − discounts − refunds.
     const dailyMap: Record<string, {
       date: string;
       orders: number;
       grossRevenue: number;
+      discounts: number;
       refunds: number;
       refundTax: number;
       netRevenue: number;
+      shipping: number;
       tax: number;
     }> = {};
 
     const ensureDay = (date: string) => {
       if (!dailyMap[date]) {
-        dailyMap[date] = { date, orders: 0, grossRevenue: 0, refunds: 0, refundTax: 0, netRevenue: 0, tax: 0 };
+        dailyMap[date] = { date, orders: 0, grossRevenue: 0, discounts: 0, refunds: 0, refundTax: 0, netRevenue: 0, shipping: 0, tax: 0 };
       }
       return dailyMap[date];
     };
 
     let totalGross = 0;
+    let totalDiscounts = 0;
     let totalRefunds = 0;
     let totalRefundTax = 0;
+    let totalShipping = 0;
     let totalTax = 0;
     let totalOrders = 0;
 
     for (const order of orders) {
       const date = order.created_at.substring(0, 10);
       const day = ensureDay(date);
-      const gross = parseFloat(order.total_price);
+      const subtotal = parseFloat(order.subtotal_price);
+      const totalPrice = parseFloat(order.total_price);
       const tax = parseFloat(order.total_tax);
+      const discounts = parseFloat(order.total_discounts ?? "0");
+      const shipping = Math.max(0, totalPrice - subtotal - tax);
+      const gross = subtotal + discounts;
 
       day.orders += 1;
       day.grossRevenue += gross;
+      day.discounts += discounts;
+      day.shipping += shipping;
       day.tax += tax;
-      day.netRevenue += gross;
+      day.netRevenue += gross - discounts; // refunds applied below on refund date
 
       totalGross += gross;
+      totalDiscounts += discounts;
+      totalShipping += shipping;
       totalTax += tax;
       totalOrders += 1;
     }
 
     for (const r of datedRefunds) {
       const day = ensureDay(r.refundDate);
-      day.refunds += r.amount;
+      // Refund subtotal only (tax handled in refundTax/Tax column).
+      const subtotal = Math.max(0, r.amount - r.tax);
+      day.refunds += subtotal;
       day.refundTax += r.tax;
-      day.netRevenue -= r.amount;
-      totalRefunds += r.amount;
+      day.netRevenue -= subtotal;
+      totalRefunds += subtotal;
       totalRefundTax += r.tax;
     }
 
@@ -111,8 +129,10 @@ export async function GET(request: NextRequest) {
       summary: {
         totalOrders,
         grossRevenue: totalGross,
+        discounts: totalDiscounts,
         totalRefunds,
-        netRevenue: totalGross - totalRefunds,
+        netRevenue: totalGross - totalDiscounts - totalRefunds,
+        shipping: totalShipping,
         grossTax: totalTax,
         refundTax: totalRefundTax,
         netTax: totalTax - totalRefundTax,
