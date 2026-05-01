@@ -522,8 +522,9 @@ export default function SalesPage() {
         </details>
       )}
 
-      {/* View tabs + week selector */}
-      <div className="flex items-center gap-4 mb-4 flex-wrap">
+      {/* View tabs + week selector — sticky so they stay visible while scrolling
+          long daily/monthly tables. */}
+      <div className="sticky top-0 z-20 -mx-8 px-8 py-3 bg-black/80 backdrop-blur border-b border-gray-800/50 flex items-center gap-4 mb-4 flex-wrap">
         <div className="flex gap-1 bg-gray-900 border border-gray-800 rounded-lg p-1">
           {(["daily", "weekly", "monthly"] as ViewTab[]).map(t => (
             <button
