@@ -28,7 +28,15 @@ interface SalesBucket {
 
 interface SHLDay { date: string; netRevenue: number; tax?: number; refundTax?: number; }
 
-interface MarketplaceDay { date: string; net: number; }
+interface MarketplaceDay {
+  date: string;
+  amazon: number;
+  wayfair: number;
+  homeDepot: number;
+  gross: number;
+  returns: number;
+  net: number;
+}
 interface MarketplaceSummary { days: MarketplaceDay[]; }
 
 type ViewTab = "daily" | "weekly" | "monthly";
@@ -149,7 +157,7 @@ function MetricCell({
     <td className={`py-2 px-3 text-right ${className ?? ""}`}>
       <button
         onClick={onClick}
-        className="hover:underline decoration-dotted underline-offset-2 cursor-pointer focus:outline-none focus:underline"
+        className="hover:underline underline-offset-2 cursor-pointer focus:outline-none focus:underline"
         title="Click to see calculation"
       >
         {display}
@@ -174,7 +182,7 @@ function ChannelCell({
     <td className={`py-2 px-3 text-right ${colorClass ?? ""}`}>
       <button
         onClick={onClick}
-        className="hover:underline decoration-dotted underline-offset-2 cursor-pointer focus:outline-none focus:underline"
+        className="hover:underline underline-offset-2 cursor-pointer focus:outline-none focus:underline"
         title="Click to see orders"
       >
         {fmt(value)}
@@ -183,7 +191,7 @@ function ChannelCell({
   );
 }
 
-type Metric = "gross" | "refunds" | "redo" | "net" | "total";
+type Metric = "gross" | "refunds" | "redo" | "net" | "total" | "marketplaces";
 
 const METRIC_META: Record<Metric, { label: string; color: string }> = {
   gross: { label: "Gross Sales", color: "text-white" },
@@ -191,17 +199,20 @@ const METRIC_META: Record<Metric, { label: string; color: string }> = {
   redo: { label: "Redo", color: "text-cyan-400" },
   net: { label: "Net Sales", color: "text-white" },
   total: { label: "Total Sales", color: "text-green-400" },
+  marketplaces: { label: "Marketplaces", color: "text-orange-400" },
 };
 
 function MetricBreakdownModal({
   metric,
   row,
   rowLabel,
+  marketplaceDays,
   onClose,
 }: {
   metric: Metric;
   row: SalesBucket;
   rowLabel: string;
+  marketplaceDays: MarketplaceDay[];
   onClose: () => void;
 }) {
   useEffect(() => {
@@ -218,7 +229,17 @@ function MetricBreakdownModal({
     : metric === "refunds" ? row.returns
     : metric === "redo" ? row.redo
     : metric === "net" ? row.netSales
+    : metric === "marketplaces" ? (row.marketplaces ?? 0)
     : row.totalSales + (row.marketplaces ?? 0) + (row.shl ?? 0);
+
+  // Per-platform marketplace breakdown for this row's date range.
+  const { start: mktStart, end: mktEnd } = rowDateRange(row.date);
+  const mktInRange = marketplaceDays.filter(d => d.date >= mktStart && d.date <= mktEnd);
+  const mktAmazon = mktInRange.reduce((s, d) => s + d.amazon, 0);
+  const mktWayfair = mktInRange.reduce((s, d) => s + d.wayfair, 0);
+  const mktHomeDepot = mktInRange.reduce((s, d) => s + d.homeDepot, 0);
+  const mktGross = mktInRange.reduce((s, d) => s + d.gross, 0);
+  const mktReturns = mktInRange.reduce((s, d) => s + d.returns, 0);
 
   // Sum of channel subtotals — equals Gross − Discounts (channels are
   // post-discount). Useful as a sanity check on the Gross breakdown.
@@ -320,6 +341,28 @@ function MetricBreakdownModal({
               </Section>
               <Section title="Source">
                 Computed from values in this row. Each component is sourced from Shopify&apos;s DTC store <code className="text-gray-300">861fdb</code>; SHL net lives in its own column.
+              </Section>
+            </>
+          )}
+
+          {metric === "marketplaces" && (
+            <>
+              <Section title="Formula">
+                <code className="text-blue-300">Σ (Amazon + Wayfair + Home Depot − marketplace returns)</code> for every day in this row&apos;s window.
+              </Section>
+              <Section title="Calculation">
+                <CalcRow label="Amazon" value={mktAmazon} />
+                <CalcRow label="Wayfair" value={mktWayfair} />
+                <CalcRow label="Home Depot" value={mktHomeDepot} />
+                <CalcRow label="= Marketplace Gross" value={mktGross} />
+                <CalcRow label="− Returns" value={-mktReturns} />
+                <CalcRow label="= Net" value={row.marketplaces ?? 0} bold />
+              </Section>
+              <Section title="Source">
+                Google Sheets — <em>2026 Daily Sales Report</em>, &quot;Marketplace Sales&quot; tab. Manually entered by the team because Amazon/Wayfair/Home Depot revenue lives on those platforms, not in Shopify.
+              </Section>
+              <Section title="Why it&apos;s tracked separately from Shopify">
+                These orders sometimes appear in Shopify too (synced for inventory reasons, tagged <code className="text-gray-300">Market Place Order</code>) but with placeholder totals. The dashboard skips those Shopify rows so we don&apos;t double-count against this column.
               </Section>
             </>
           )}
@@ -1053,7 +1096,7 @@ export default function SalesPage() {
                       <ChannelCell value={row.phone} onClick={() => openDrill("phone", row.date)} />
                       <ChannelCell value={row.shl ?? 0} colorClass="text-purple-400" onClick={() => openDrill("shl", row.date)} />
                       {showOther && <ChannelCell value={row.other} colorClass="text-gray-500" onClick={() => openDrill("other", row.date)} />}
-                      <td className="py-2 px-3 text-right text-orange-400">{(row.marketplaces ?? 0) > 0 ? fmt(row.marketplaces!) : <span className="text-gray-600">—</span>}</td>
+                      <MetricCell value={row.marketplaces ?? 0} onClick={() => openMetric("marketplaces", row)} className="text-orange-400" />
                       <MetricCell value={row.grossSales} onClick={() => openMetric("gross", row)} className="border-l border-gray-800" />
                       <td className="py-2 px-3 text-right">{neg(row.discounts)}</td>
                       <MetricCell
@@ -1113,6 +1156,7 @@ export default function SalesPage() {
           metric={metricDrill.metric}
           row={metricDrill.row}
           rowLabel={metricDrill.rowLabel}
+          marketplaceDays={marketplace?.days ?? []}
           onClose={() => setMetricDrill(null)}
         />
       )}
