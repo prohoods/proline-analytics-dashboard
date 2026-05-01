@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getOrders, resolveOrderRefunds, mapLimit } from "@/lib/shopify";
+import { getOrdersWithRefundsInWindow, resolveOrderRefunds, mapLimit } from "@/lib/shopify";
 
 // Each refund carries its own date — we bucket refunds on the refund date,
 // not the original order date. This keeps historical weeks stable (Shopify's
@@ -29,9 +29,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "start and end date required" }, { status: 400 });
     }
 
-    const params = `created_at_min=${start}T00:00:00-07:00&created_at_max=${end}T23:59:59-07:00&financial_status=any`;
-    const data = await getOrders(params);
-    const orders = data.orders;
+    // Fetches orders created in window (for sales) plus orders updated in
+    // window with refund activity (for cross-period refunds).
+    const { orders } = await getOrdersWithRefundsInWindow(start, end);
 
     // Pull full refund details for any order flagged as refunded.
     const ordersWithRefunds = orders.filter(o =>
@@ -61,9 +61,13 @@ export async function GET(request: NextRequest) {
             : 0;
           const amount = lineItemTotal > 0 ? lineItemTotal : txTotal;
           if (amount <= 0) continue;
+          const refundDate = (r.created_at ?? order.created_at).substring(0, 10);
+          // Older orders pulled in via updated_at can carry refunds from prior
+          // periods — only keep refunds whose own date falls in the window.
+          if (refundDate < start || refundDate > end) continue;
           datedRefunds.push({
             orderId: order.id,
-            refundDate: (r.created_at ?? order.created_at).substring(0, 10),
+            refundDate,
             amount,
             tax: lineItemTax,
             redo: redoRefund,
@@ -100,6 +104,9 @@ export async function GET(request: NextRequest) {
 
     for (const order of orders) {
       const date = order.created_at.substring(0, 10);
+      // Drop orders created outside the window — they're only here because
+      // their refund activity happened inside the window.
+      if (date < start || date > end) continue;
       const day = ensureDay(date);
       const gross = parseFloat(order.total_price);
       const tax = parseFloat(order.total_tax);

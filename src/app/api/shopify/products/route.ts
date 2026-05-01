@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getOrders } from "@/lib/shopify";
+import { getOrdersWithRefundsInWindow } from "@/lib/shopify";
 import { getCOGS } from "@/lib/cogs";
 
 export async function GET(request: NextRequest) {
@@ -12,8 +12,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "start and end required" }, { status: 400 });
     }
 
-    const params = `created_at_min=${start}T00:00:00-07:00&created_at_max=${end}T23:59:59-07:00&financial_status=any&status=any`;
-    const { orders } = await getOrders(params);
+    const { orders } = await getOrdersWithRefundsInWindow(start, end);
 
     interface RefundIncident {
       orderName: string;
@@ -33,39 +32,64 @@ export async function GET(request: NextRequest) {
       refundIncidents: RefundIncident[];
     }> = {};
 
+    const orderInWindow = (order: typeof orders[number]) => {
+      const d = order.created_at.substring(0, 10);
+      return d >= start && d <= end;
+    };
+
     for (const order of orders) {
-      for (const item of order.line_items) {
-        const key = item.sku || item.title;
-        if (!skuMap[key]) {
-          skuMap[key] = {
-            title: item.title + (item.variant_title ? ` — ${item.variant_title}` : ""),
-            sku: item.sku,
-            unitsSold: 0,
-            grossRevenue: 0,
-            refundedUnits: 0,
-            refundedRevenue: 0,
-            refundIncidents: [],
-          };
+      // Sales aggregation: only count orders created in the window. Cross-window
+      // orders only made it into the result set because of refund activity.
+      if (orderInWindow(order)) {
+        for (const item of order.line_items) {
+          const key = item.sku || item.title;
+          if (!skuMap[key]) {
+            skuMap[key] = {
+              title: item.title + (item.variant_title ? ` — ${item.variant_title}` : ""),
+              sku: item.sku,
+              unitsSold: 0,
+              grossRevenue: 0,
+              refundedUnits: 0,
+              refundedRevenue: 0,
+              refundIncidents: [],
+            };
+          }
+          skuMap[key].unitsSold += item.quantity;
+          skuMap[key].grossRevenue += parseFloat(item.price) * item.quantity;
         }
-        skuMap[key].unitsSold += item.quantity;
-        skuMap[key].grossRevenue += parseFloat(item.price) * item.quantity;
       }
 
+      // Refund aggregation: only count refunds whose own date is in the window
+      // (regardless of when the original order was placed).
       for (const refund of order.refunds ?? []) {
+        const refundDate = (refund.created_at ?? order.created_at).substring(0, 10);
+        if (refundDate < start || refundDate > end) continue;
         for (const ri of refund.refund_line_items ?? []) {
           const key = ri.line_item?.sku ?? "";
-          if (key && skuMap[key]) {
-            const amount = parseFloat(ri.subtotal ?? "0");
-            skuMap[key].refundedUnits += ri.quantity;
-            skuMap[key].refundedRevenue += amount;
-            skuMap[key].refundIncidents.push({
-              orderName: order.name,
-              date: (refund.created_at ?? order.created_at).substring(0, 10),
-              quantity: ri.quantity,
-              amount,
-              note: refund.note ?? "",
-            });
+          if (!key) continue;
+          // SKU may not be in skuMap if the original sale was outside the
+          // window — initialize it so refunds still surface.
+          if (!skuMap[key]) {
+            skuMap[key] = {
+              title: ri.line_item.sku || "Unknown",
+              sku: key,
+              unitsSold: 0,
+              grossRevenue: 0,
+              refundedUnits: 0,
+              refundedRevenue: 0,
+              refundIncidents: [],
+            };
           }
+          const amount = parseFloat(ri.subtotal ?? "0");
+          skuMap[key].refundedUnits += ri.quantity;
+          skuMap[key].refundedRevenue += amount;
+          skuMap[key].refundIncidents.push({
+            orderName: order.name,
+            date: refundDate,
+            quantity: ri.quantity,
+            amount,
+            note: refund.note ?? "",
+          });
         }
       }
     }

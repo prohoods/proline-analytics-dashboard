@@ -101,7 +101,7 @@ export default function SalesPage() {
   const [prevLoading, setPrevLoading] = useState(false);
 
   // Range-scoped data (drives the table)
-  const [shopifyData, setShopifyData] = useState<{ daily: SalesBucket[]; weekly: SalesBucket[]; monthly: SalesBucket[] } | null>(null);
+  const [shopifyData, setShopifyData] = useState<{ daily: SalesBucket[]; weekly: SalesBucket[]; monthly: SalesBucket[]; otherBreakdown?: { tags: string; count: number; amount: number; sampleOrder: string }[] } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -353,7 +353,7 @@ export default function SalesPage() {
       <div className="mb-6 flex items-start justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold text-white">Sales by Channel</h1>
-          <p className="text-gray-400 mt-1">Gross → Discounts → Returns → Net → Shipping → Tax → Total</p>
+          <p className="text-gray-400 mt-1">Gross → Discounts → Refunds → Net → Shipping → Tax → Total</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <button
@@ -415,7 +415,7 @@ export default function SalesPage() {
               <div className="text-sm font-medium text-red-400">({fmt(ytdTotals.discounts)})</div>
             </div>
             <div>
-              <div className="text-xs text-gray-500 mb-0.5">Returns</div>
+              <div className="text-xs text-gray-500 mb-0.5">Refunds</div>
               <div className="text-sm font-medium text-red-400">({fmt(ytdTotals.returns)})</div>
             </div>
             <div>
@@ -449,7 +449,7 @@ export default function SalesPage() {
               <div className="text-sm font-medium text-red-400">({fmt(currentMonthTotals.discounts)})</div>
             </div>
             <div>
-              <div className="text-xs text-gray-500 mb-0.5">Returns</div>
+              <div className="text-xs text-gray-500 mb-0.5">Refunds</div>
               <div className="text-sm font-medium text-red-400">({fmt(currentMonthTotals.returns)})</div>
             </div>
             <div>
@@ -466,8 +466,8 @@ export default function SalesPage() {
           {[
             { label: "Gross Sales",  cur: totals.grossSales,                               prev: prevTotals?.grossSales,  inverted: false, color: "text-white",     display: fmt(totals.grossSales),                              sub: "before discounts" },
             { label: "Discounts",    cur: totals.discounts,                                prev: prevTotals?.discounts,   inverted: true,  color: "text-red-400",  display: `(${fmt(totals.discounts)})`,                        sub: "promo codes & sales" },
-            { label: "Returns",      cur: totals.returns,                                  prev: prevTotals?.returns,     inverted: true,  color: "text-red-400",  display: `(${fmt(totals.returns)})`,                          sub: "refunded orders" },
-            { label: "Net Sales",    cur: totals.netSales,                                 prev: prevTotals?.netSales,    inverted: false, color: "text-white",     display: fmt(totals.netSales),                                sub: "after discounts & returns" },
+            { label: "Refunds",      cur: totals.returns,                                  prev: prevTotals?.returns,     inverted: true,  color: "text-red-400",  display: `(${fmt(totals.returns)})`,                          sub: "bucketed on refund date" },
+            { label: "Net Sales",    cur: totals.netSales,                                 prev: prevTotals?.netSales,    inverted: false, color: "text-white",     display: fmt(totals.netSales),                                sub: "after discounts & refunds" },
             { label: "Total Sales",  cur: totals.totalSales + totals.marketplaces + totals.shl, prev: prevTotals ? prevTotals.totalSales + prevTotals.marketplaces + prevTotals.shl : undefined, inverted: false, color: "text-green-400", display: fmt(totals.totalSales + totals.marketplaces + totals.shl), sub: "net + shipping + tax + mktplc + SHL" },
           ].map(card => (
             <div key={card.label} className="bg-gray-900 border border-gray-800 rounded-xl p-4">
@@ -480,11 +480,39 @@ export default function SalesPage() {
                 )}
               </div>
               {showCompare && card.prev !== undefined && !prevLoading && (
-                <div className="text-xs text-gray-600 mt-0.5">prev: {card.label === "Discounts" || card.label === "Returns" ? `(${fmt(card.prev)})` : fmt(card.prev)}</div>
+                <div className="text-xs text-gray-600 mt-0.5">prev: {card.label === "Discounts" || card.label === "Refunds" ? `(${fmt(card.prev)})` : fmt(card.prev)}</div>
               )}
             </div>
           ))}
         </div>
+      )}
+
+      {/* What's in "Other" — collapsible diagnostic */}
+      {shopifyData?.otherBreakdown && shopifyData.otherBreakdown.length > 0 && (
+        <details className="bg-gray-900 border border-gray-800 rounded-xl mb-4 overflow-hidden">
+          <summary className="px-4 py-3 cursor-pointer text-sm text-gray-400 hover:text-white flex items-center justify-between">
+            <span>What&apos;s in &quot;Other&quot;? <span className="text-gray-600 ml-2">{shopifyData.otherBreakdown.length} unique tag combinations · {fmt(shopifyData.otherBreakdown.reduce((s, b) => s + b.amount, 0))}</span></span>
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+          </summary>
+          <div className="border-t border-gray-800 px-4 py-3 text-xs">
+            <div className="text-gray-500 mb-2">Orders with tags that don&apos;t match PRH (no tag), Phone (<code className="bg-gray-800 px-1 rounded">[]</code>), or PRO (<code className="bg-gray-800 px-1 rounded">ProlinePro B2B</code>) land here. If a pattern looks like a real channel, tell me and I&apos;ll add it to the classifier.</div>
+            <table className="w-full text-xs">
+              <thead className="text-gray-500 uppercase">
+                <tr><th className="text-left py-1.5">Tags</th><th className="text-right py-1.5">Orders</th><th className="text-right py-1.5">Subtotal</th><th className="text-left py-1.5 pl-4">Sample order</th></tr>
+              </thead>
+              <tbody className="divide-y divide-gray-800">
+                {shopifyData.otherBreakdown.map(b => (
+                  <tr key={b.tags} className="text-gray-300">
+                    <td className="py-1.5 font-mono">{b.tags}</td>
+                    <td className="py-1.5 text-right">{b.count}</td>
+                    <td className="py-1.5 text-right">{fmt(b.amount)}</td>
+                    <td className="py-1.5 pl-4 text-gray-500">{b.sampleOrder}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
       )}
 
       {/* View tabs + week selector */}
@@ -543,7 +571,7 @@ export default function SalesPage() {
                   tableRows.map(r => ({
                     Date: r.date, PRH: r.prh, Pro: r.prolinePro, Phone: r.phone,
                     SHL: r.shl ?? 0, Other: r.other, Marketplace: r.marketplaces ?? 0,
-                    Gross: r.grossSales, Discounts: r.discounts, Returns: r.returns,
+                    Gross: r.grossSales, Discounts: r.discounts, Refunds: r.returns,
                     Redo: r.redo, Net: r.netSales, Shipping: r.shipping, Tax: r.salesTax,
                     Total: r.totalSales + (r.marketplaces ?? 0) + (r.shl ?? 0),
                   })),
@@ -571,7 +599,7 @@ export default function SalesPage() {
                   <th className="py-3 px-3 text-right text-orange-400">Mktplc</th>
                   <th className="py-3 px-3 text-right border-l border-gray-800">Gross</th>
                   <th className="py-3 px-3 text-right text-red-400">Discounts</th>
-                  <th className="py-3 px-3 text-right text-red-400">Returns</th>
+                  <th className="py-3 px-3 text-right text-red-400">Refunds</th>
                   <th className="py-3 px-3 text-right text-cyan-400" title="Redo shipping protection fees — collected at checkout, remitted to Redo. Not Proline revenue.">Redo</th>
                   <th className="py-3 px-3 text-right font-semibold text-white">Net</th>
                   <th className="py-3 px-3 text-right">Shipping</th>
@@ -664,13 +692,13 @@ function MethodologyNote() {
           <div>
             <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Column Definitions</h3>
             <div className="space-y-2 text-xs text-gray-400">
-              <div><span className="text-gray-200 font-medium">PRH / PRO / PHONE / OTHER</span> — Shopify orders split by tag. No tag = PRH (website), tag <code className="bg-gray-800 px-1 rounded">[]</code> = Phone order, <code className="bg-gray-800 px-1 rounded">ProlinePro B2B</code> = PRO, anything else = Other. Values are post-discount subtotals.</div>
+              <div><span className="text-gray-200 font-medium">PRH / PRO / PHONE / OTHER</span> — Shopify orders split by tag, in priority order: <code className="bg-gray-800 px-1 rounded">ProlinePro B2B</code> = PRO (wins over phone if both tags are present), tag exactly <code className="bg-gray-800 px-1 rounded">[]</code> = Phone, no tags at all = PRH (website), anything else = Other (custom tags like REFUNDED, etc — open the order in Shopify to see the tag).</div>
               <div><span className="text-gray-200 font-medium">SHL</span> — Smart Home Luxury Shopify store (separate account). Net revenue by order date.</div>
               <div><span className="text-gray-200 font-medium">MKTPLC</span> — Amazon, Wayfair, Home Depot. Pulled from Google Sheets (manually entered).</div>
               <div><span className="text-gray-200 font-medium">GROSS</span> — Line item prices before discounts (<code className="bg-gray-800 px-1 rounded">subtotal + total_discounts</code>).</div>
               <div><span className="text-gray-200 font-medium">DISCOUNTS</span> — <code className="bg-gray-800 px-1 rounded">total_discounts</code> from each order.</div>
-              <div><span className="text-gray-200 font-medium">RETURNS</span> — Refund amounts fetched per order, attributed to the <span className="text-yellow-400">date the refund was processed</span> (not the original order date).</div>
-              <div><span className="text-gray-200 font-medium">NET</span> — Gross − Discounts − Returns.</div>
+              <div><span className="text-gray-200 font-medium">REFUNDS</span> — Refund amounts fetched per order, attributed to the <span className="text-yellow-400">date the refund was processed</span> (not the original order date). Includes refunds processed in the window for orders placed before the window.</div>
+              <div><span className="text-gray-200 font-medium">NET</span> — Gross − Discounts − Refunds.</div>
               <div><span className="text-gray-200 font-medium">TOTAL</span> — Net + Shipping + Tax + SHL + Marketplaces. <span className="text-orange-400">This includes SHL and Marketplace revenue which Shopify Analytics does not.</span></div>
             </div>
           </div>
@@ -683,7 +711,7 @@ function MethodologyNote() {
               </div>
               <div className="flex gap-2">
                 <span className="text-yellow-400 font-bold flex-shrink-0">2.</span>
-                <div><span className="text-gray-200 font-medium">Returns may shift dates</span> — Refunds processed on a different day than the original order will appear on the refund date. A return processed today for a week-old order shows in today&apos;s row.</div>
+                <div><span className="text-gray-200 font-medium">Refunds may shift dates</span> — Refunds processed on a different day than the original order will appear on the refund date. A refund processed today for a week-old order shows in today&apos;s row.</div>
               </div>
               <div className="flex gap-2">
                 <span className="text-yellow-400 font-bold flex-shrink-0">3.</span>
@@ -691,7 +719,7 @@ function MethodologyNote() {
               </div>
               <div className="flex gap-2">
                 <span className="text-yellow-400 font-bold flex-shrink-0">4.</span>
-                <div><span className="text-gray-200 font-medium">Refund amount calculation</span> — We sum refund line items (subtotal + tax). Shopify Analytics may handle tax on refunds differently, causing small differences in the Returns and Tax columns.</div>
+                <div><span className="text-gray-200 font-medium">Refund amount calculation</span> — We sum refund line items (subtotal only — refunded tax is netted out of the Tax column to match Shopify&apos;s Total sales breakdown).</div>
               </div>
             </div>
           </div>

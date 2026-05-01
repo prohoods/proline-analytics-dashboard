@@ -1,13 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getOrders, resolveOrderRefunds, mapLimit, ShopifyOrder } from "@/lib/shopify";
+import { getOrdersWithRefundsInWindow, resolveOrderRefunds, mapLimit, ShopifyOrder } from "@/lib/shopify";
 
 type Channel = "prh" | "prolinePro" | "phone" | "other";
 
 function classifyOrder(order: ShopifyOrder): Channel {
   const tags = order.tags.trim();
+  // ProlinePro wins over phone — when a B2B account places an order via
+  // call-in, the order is tagged with both "[]" (phone) AND "ProlinePro B2B".
+  // We want it counted as PRO, not Phone, so this check has to come first.
+  if (tags.includes("ProlinePro B2B")) return "prolinePro";
   if (tags === "[]") return "phone";
   if (tags === "") return "prh";
-  if (tags.includes("ProlinePro B2B")) return "prolinePro";
   return "other";
 }
 
@@ -82,8 +85,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "start and end required" }, { status: 400 });
     }
 
-    const params = `created_at_min=${start}T00:00:00-07:00&created_at_max=${end}T23:59:59-07:00`;
-    const { orders } = await getOrders(params);
+    // Pulls orders created in the window (for sales) PLUS orders updated in
+    // the window with refund activity (for refunds processed in the window
+    // on older orders). Caller filters appropriately below.
+    const { orders } = await getOrdersWithRefundsInWindow(start, end);
 
     // Fetch refunds and bucket by the refund's own created_at date
     // (matches Shopify Analytics which attributes returns to when the refund was processed).
@@ -130,8 +135,16 @@ export async function GET(request: NextRequest) {
     // Aggregate by day
     const dailyMap: Record<string, SalesBucket> = {};
 
+    // Track unique tags that landed in "Other" so we can show the user what's
+    // there. They were calling it a black box; this lets them tune the rules.
+    const otherTagSamples: Map<string, { count: number; amount: number; sample: string }> = new Map();
+
     for (const order of orders) {
       const date = order.created_at.substring(0, 10);
+      // Skip orders created outside the window — those only made it into the
+      // result set because they had refund activity in the window. Counting
+      // their sales would inflate Gross.
+      if (date < start || date > end) continue;
       if (!dailyMap[date]) dailyMap[date] = emptyBucket(date);
 
       const subtotal   = parseFloat(order.subtotal_price);
@@ -140,6 +153,14 @@ export async function GET(request: NextRequest) {
       const discounts  = parseFloat(order.total_discounts ?? "0");
       const shipping   = Math.max(0, totalPrice - subtotal - tax);
       const channel    = classifyOrder(order);
+
+      if (channel === "other") {
+        const tagKey = order.tags.trim() || "(empty)";
+        const cur = otherTagSamples.get(tagKey) ?? { count: 0, amount: 0, sample: order.name };
+        cur.count += 1;
+        cur.amount += subtotal;
+        otherTagSamples.set(tagKey, cur);
+      }
 
       // Redo fee rides as a line item — split it out so we can show the
       // pass-through separately and back it out of Net/Total.
@@ -214,7 +235,12 @@ export async function GET(request: NextRequest) {
     const includesLive = end >= today;
     const ttl = includesLive ? 60 : 900;
 
-    return NextResponse.json({ daily, weekly, monthly }, {
+    const otherBreakdown = Array.from(otherTagSamples.entries())
+      .map(([tags, v]) => ({ tags, count: v.count, amount: v.amount, sampleOrder: v.sample }))
+      .sort((a, b) => b.amount - a.amount)
+      .slice(0, 20);
+
+    return NextResponse.json({ daily, weekly, monthly, otherBreakdown }, {
       headers: { "Cache-Control": `public, s-maxage=${ttl}, stale-while-revalidate=30` },
     });
   } catch (err: unknown) {

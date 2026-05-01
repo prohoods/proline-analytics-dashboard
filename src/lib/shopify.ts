@@ -72,6 +72,29 @@ export async function getOrders(params: string): Promise<{ orders: ShopifyOrder[
   return { orders: allOrders };
 }
 
+// Fetches orders for a date window using BOTH created_at and updated_at.
+// Why: the created_at-only fetch misses refunds processed inside the window
+// for orders placed before the window (e.g. an April refund on a March order).
+// Without those, our Refunds column underreports vs Shopify Analytics — we
+// were seeing roughly half of Shopify's number on April because cross-period
+// refunds were silently dropped. We dedupe by id; the caller is responsible
+// for filtering sales by created_at and refunds by refund.created_at.
+export async function getOrdersWithRefundsInWindow(start: string, end: string): Promise<{ orders: ShopifyOrder[] }> {
+  const tz = "-07:00";
+  const createdParams = `created_at_min=${start}T00:00:00${tz}&created_at_max=${end}T23:59:59${tz}&financial_status=any`;
+  const updatedParams = `updated_at_min=${start}T00:00:00${tz}&updated_at_max=${end}T23:59:59${tz}&financial_status=refunded,partially_refunded`;
+
+  const [created, updated] = await Promise.all([
+    getOrders(createdParams),
+    getOrders(updatedParams),
+  ]);
+
+  const byId = new Map<number, ShopifyOrder>();
+  for (const o of created.orders) byId.set(o.id, o);
+  for (const o of updated.orders) if (!byId.has(o.id)) byId.set(o.id, o);
+  return { orders: Array.from(byId.values()) };
+}
+
 // Build a variantId → SKU map from all Shopify products (auto-paginates)
 export async function getVariantSkuMap(): Promise<Record<string, string>> {
   const map: Record<string, string> = {};
