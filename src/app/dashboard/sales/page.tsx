@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo, useRef } from "react";
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from "recharts";
 import DateRangeDropdown from "@/components/DateRangeDropdown";
 import { RangeKey, getRange, getCompareRange, type CompareMode } from "@/lib/date-ranges";
 import DeltaBadge from "@/components/DeltaBadge";
@@ -595,6 +596,65 @@ function OrdersDrillModal({
   );
 }
 
+function fmtCompactCurrency(n: number) {
+  if (Math.abs(n) >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
+  if (Math.abs(n) >= 1_000) return `$${Math.round(n / 1000)}K`;
+  return `$${Math.round(n)}`;
+}
+
+function SalesTrendChart({
+  rows,
+  view,
+}: {
+  rows: SalesBucket[];
+  view: ViewTab;
+}) {
+  const data = useMemo(() => rows.map(r => {
+    const label =
+      view === "monthly" ? (() => {
+        const [y, m] = r.date.split("-").map(Number);
+        return `${MONTHS[m - 1]} ${String(y).slice(2)}`;
+      })()
+      : view === "weekly" ? weekRangeLabel(r)
+      : fmtDate(r.date);
+    return {
+      label,
+      Gross: Math.round(r.grossSales),
+      Net: Math.round(r.netSales),
+      Total: Math.round(r.totalSales),
+    };
+  }), [rows, view]);
+
+  if (data.length === 0) return null;
+
+  return (
+    <div className="bg-gray-900 rounded-xl border border-gray-800 p-5 mb-4">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-sm font-semibold text-white">Trend</h2>
+        <span className="text-xs text-gray-500">Gross · Net · Total over {data.length} {view === "monthly" ? "months" : view === "weekly" ? "days" : "days"}</span>
+      </div>
+      <div style={{ width: "100%", height: 260 }}>
+        <ResponsiveContainer>
+          <LineChart data={data} margin={{ top: 5, right: 16, bottom: 0, left: 8 }}>
+            <CartesianGrid stroke="#1f2937" vertical={false} />
+            <XAxis dataKey="label" tick={{ fill: "#9ca3af", fontSize: 11 }} stroke="#374151" />
+            <YAxis tick={{ fill: "#9ca3af", fontSize: 11 }} stroke="#374151" tickFormatter={fmtCompactCurrency} width={60} />
+            <Tooltip
+              contentStyle={{ background: "#0b1220", border: "1px solid #374151", borderRadius: 8, fontSize: 12 }}
+              labelStyle={{ color: "#9ca3af" }}
+              formatter={(v) => fmt(typeof v === "number" ? v : Number(v) || 0)}
+            />
+            <Legend wrapperStyle={{ fontSize: 12, color: "#9ca3af" }} iconType="plainline" />
+            <Line type="monotone" dataKey="Gross" stroke="#94a3b8" strokeWidth={2} dot={false} />
+            <Line type="monotone" dataKey="Net"   stroke="#60a5fa" strokeWidth={2} dot={false} />
+            <Line type="monotone" dataKey="Total" stroke="#34d399" strokeWidth={2.5} dot={{ r: 3, fill: "#34d399" }} />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
 function CompareDropdown({
   mode,
   onChange,
@@ -1183,6 +1243,10 @@ export default function SalesPage() {
       </div>
 
       {loading && <TableSkeleton rows={10} cols={13} />}
+
+      {!loading && tableRows.length > 0 && (
+        <SalesTrendChart rows={tableRows} view={view} />
+      )}
 
       {!loading && tableRows.length > 0 && (
         <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
