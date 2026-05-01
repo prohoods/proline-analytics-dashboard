@@ -130,6 +130,34 @@ function sumBuckets(buckets: SalesBucket[]) {
   };
 }
 
+function MetricCell({
+  value,
+  onClick,
+  className,
+  render,
+}: {
+  value: number;
+  onClick: () => void;
+  className?: string;
+  render?: (v: number) => React.ReactNode;
+}) {
+  const display = render ? render(value) : (value !== 0 ? fmt(value) : <span className="text-gray-600">—</span>);
+  if (value === 0 && !render) {
+    return <td className={`py-2 px-3 text-right ${className ?? ""}`}>{display}</td>;
+  }
+  return (
+    <td className={`py-2 px-3 text-right ${className ?? ""}`}>
+      <button
+        onClick={onClick}
+        className="hover:underline decoration-dotted underline-offset-2 cursor-pointer focus:outline-none focus:underline"
+        title="Click to see calculation"
+      >
+        {display}
+      </button>
+    </td>
+  );
+}
+
 function ChannelCell({
   value,
   colorClass,
@@ -152,6 +180,206 @@ function ChannelCell({
         {fmt(value)}
       </button>
     </td>
+  );
+}
+
+type Metric = "gross" | "refunds" | "redo" | "net" | "total";
+
+const METRIC_META: Record<Metric, { label: string; color: string }> = {
+  gross: { label: "Gross Sales", color: "text-white" },
+  refunds: { label: "Refunds", color: "text-red-400" },
+  redo: { label: "Redo", color: "text-cyan-400" },
+  net: { label: "Net Sales", color: "text-white" },
+  total: { label: "Total Sales", color: "text-green-400" },
+};
+
+function MetricBreakdownModal({
+  metric,
+  row,
+  rowLabel,
+  onClose,
+}: {
+  metric: Metric;
+  row: SalesBucket;
+  rowLabel: string;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const meta = METRIC_META[metric];
+
+  // Top-of-modal value: matches what the user sees in the table cell.
+  const value =
+    metric === "gross" ? row.grossSales
+    : metric === "refunds" ? row.returns
+    : metric === "redo" ? row.redo
+    : metric === "net" ? row.netSales
+    : row.totalSales + (row.marketplaces ?? 0) + (row.shl ?? 0);
+
+  // Sum of channel subtotals — equals Gross − Discounts (channels are
+  // post-discount). Useful as a sanity check on the Gross breakdown.
+  const channelSubtotalSum = row.prh + row.prolinePro + row.phone + row.other;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-40 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+      <div className="w-full max-w-xl max-h-[90vh] bg-gray-900 border border-gray-700 rounded-xl z-50 overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="sticky top-0 bg-gray-900 border-b border-gray-800 px-5 py-4 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">{meta.label} · {rowLabel}</div>
+            <div className={`text-2xl font-bold ${meta.color}`}>{fmt(value)}</div>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors flex-shrink-0 mt-0.5">
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="px-5 py-5 space-y-5 text-sm">
+          {metric === "gross" && (
+            <>
+              <Section title="Formula">
+                <code className="text-blue-300">Σ (subtotal + total_discounts)</code> for every non-marketplace DTC order created in the window.
+              </Section>
+              <Section title="Calculation">
+                <CalcRow label="Channel subtotals (post-discount)" value={channelSubtotalSum} />
+                <CalcSubRow label="PRH" value={row.prh} />
+                <CalcSubRow label="ProlinePro" value={row.prolinePro} />
+                <CalcSubRow label="Phone" value={row.phone} />
+                {row.other > 0 && <CalcSubRow label="Other" value={row.other} />}
+                <CalcRow label="+ Discounts added back" value={row.discounts} />
+                <CalcRow label="= Gross" value={row.grossSales} bold />
+              </Section>
+              <Section title="Source">
+                Shopify Admin REST API — DTC store <code className="text-gray-300">861fdb</code> · <code className="text-gray-300">/orders.json</code>.
+              </Section>
+              <Section title="Excluded from this column">
+                <ul className="list-disc list-inside text-gray-400 space-y-1">
+                  <li>SHL Shopify orders — see SHL column ({fmt(row.shl ?? 0)})</li>
+                  <li>Marketplace-tagged orders (Amazon/Wayfair/Home Depot inventory syncs) — see Mktplc column ({fmt(row.marketplaces ?? 0)})</li>
+                </ul>
+              </Section>
+            </>
+          )}
+
+          {metric === "refunds" && (
+            <>
+              <Section title="Formula">
+                <code className="text-blue-300">Σ refund_line_items.subtotal</code> for every refund whose <code className="text-gray-300">created_at</code> falls in this window — including refunds on orders placed before the window.
+              </Section>
+              <Section title="Calculation">
+                <CalcRow label="Refunded subtotal" value={row.returns} bold />
+                <div className="text-xs text-gray-500 mt-2">
+                  Refunded sales tax is netted out of the Tax column instead of subtracted here, matching Shopify&apos;s own &quot;Total sales&quot; breakdown.
+                </div>
+              </Section>
+              <Section title="Source">
+                Shopify Admin REST API — refunds inlined on each <code className="text-gray-300">/orders.json</code> response (falls back to <code className="text-gray-300">/orders/:id/refunds.json</code> on older orders).
+              </Section>
+              <Section title="Why it might differ from Shopify Analytics">
+                <ul className="list-disc list-inside text-gray-400 space-y-1">
+                  <li>Refunds are bucketed on refund date, not original order date — same as Shopify, but timezone differences (we use UTC-7) can shift a midnight refund by a day.</li>
+                  <li>Excludes SHL refunds (folded into the SHL column net).</li>
+                </ul>
+              </Section>
+            </>
+          )}
+
+          {metric === "redo" && (
+            <>
+              <Section title="Formula">
+                <code className="text-blue-300">Σ x-redo line items collected − Σ x-redo line items refunded</code>
+              </Section>
+              <Section title="What this is">
+                Redo is the shipping-protection SaaS. Customers pay the fee at checkout (rides as an <code className="text-gray-300">x-redo*</code> SKU line item) and we remit it to Redo. It&apos;s not Proline revenue — surfaced separately and backed out of Net so the table reflects what Proline actually keeps.
+              </Section>
+              <Section title="Calculation">
+                <CalcRow label="Net Redo (collected − refunded)" value={row.redo} bold />
+              </Section>
+              <Section title="Source">
+                Shopify line items where <code className="text-gray-300">sku</code> starts with <code className="text-gray-300">x-redo</code>.
+              </Section>
+            </>
+          )}
+
+          {metric === "net" && (
+            <>
+              <Section title="Formula">
+                <code className="text-blue-300">Gross − Discounts − Refunds − Redo</code>
+              </Section>
+              <Section title="Calculation">
+                <CalcRow label="Gross" value={row.grossSales} />
+                <CalcRow label="− Discounts" value={-row.discounts} />
+                <CalcRow label="− Refunds" value={-row.returns} />
+                <CalcRow label="− Redo (pass-through)" value={-row.redo} />
+                <CalcRow label="= Net" value={row.netSales} bold />
+              </Section>
+              <Section title="Source">
+                Computed from values in this row. Each component is sourced from Shopify&apos;s DTC store <code className="text-gray-300">861fdb</code>; SHL net lives in its own column.
+              </Section>
+            </>
+          )}
+
+          {metric === "total" && (
+            <>
+              <Section title="Formula">
+                <code className="text-blue-300">Net + Shipping + Tax + SHL + Marketplaces</code>
+              </Section>
+              <Section title="Calculation">
+                <CalcRow label="Net (DTC)" value={row.netSales} />
+                <CalcRow label="+ Shipping (DTC)" value={row.shipping} />
+                <CalcRow label="+ Tax (DTC + SHL combined)" value={row.salesTax} />
+                <CalcRow label="+ SHL net revenue" value={row.shl ?? 0} />
+                <CalcRow label="+ Marketplaces (Amazon/Wayfair/HD)" value={row.marketplaces ?? 0} />
+                <CalcRow label="= Total" value={row.totalSales + (row.marketplaces ?? 0) + (row.shl ?? 0)} bold />
+              </Section>
+              <Section title="Sources">
+                <ul className="list-disc list-inside text-gray-400 space-y-1">
+                  <li>DTC Net/Shipping — Shopify store <code className="text-gray-300">861fdb</code></li>
+                  <li>SHL net — Shopify store <code className="text-gray-300">a11c08-ce</code> (separate account)</li>
+                  <li>Tax — DTC <code className="text-gray-300">total_tax</code> + SHL <code className="text-gray-300">total_tax</code>, minus refunded tax on both</li>
+                  <li>Marketplaces — Google Sheets (manually entered Amazon/Wayfair/Home Depot revenue)</li>
+                </ul>
+              </Section>
+              <Section title="Why this differs from Shopify Analytics">
+                Shopify Analytics only sees one store at a time. Total here is the full business: DTC + SHL + Marketplaces.
+              </Section>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <div className="text-xs text-gray-500 uppercase tracking-wide mb-2">{title}</div>
+      <div className="text-gray-300">{children}</div>
+    </div>
+  );
+}
+
+function CalcRow({ label, value, bold }: { label: string; value: number; bold?: boolean }) {
+  return (
+    <div className={`flex items-center justify-between py-1.5 ${bold ? "border-t border-gray-700 mt-1 pt-2 font-semibold text-white" : "text-gray-300"}`}>
+      <span>{label}</span>
+      <span className="tabular-nums">{value < 0 ? `(${fmt(-value)})` : fmt(value)}</span>
+    </div>
+  );
+}
+
+function CalcSubRow({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="flex items-center justify-between py-1 pl-4 text-xs text-gray-500">
+      <span>{label}</span>
+      <span className="tabular-nums">{fmt(value)}</span>
+    </div>
   );
 }
 
@@ -512,10 +740,15 @@ export default function SalesPage() {
 
   // Drill-in modal state
   const [drillIn, setDrillIn] = useState<{ channel: DrillChannel; start: string; end: string; rowLabel: string } | null>(null);
+  const [metricDrill, setMetricDrill] = useState<{ metric: Metric; row: SalesBucket; rowLabel: string } | null>(null);
 
   function openDrill(channel: DrillChannel, rowDate: string) {
     const { start, end } = rowDateRange(rowDate);
     setDrillIn({ channel, start, end, rowLabel: rowDate });
+  }
+
+  function openMetric(metric: Metric, row: SalesBucket) {
+    setMetricDrill({ metric, row, rowLabel: row.date });
   }
 
   // Hide the Other column when it's all zeros — the marketplace skip + status
@@ -821,14 +1054,18 @@ export default function SalesPage() {
                       <ChannelCell value={row.shl ?? 0} colorClass="text-purple-400" onClick={() => openDrill("shl", row.date)} />
                       {showOther && <ChannelCell value={row.other} colorClass="text-gray-500" onClick={() => openDrill("other", row.date)} />}
                       <td className="py-2 px-3 text-right text-orange-400">{(row.marketplaces ?? 0) > 0 ? fmt(row.marketplaces!) : <span className="text-gray-600">—</span>}</td>
-                      <td className="py-2 px-3 text-right border-l border-gray-800">{fmt(row.grossSales)}</td>
+                      <MetricCell value={row.grossSales} onClick={() => openMetric("gross", row)} className="border-l border-gray-800" />
                       <td className="py-2 px-3 text-right">{neg(row.discounts)}</td>
-                      <td className="py-2 px-3 text-right">{neg(row.returns)}</td>
-                      <td className="py-2 px-3 text-right text-cyan-400">{row.redo > 0 ? fmt(row.redo) : <span className="text-gray-600">—</span>}</td>
-                      <td className="py-2 px-3 text-right font-semibold text-white">{fmt(row.netSales)}</td>
+                      <MetricCell
+                        value={row.returns}
+                        onClick={() => openMetric("refunds", row)}
+                        render={v => v > 0 ? <span className="text-red-400">({fmt(v)})</span> : <span className="text-gray-600">—</span>}
+                      />
+                      <MetricCell value={row.redo} onClick={() => openMetric("redo", row)} className="text-cyan-400" />
+                      <MetricCell value={row.netSales} onClick={() => openMetric("net", row)} className="font-semibold text-white" />
                       <td className="py-2 px-3 text-right text-gray-400">{row.shipping > 0 ? fmt(row.shipping) : <span className="text-gray-600">—</span>}</td>
                       <td className="py-2 px-3 text-right text-gray-400">{row.salesTax > 0 ? fmt(row.salesTax) : <span className="text-gray-600">—</span>}</td>
-                      <td className="py-2 px-3 text-right font-semibold text-green-400">{fmt(row.totalSales + (row.marketplaces ?? 0) + (row.shl ?? 0))}</td>
+                      <MetricCell value={row.totalSales + (row.marketplaces ?? 0) + (row.shl ?? 0)} onClick={() => openMetric("total", row)} className="font-semibold text-green-400" />
                     </tr>
                   );
                 })}
@@ -868,6 +1105,15 @@ export default function SalesPage() {
           end={drillIn.end}
           rowLabel={drillIn.rowLabel}
           onClose={() => setDrillIn(null)}
+        />
+      )}
+
+      {metricDrill && (
+        <MetricBreakdownModal
+          metric={metricDrill.metric}
+          row={metricDrill.row}
+          rowLabel={metricDrill.rowLabel}
+          onClose={() => setMetricDrill(null)}
         />
       )}
     </div>
