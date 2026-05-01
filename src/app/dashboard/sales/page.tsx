@@ -42,9 +42,6 @@ function fmtDate(dateStr: string) {
   return `${MONTHS[d.getMonth()]} ${d.getDate()}`;
 }
 
-function dash(n: number) {
-  return n !== 0 ? fmt(n) : <span className="text-gray-600">—</span>;
-}
 function neg(n: number) {
   return n > 0 ? <span className="text-red-400">({fmt(n)})</span> : <span className="text-gray-600">—</span>;
 }
@@ -72,6 +69,48 @@ function weekRangeLabel(bucket: SalesBucket): string {
   return `${fmtDate(start)} – ${fmtDate(clampedEnd)}`;
 }
 
+// Drill-in: each channel cell can open a modal listing the orders that
+// rolled up into it. Channels backed by Shopify get an order list; mktplc
+// has no order-level data (Sheets-only) so it isn't clickable.
+type DrillChannel = "prh" | "prolinePro" | "phone" | "other" | "shl";
+
+interface OrderRow {
+  id: number;
+  name: string;
+  date: string;
+  customer: string;
+  email: string;
+  subtotal: number;
+  discounts: number;
+  shipping: number;
+  tax: number;
+  total: number;
+  refundedAmount: number;
+  financialStatus: string;
+  tags: string[];
+}
+
+const CHANNEL_LABELS: Record<DrillChannel, string> = {
+  prh: "PRH",
+  prolinePro: "ProlinePro",
+  phone: "Phone",
+  other: "Other",
+  shl: "SHL",
+};
+
+// Resolve a row's date string to an inclusive [start, end] range. Daily and
+// weekly tables show single-day rows ("YYYY-MM-DD"); monthly rows are
+// "YYYY-MM" and need to expand to the month's bounds.
+function rowDateRange(rowDate: string): { start: string; end: string } {
+  if (rowDate.length === 10) return { start: rowDate, end: rowDate };
+  // YYYY-MM → first → last day of month
+  const [y, m] = rowDate.split("-").map(Number);
+  const start = `${rowDate}-01`;
+  const lastDay = new Date(y, m, 0).getDate();
+  const end = `${rowDate}-${String(lastDay).padStart(2, "0")}`;
+  return { start, end };
+}
+
 function sumBuckets(buckets: SalesBucket[]) {
   return {
     prh: buckets.reduce((s, r) => s + r.prh, 0),
@@ -89,6 +128,147 @@ function sumBuckets(buckets: SalesBucket[]) {
     redo: buckets.reduce((s, r) => s + (r.redo ?? 0), 0),
     totalSales: buckets.reduce((s, r) => s + r.totalSales, 0),
   };
+}
+
+function ChannelCell({
+  value,
+  colorClass,
+  onClick,
+}: {
+  value: number;
+  colorClass?: string;
+  onClick: () => void;
+}) {
+  if (value === 0) {
+    return <td className="py-2 px-3 text-right"><span className="text-gray-600">—</span></td>;
+  }
+  return (
+    <td className={`py-2 px-3 text-right ${colorClass ?? ""}`}>
+      <button
+        onClick={onClick}
+        className="hover:underline decoration-dotted underline-offset-2 cursor-pointer focus:outline-none focus:underline"
+        title="Click to see orders"
+      >
+        {fmt(value)}
+      </button>
+    </td>
+  );
+}
+
+function OrdersDrillModal({
+  channel,
+  start,
+  end,
+  rowLabel,
+  onClose,
+}: {
+  channel: DrillChannel;
+  start: string;
+  end: string;
+  rowLabel: string;
+  onClose: () => void;
+}) {
+  const [orders, setOrders] = useState<OrderRow[] | null>(null);
+  const [loadingOrders, setLoadingOrders] = useState(true);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  useEffect(() => {
+    setLoadingOrders(true);
+    setErr("");
+    const url = channel === "shl"
+      ? `/api/shopify-shl/order-list?start=${start}&end=${end}`
+      : `/api/shopify/channel-orders?start=${start}&end=${end}&channel=${channel}`;
+    fetch(url)
+      .then(r => r.json())
+      .then(d => {
+        if (d.error) throw new Error(d.error);
+        setOrders(d.orders);
+      })
+      .catch(e => setErr(e.message))
+      .finally(() => setLoadingOrders(false));
+  }, [channel, start, end]);
+
+  const totalSubtotal = (orders ?? []).reduce((s, o) => s + o.subtotal, 0);
+  const totalRefunded = (orders ?? []).reduce((s, o) => s + o.refundedAmount, 0);
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-40 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+      <div className="w-full max-w-3xl max-h-[90vh] bg-gray-900 border border-gray-700 rounded-xl z-50 overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="sticky top-0 bg-gray-900 border-b border-gray-800 px-5 py-4 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Channel Orders</div>
+            <div className="text-white font-semibold">{CHANNEL_LABELS[channel]} · {rowLabel}</div>
+            <div className="text-gray-500 text-xs mt-0.5">{start === end ? start : `${start} → ${end}`}</div>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors flex-shrink-0 mt-0.5">
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="px-5 py-4">
+          {loadingOrders && <div className="text-gray-500 text-sm py-8 text-center">Loading orders…</div>}
+          {err && <div className="text-red-400 bg-red-900/20 rounded-lg p-3 text-sm">{err}</div>}
+          {!loadingOrders && !err && orders && (
+            <>
+              <div className="grid grid-cols-3 gap-3 mb-4">
+                <div className="bg-gray-800/60 rounded-lg p-3">
+                  <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Orders</div>
+                  <div className="text-lg font-bold text-white">{orders.length}</div>
+                </div>
+                <div className="bg-gray-800/60 rounded-lg p-3">
+                  <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Subtotal</div>
+                  <div className="text-lg font-bold text-white">{fmt(totalSubtotal)}</div>
+                </div>
+                <div className="bg-gray-800/60 rounded-lg p-3">
+                  <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Refunded</div>
+                  <div className="text-lg font-bold text-red-400">{totalRefunded > 0 ? fmt(totalRefunded) : "—"}</div>
+                </div>
+              </div>
+
+              {orders.length === 0 ? (
+                <div className="text-gray-500 text-sm py-8 text-center">No orders in this bucket.</div>
+              ) : (
+                <div className="bg-gray-800/40 rounded-lg overflow-hidden">
+                  <table className="w-full text-xs">
+                    <thead className="bg-gray-800/80 text-gray-500 uppercase tracking-wider">
+                      <tr>
+                        <th className="text-left py-2 px-3">Order</th>
+                        <th className="text-left py-2 px-3">Date</th>
+                        <th className="text-left py-2 px-3">Customer</th>
+                        <th className="text-right py-2 px-3">Subtotal</th>
+                        <th className="text-right py-2 px-3">Refunded</th>
+                        <th className="text-left py-2 px-3">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-800">
+                      {orders.map(o => (
+                        <tr key={o.id} className="text-gray-300 hover:bg-gray-800/40">
+                          <td className="py-2 px-3 font-mono text-blue-400">{o.name}</td>
+                          <td className="py-2 px-3 text-gray-500">{o.date}</td>
+                          <td className="py-2 px-3 truncate max-w-[14rem]">{o.customer || <span className="text-gray-600">—</span>}</td>
+                          <td className="py-2 px-3 text-right tabular-nums">{fmt(o.subtotal)}</td>
+                          <td className="py-2 px-3 text-right tabular-nums">{o.refundedAmount > 0 ? <span className="text-red-400">({fmt(o.refundedAmount)})</span> : <span className="text-gray-600">—</span>}</td>
+                          <td className="py-2 px-3 text-gray-500 capitalize">{o.financialStatus.replace(/_/g, " ")}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function SalesPage() {
@@ -329,6 +509,14 @@ export default function SalesPage() {
   // Active table rows
   const tableRows = view === "daily" ? daily : view === "weekly" ? weekDailyRows : monthly;
   const totals = useMemo(() => sumBuckets(tableRows), [tableRows]);
+
+  // Drill-in modal state
+  const [drillIn, setDrillIn] = useState<{ channel: DrillChannel; start: string; end: string; rowLabel: string } | null>(null);
+
+  function openDrill(channel: DrillChannel, rowDate: string) {
+    const { start, end } = rowDateRange(rowDate);
+    setDrillIn({ channel, start, end, rowLabel: rowDate });
+  }
 
   // Hide the Other column when it's all zeros — the marketplace skip + status
   // tag stripping leaves it empty most of the time, and an empty column is
@@ -627,11 +815,11 @@ export default function SalesPage() {
                         {row.date}
                         {isToday && <span className="ml-2 text-xs bg-blue-600 text-white px-1.5 py-0.5 rounded-full">Today</span>}
                       </td>
-                      <td className="py-2 px-3 text-right">{dash(row.prh)}</td>
-                      <td className="py-2 px-3 text-right">{dash(row.prolinePro)}</td>
-                      <td className="py-2 px-3 text-right">{dash(row.phone)}</td>
-                      <td className="py-2 px-3 text-right text-purple-400">{(row.shl ?? 0) > 0 ? fmt(row.shl!) : <span className="text-gray-600">—</span>}</td>
-                      {showOther && <td className="py-2 px-3 text-right text-gray-500">{dash(row.other)}</td>}
+                      <ChannelCell value={row.prh} onClick={() => openDrill("prh", row.date)} />
+                      <ChannelCell value={row.prolinePro} onClick={() => openDrill("prolinePro", row.date)} />
+                      <ChannelCell value={row.phone} onClick={() => openDrill("phone", row.date)} />
+                      <ChannelCell value={row.shl ?? 0} colorClass="text-purple-400" onClick={() => openDrill("shl", row.date)} />
+                      {showOther && <ChannelCell value={row.other} colorClass="text-gray-500" onClick={() => openDrill("other", row.date)} />}
                       <td className="py-2 px-3 text-right text-orange-400">{(row.marketplaces ?? 0) > 0 ? fmt(row.marketplaces!) : <span className="text-gray-600">—</span>}</td>
                       <td className="py-2 px-3 text-right border-l border-gray-800">{fmt(row.grossSales)}</td>
                       <td className="py-2 px-3 text-right">{neg(row.discounts)}</td>
@@ -671,6 +859,16 @@ export default function SalesPage() {
 
       {!loading && !error && tableRows.length === 0 && (
         <div className="text-gray-500 text-sm text-center py-12">No data for this period.</div>
+      )}
+
+      {drillIn && (
+        <OrdersDrillModal
+          channel={drillIn.channel}
+          start={drillIn.start}
+          end={drillIn.end}
+          rowLabel={drillIn.rowLabel}
+          onClose={() => setDrillIn(null)}
+        />
       )}
     </div>
   );
