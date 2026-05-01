@@ -658,6 +658,31 @@ function fmtCompactCurrency(n: number) {
   return `$${Math.round(n)}`;
 }
 
+// Each series the user can toggle on the trend chart. `accessor` pulls the
+// number out of a SalesBucket; `emphasis` thickens the line + adds dots so
+// headline series like Total stand out when enabled together.
+interface TrendSeries {
+  key: string;
+  label: string;
+  color: string;
+  accessor: (b: SalesBucket) => number;
+  emphasis?: boolean;
+}
+
+const TREND_SERIES: TrendSeries[] = [
+  { key: "PRH",       label: "PRH",       color: "#a3a3a3", accessor: b => b.prh },
+  { key: "Pro",       label: "Pro",       color: "#fbbf24", accessor: b => b.prolinePro },
+  { key: "Phone",     label: "Phone",     color: "#22d3ee", accessor: b => b.phone },
+  { key: "SHL",       label: "SHL",       color: "#c084fc", accessor: b => b.shl ?? 0 },
+  { key: "Mktplc",    label: "Mktplc",    color: "#fb923c", accessor: b => b.marketplaces ?? 0 },
+  { key: "Gross",     label: "Gross",     color: "#94a3b8", accessor: b => b.grossSales },
+  { key: "Discounts", label: "Discounts", color: "#f87171", accessor: b => b.discounts },
+  { key: "Refunds",   label: "Refunds",   color: "#ef4444", accessor: b => b.returns },
+  { key: "Redo",      label: "Redo",      color: "#06b6d4", accessor: b => b.redo },
+  { key: "Net",       label: "Net",       color: "#60a5fa", accessor: b => b.netSales },
+  { key: "Total",     label: "Total",     color: "#34d399", accessor: b => b.totalSales, emphasis: true },
+];
+
 function SalesTrendChart({
   rows,
   prevRows,
@@ -669,6 +694,13 @@ function SalesTrendChart({
   view: ViewTab;
   compareLabel?: string;
 }) {
+  const [enabled, setEnabled] = useState<Set<string>>(() => new Set(["Gross", "Net", "Total"]));
+  const toggle = (k: string) => setEnabled(prev => {
+    const next = new Set(prev);
+    if (next.has(k)) next.delete(k); else next.add(k);
+    return next;
+  });
+
   const data = useMemo(() => rows.map((r, i) => {
     const label =
       view === "monthly" ? (() => {
@@ -678,50 +710,100 @@ function SalesTrendChart({
       : view === "weekly" ? weekRangeLabel(r)
       : fmtDate(r.date);
     const prev = prevRows?.[i];
-    return {
-      label,
-      Gross: Math.round(r.grossSales),
-      Net: Math.round(r.netSales),
-      Total: Math.round(r.totalSales),
-      ...(prev ? { "Prev Total": Math.round(prev.totalSales), "Prev Net": Math.round(prev.netSales) } : {}),
-    };
+    const out: Record<string, string | number> = { label };
+    for (const s of TREND_SERIES) {
+      out[s.key] = Math.round(s.accessor(r));
+      if (prev) out[`Prev ${s.key}`] = Math.round(s.accessor(prev));
+    }
+    return out;
   }), [rows, prevRows, view]);
 
   if (data.length === 0) return null;
   const hasPrev = !!prevRows && prevRows.length > 0;
+  const activeSeries = TREND_SERIES.filter(s => enabled.has(s.key));
 
   return (
     <div className="bg-gray-900 rounded-xl border border-gray-800 p-5 mb-4">
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <h2 className="text-sm font-semibold text-white">Trend</h2>
-        <span className="text-xs text-gray-500">
-          Gross · Net · Total{hasPrev ? ` · ${prevLabel ?? "previous"}` : ""}
-        </span>
+        {hasPrev && <span className="text-xs text-gray-500">Dashed = {prevLabel ?? "previous"}</span>}
       </div>
-      <div style={{ width: "100%", height: 280 }}>
-        <ResponsiveContainer>
-          <LineChart data={data} margin={{ top: 5, right: 16, bottom: 0, left: 8 }}>
-            <CartesianGrid stroke="#1f2937" vertical={false} />
-            <XAxis dataKey="label" tick={{ fill: "#9ca3af", fontSize: 11 }} stroke="#374151" />
-            <YAxis tick={{ fill: "#9ca3af", fontSize: 11 }} stroke="#374151" tickFormatter={fmtCompactCurrency} width={60} />
-            <Tooltip
-              contentStyle={{ background: "#0b1220", border: "1px solid #374151", borderRadius: 8, fontSize: 12 }}
-              labelStyle={{ color: "#9ca3af" }}
-              formatter={(v) => fmt(typeof v === "number" ? v : Number(v) || 0)}
-            />
-            <Legend wrapperStyle={{ fontSize: 12, color: "#9ca3af" }} iconType="plainline" />
-            <Line type="monotone" dataKey="Gross" stroke="#94a3b8" strokeWidth={2} dot={false} />
-            <Line type="monotone" dataKey="Net"   stroke="#60a5fa" strokeWidth={2} dot={false} />
-            <Line type="monotone" dataKey="Total" stroke="#34d399" strokeWidth={2.5} dot={{ r: 3, fill: "#34d399" }} />
-            {hasPrev && (
-              <>
-                <Line type="monotone" dataKey="Prev Net"   stroke="#60a5fa" strokeWidth={1.5} strokeDasharray="4 4" dot={false} />
-                <Line type="monotone" dataKey="Prev Total" stroke="#34d399" strokeWidth={1.5} strokeDasharray="4 4" dot={false} />
-              </>
-            )}
-          </LineChart>
-        </ResponsiveContainer>
+
+      {/* Series toggles */}
+      <div className="flex flex-wrap gap-1.5 mb-4">
+        {TREND_SERIES.map(s => {
+          const on = enabled.has(s.key);
+          return (
+            <button
+              key={s.key}
+              onClick={() => toggle(s.key)}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs border transition-colors ${
+                on
+                  ? "bg-gray-800 border-gray-600 text-white"
+                  : "bg-gray-900 border-gray-800 text-gray-500 hover:text-gray-300 hover:border-gray-700"
+              }`}
+              title={on ? `Hide ${s.label}` : `Show ${s.label}`}
+            >
+              <span
+                className="w-2.5 h-2.5 rounded-full"
+                style={{ background: on ? s.color : "transparent", border: on ? "none" : `1px solid ${s.color}` }}
+              />
+              {s.label}
+            </button>
+          );
+        })}
+        {enabled.size > 0 && (
+          <button
+            onClick={() => setEnabled(new Set())}
+            className="px-2.5 py-1 rounded-md text-xs text-gray-500 hover:text-gray-300"
+          >
+            Clear
+          </button>
+        )}
       </div>
+
+      {activeSeries.length === 0 ? (
+        <div className="h-[280px] flex items-center justify-center text-sm text-gray-500">
+          Select at least one series above.
+        </div>
+      ) : (
+        <div style={{ width: "100%", height: 280 }}>
+          <ResponsiveContainer>
+            <LineChart data={data} margin={{ top: 5, right: 16, bottom: 0, left: 8 }}>
+              <CartesianGrid stroke="#1f2937" vertical={false} />
+              <XAxis dataKey="label" tick={{ fill: "#9ca3af", fontSize: 11 }} stroke="#374151" />
+              <YAxis tick={{ fill: "#9ca3af", fontSize: 11 }} stroke="#374151" tickFormatter={fmtCompactCurrency} width={60} />
+              <Tooltip
+                contentStyle={{ background: "#0b1220", border: "1px solid #374151", borderRadius: 8, fontSize: 12 }}
+                labelStyle={{ color: "#9ca3af" }}
+                formatter={(v) => fmt(typeof v === "number" ? v : Number(v) || 0)}
+              />
+              <Legend wrapperStyle={{ fontSize: 12, color: "#9ca3af" }} iconType="plainline" />
+              {activeSeries.map(s => (
+                <Line
+                  key={s.key}
+                  type="monotone"
+                  dataKey={s.key}
+                  stroke={s.color}
+                  strokeWidth={s.emphasis ? 2.5 : 2}
+                  dot={s.emphasis ? { r: 3, fill: s.color } : false}
+                />
+              ))}
+              {hasPrev && activeSeries.map(s => (
+                <Line
+                  key={`prev-${s.key}`}
+                  type="monotone"
+                  dataKey={`Prev ${s.key}`}
+                  stroke={s.color}
+                  strokeWidth={1.5}
+                  strokeDasharray="4 4"
+                  dot={false}
+                />
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
     </div>
   );
 }
