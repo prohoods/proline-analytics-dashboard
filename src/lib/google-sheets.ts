@@ -44,6 +44,15 @@ export async function getSheetData(
   return (response.data.values as string[][]) || [];
 }
 
+// List all visible tab titles in a spreadsheet — useful for debugging
+// "Unable to parse range" errors when the tab name is unknown.
+export async function listSheetTitles(spreadsheetId: string): Promise<string[]> {
+  const auth = getAuth();
+  const sheets = google.sheets({ version: "v4", auth });
+  const meta = await sheets.spreadsheets.get({ spreadsheetId, fields: "sheets(properties(title))" });
+  return (meta.data.sheets ?? []).map(s => s.properties?.title ?? "").filter(Boolean);
+}
+
 // Helper: parse currency strings like "$1,234.56" → number
 export function parseCurrency(val: string): number {
   if (!val) return 0;

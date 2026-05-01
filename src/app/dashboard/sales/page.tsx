@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import DateRangeDropdown from "@/components/DateRangeDropdown";
-import { RangeKey, getRange, getPreviousRange } from "@/lib/date-ranges";
+import { RangeKey, getRange, getCompareRange, type CompareMode } from "@/lib/date-ranges";
 import DeltaBadge from "@/components/DeltaBadge";
 import { TableSkeleton, SkeletonCard } from "@/components/Skeleton";
 import { exportToCSV } from "@/lib/export-csv";
@@ -595,12 +595,86 @@ function OrdersDrillModal({
   );
 }
 
+function CompareDropdown({
+  mode,
+  onChange,
+  prevRange,
+}: {
+  mode: CompareMode;
+  onChange: (m: CompareMode) => void;
+  prevRange: { start: string; end: string } | null;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function onDocClick(e: MouseEvent) {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    }
+    if (open) document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [open]);
+
+  const active = mode !== "off";
+  const label =
+    mode === "off" ? "Compare"
+    : mode === "prev_period" ? (prevRange ? `vs ${prevRange.start} – ${prevRange.end}` : "vs prev period")
+    : (prevRange ? `vs ${prevRange.start} – ${prevRange.end} (YoY)` : "vs same window last year");
+
+  const opts: { key: CompareMode; label: string; sub?: string }[] = [
+    { key: "off",         label: "Off" },
+    { key: "prev_period", label: "Previous period",       sub: "Same-length window before this one" },
+    { key: "prev_year",   label: "Same window last year", sub: "Year-over-year comparison" },
+  ];
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className={`flex items-center gap-1.5 px-3 py-2 border rounded-lg text-sm transition-colors ${
+          active
+            ? "bg-purple-600/20 border-purple-600/40 text-purple-300"
+            : "bg-gray-800 hover:bg-gray-700 border-gray-700 text-gray-300 hover:text-white"
+        }`}
+      >
+        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+        </svg>
+        <span>{label}</span>
+        <svg className={`w-3 h-3 transition-transform ${open ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {open && (
+        <div className="absolute right-0 mt-1 w-64 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-30 py-1">
+          {opts.map(o => {
+            const selected = o.key === mode;
+            return (
+              <button
+                key={o.key}
+                onClick={() => { onChange(o.key); setOpen(false); }}
+                className={`w-full text-left px-3 py-2 transition-colors ${
+                  selected ? "bg-purple-600/20 text-purple-300" : "text-gray-300 hover:bg-gray-800"
+                }`}
+              >
+                <div className="text-sm font-medium">{o.label}</div>
+                {o.sub && <div className="text-xs text-gray-500 mt-0.5">{o.sub}</div>}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function SalesPage() {
   const [rangeKey, setRangeKey] = useState<RangeKey>("ytd");
   const [view, setView] = useState<ViewTab>("monthly");
   const [selectedWeek, setSelectedWeek] = useState<string>("");
   const [refreshKey, setRefreshKey] = useState(0);
-  const [showCompare, setShowCompare] = useState(false);
+  const [compareMode, setCompareMode] = useState<CompareMode>("off");
+  const showCompare = compareMode !== "off";
   const [prevTotals, setPrevTotals] = useState<ReturnType<typeof sumBuckets> | null>(null);
   const [prevLoading, setPrevLoading] = useState(false);
 
@@ -666,8 +740,8 @@ export default function SalesPage() {
 
   // Fetch previous period when compare is toggled on
   useEffect(() => {
-    if (!showCompare) { setPrevTotals(null); return; }
-    const prev = getPreviousRange(rangeKey);
+    const prev = getCompareRange(rangeKey, compareMode);
+    if (!prev) { setPrevTotals(null); return; }
     setPrevLoading(true);
     Promise.all([
       fetch(`/api/shopify/channel-sales?start=${prev.start}&end=${prev.end}&_=${refreshKey}`).then(r => r.json()),
@@ -701,10 +775,10 @@ export default function SalesPage() {
       }
     }).finally(() => setPrevLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showCompare, rangeKey, refreshKey]);
+  }, [compareMode, rangeKey, refreshKey]);
 
   const range = getRange(rangeKey);
-  const prevRange = getPreviousRange(rangeKey);
+  const prevRange = getCompareRange(rangeKey, compareMode);
   const today = new Date().toISOString().substring(0, 10);
   const currentYM = today.substring(0, 7);
 
@@ -935,19 +1009,8 @@ export default function SalesPage() {
             </svg>
             Refresh
           </button>
-          <button
-            onClick={() => setShowCompare(c => !c)}
-            className={`flex items-center gap-1.5 px-3 py-2 border rounded-lg text-sm transition-colors ${
-              showCompare
-                ? "bg-purple-600/20 border-purple-600/40 text-purple-300"
-                : "bg-gray-800 hover:bg-gray-700 border-gray-700 text-gray-300 hover:text-white"
-            }`}
-          >
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-            </svg>
-            {showCompare ? `vs ${prevRange.start} – ${prevRange.end}` : "Compare"}
-          </button>
+          <CompareDropdown mode={compareMode} onChange={setCompareMode} prevRange={prevRange} />
+
           <DateRangeDropdown value={rangeKey} onChange={setRangeKey} />
         </div>
       </div>

@@ -103,6 +103,33 @@ export function getPreviousRange(key: RangeKey): DateRange {
   };
 }
 
+// Returns the same window shifted back exactly one year (year-over-year compare)
+export function getYearOverYearRange(key: RangeKey): DateRange {
+  const cur = getRange(key);
+  const shift = (s: string) => {
+    const d = new Date(s + "T12:00:00Z");
+    d.setUTCFullYear(d.getUTCFullYear() - 1);
+    return toDateStr(new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  };
+  const start = shift(cur.start);
+  const end   = shift(cur.end);
+  return {
+    start, end,
+    label:   `${start.substring(0,4)} same window`,
+    year:    start.substring(0, 4),
+    startYM: start.substring(0, 7),
+    endYM:   end.substring(0, 7),
+  };
+}
+
+export type CompareMode = "off" | "prev_period" | "prev_year";
+
+export function getCompareRange(key: RangeKey, mode: CompareMode): DateRange | null {
+  if (mode === "off") return null;
+  if (mode === "prev_year") return getYearOverYearRange(key);
+  return getPreviousRange(key);
+}
+
 export const RANGE_OPTIONS: { key: RangeKey; label: string }[] = [
   { key: "7d", label: "Last 7 Days" },
   { key: "15d", label: "Last 15 Days" },

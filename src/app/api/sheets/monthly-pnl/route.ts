@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSheetData, parseCurrency } from "@/lib/google-sheets";
+import { getSheetData, listSheetTitles, parseCurrency } from "@/lib/google-sheets";
 
 // 2026 Daily Sales Report — "Monthly P&L" tab
 // Columns mirror the Sheets layout:
@@ -90,8 +90,24 @@ export async function GET() {
       return NextResponse.json({ error: "SALES_REPORT_SHEET_ID not configured" }, { status: 500 });
     }
 
-    // Tab name contains '&' so it must be single-quoted for the Sheets API.
-    const rows = await getSheetData(sheetId, "'Monthly P&L'!A2:R200");
+    // Resolve the tab name dynamically — the tab in Jett's sheet may be
+    // "Monthly P&L", "Monthly PNL", "Monthly P&L 2026", etc. Listing the
+    // titles and fuzzy-matching means we don't have to hard-code it.
+    const titles = await listSheetTitles(sheetId);
+    const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const tabName =
+      titles.find(t => norm(t) === "monthlypl") ||
+      titles.find(t => norm(t).includes("monthlypl")) ||
+      titles.find(t => norm(t).includes("monthlypnl"));
+
+    if (!tabName) {
+      return NextResponse.json({
+        error: `Couldn't find a Monthly P&L tab. Available tabs: ${titles.join(", ")}`,
+      }, { status: 404 });
+    }
+
+    // Single-quote the tab name so '&' / spaces / etc. parse cleanly.
+    const rows = await getSheetData(sheetId, `'${tabName.replace(/'/g, "''")}'!A2:R200`);
 
     const data: MonthlyPnlRow[] = rows
       .filter(row => row[0] && row[0].trim() && toYMKey(row[0]))
