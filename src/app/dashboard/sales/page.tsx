@@ -264,7 +264,7 @@ function MetricBreakdownModal({
           {metric === "gross" && (
             <>
               <Section title="Formula">
-                <code className="text-blue-300">Σ (subtotal + total_discounts)</code> for every non-marketplace DTC order created in the window.
+                <code className="text-blue-300">Σ (subtotal + total_discounts)</code> for every non-marketplace Proline order created in the window.
               </Section>
               <Section title="Calculation">
                 <CalcRow label="Channel subtotals (post-discount)" value={channelSubtotalSum} />
@@ -276,7 +276,7 @@ function MetricBreakdownModal({
                 <CalcRow label="= Gross" value={row.grossSales} bold />
               </Section>
               <Section title="Source">
-                Shopify Admin REST API — DTC store <code className="text-gray-300">861fdb</code> · <code className="text-gray-300">/orders.json</code>.
+                Shopify Admin REST API — Proline store <code className="text-gray-300">861fdb</code> · <code className="text-gray-300">/orders.json</code>.
               </Section>
               <Section title="Excluded from this column">
                 <ul className="list-disc list-inside text-gray-400 space-y-1">
@@ -340,7 +340,7 @@ function MetricBreakdownModal({
                 <CalcRow label="= Net" value={row.netSales} bold />
               </Section>
               <Section title="Source">
-                Computed from values in this row. Each component is sourced from Shopify&apos;s DTC store <code className="text-gray-300">861fdb</code>; SHL net lives in its own column.
+                Computed from values in this row. Each component is sourced from Shopify&apos;s Proline store <code className="text-gray-300">861fdb</code>; SHL net lives in its own column.
               </Section>
             </>
           )}
@@ -373,23 +373,23 @@ function MetricBreakdownModal({
                 <code className="text-blue-300">Net + Shipping + Tax + SHL + Marketplaces</code>
               </Section>
               <Section title="Calculation">
-                <CalcRow label="Net (DTC)" value={row.netSales} />
-                <CalcRow label="+ Shipping (DTC)" value={row.shipping} />
-                <CalcRow label="+ Tax (DTC + SHL combined)" value={row.salesTax} />
+                <CalcRow label="Net (Proline)" value={row.netSales} />
+                <CalcRow label="+ Shipping (Proline)" value={row.shipping} />
+                <CalcRow label="+ Tax (Proline + SHL combined)" value={row.salesTax} />
                 <CalcRow label="+ SHL net revenue" value={row.shl ?? 0} />
                 <CalcRow label="+ Marketplaces (Amazon/Wayfair/HD)" value={row.marketplaces ?? 0} />
                 <CalcRow label="= Total" value={row.totalSales + (row.marketplaces ?? 0) + (row.shl ?? 0)} bold />
               </Section>
               <Section title="Sources">
                 <ul className="list-disc list-inside text-gray-400 space-y-1">
-                  <li>DTC Net/Shipping — Shopify store <code className="text-gray-300">861fdb</code></li>
+                  <li>Proline Net/Shipping — Shopify store <code className="text-gray-300">861fdb</code></li>
                   <li>SHL net — Shopify store <code className="text-gray-300">a11c08-ce</code> (separate account)</li>
-                  <li>Tax — DTC <code className="text-gray-300">total_tax</code> + SHL <code className="text-gray-300">total_tax</code>, minus refunded tax on both</li>
+                  <li>Tax — Proline <code className="text-gray-300">total_tax</code> + SHL <code className="text-gray-300">total_tax</code>, minus refunded tax on both</li>
                   <li>Marketplaces — Google Sheets (manually entered Amazon/Wayfair/Home Depot revenue)</li>
                 </ul>
               </Section>
               <Section title="Why this differs from Shopify Analytics">
-                Shopify Analytics only sees one store at a time. Total here is the full business: DTC + SHL + Marketplaces.
+                Shopify Analytics only sees one store at a time. Total here is the full business: Proline + SHL + Marketplaces.
               </Section>
             </>
           )}
@@ -1075,7 +1075,7 @@ export default function SalesPage() {
                   <th className="py-3 px-3 text-right text-cyan-400" title="Redo shipping protection fees — collected at checkout, remitted to Redo. Not Proline revenue.">Redo</th>
                   <th className="py-3 px-3 text-right font-semibold text-white">Net</th>
                   <th className="py-3 px-3 text-right">Shipping</th>
-                  <th className="py-3 px-3 text-right" title="Combined DTC + SHL net sales tax (tax collected − refunded tax)">Tax <span className="text-gray-600 normal-case">(DTC+SHL)</span></th>
+                  <th className="py-3 px-3 text-right" title="Combined Proline + SHL net sales tax (tax collected − refunded tax)">Tax <span className="text-gray-600 normal-case">(Proline+SHL)</span></th>
                   <th className="py-3 px-3 text-right font-semibold text-green-400">Total</th>
                 </tr>
               </thead>
