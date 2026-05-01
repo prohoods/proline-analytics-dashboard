@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo, useRef } from "react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from "recharts";
 import DateRangeDropdown from "@/components/DateRangeDropdown";
-import { RangeKey, getRange, getCompareRange, type CompareMode } from "@/lib/date-ranges";
+import { RangeKey, getRange, getCompareRange, defaultCompareMode, compareLabel, type CompareMode } from "@/lib/date-ranges";
 import DeltaBadge from "@/components/DeltaBadge";
 import { TableSkeleton, SkeletonCard } from "@/components/Skeleton";
 import { exportToCSV } from "@/lib/export-csv";
@@ -144,6 +144,39 @@ function rowDateRange(rowDate: string): { start: string; end: string } {
   return { start, end };
 }
 
+// Aggregate daily SalesBucket rows into weekly or monthly groups. Used for
+// the compare overlay so we can pair prev-period rows with the active
+// view's grouping (Shopify's own weekly/monthly is fetched for the current
+// window only).
+function rollDailyToView(daily: SalesBucket[], view: ViewTab): SalesBucket[] {
+  if (view === "daily") return daily;
+  const keyOf = (d: string) => view === "monthly" ? d.substring(0, 7) : isoWeek(d);
+  const groups = new Map<string, SalesBucket>();
+  for (const d of daily) {
+    const k = keyOf(d.date);
+    const acc = groups.get(k);
+    if (!acc) {
+      groups.set(k, { ...d, date: k });
+    } else {
+      acc.prh += d.prh;
+      acc.prolinePro += d.prolinePro;
+      acc.phone += d.phone;
+      acc.other += d.other;
+      acc.grossSales += d.grossSales;
+      acc.discounts += d.discounts;
+      acc.returns += d.returns;
+      acc.netSales += d.netSales;
+      acc.shipping += d.shipping;
+      acc.salesTax += d.salesTax;
+      acc.redo = (acc.redo ?? 0) + (d.redo ?? 0);
+      acc.totalSales += d.totalSales;
+      acc.shl = (acc.shl ?? 0) + (d.shl ?? 0);
+      acc.marketplaces = (acc.marketplaces ?? 0) + (d.marketplaces ?? 0);
+    }
+  }
+  return Array.from(groups.values()).sort((a, b) => a.date.localeCompare(b.date));
+}
+
 function sumBuckets(buckets: SalesBucket[]) {
   return {
     prh: buckets.reduce((s, r) => s + r.prh, 0),
@@ -163,16 +196,38 @@ function sumBuckets(buckets: SalesBucket[]) {
   };
 }
 
+// Tiny inline delta shown under per-row Net/Total cells when compare is on.
+// Renders nothing if both sides are 0 (no signal). Capped at ±999% so a
+// near-zero prior doesn't blow up the cell.
+function RowDelta({ cur, prev }: { cur: number; prev: number }) {
+  if (cur === 0 && prev === 0) return null;
+  if (prev === 0) {
+    return <div className="text-[10px] text-gray-500 font-normal mt-0.5">new</div>;
+  }
+  const pct = ((cur - prev) / Math.abs(prev)) * 100;
+  const clamped = Math.max(-999, Math.min(999, pct));
+  const up = clamped >= 0;
+  const color = up ? "text-emerald-400" : "text-red-400";
+  const arrow = up ? "▲" : "▼";
+  return (
+    <div className={`text-[10px] font-normal mt-0.5 ${color}`} title={`Previous: ${fmt(prev)}`}>
+      {arrow} {Math.abs(clamped).toFixed(clamped >= 100 || clamped <= -100 ? 0 : 1)}%
+    </div>
+  );
+}
+
 function MetricCell({
   value,
   onClick,
   className,
   render,
+  prev,
 }: {
   value: number;
   onClick: () => void;
   className?: string;
   render?: (v: number) => React.ReactNode;
+  prev?: number;
 }) {
   const display = render ? render(value) : (value !== 0 ? fmt(value) : <span className="text-gray-600">—</span>);
   if (value === 0 && !render) {
@@ -187,6 +242,7 @@ function MetricCell({
       >
         {display}
       </button>
+      {prev !== undefined && <RowDelta cur={value} prev={prev} />}
     </td>
   );
 }
@@ -604,12 +660,16 @@ function fmtCompactCurrency(n: number) {
 
 function SalesTrendChart({
   rows,
+  prevRows,
   view,
+  compareLabel: prevLabel,
 }: {
   rows: SalesBucket[];
+  prevRows?: SalesBucket[] | null;
   view: ViewTab;
+  compareLabel?: string;
 }) {
-  const data = useMemo(() => rows.map(r => {
+  const data = useMemo(() => rows.map((r, i) => {
     const label =
       view === "monthly" ? (() => {
         const [y, m] = r.date.split("-").map(Number);
@@ -617,23 +677,28 @@ function SalesTrendChart({
       })()
       : view === "weekly" ? weekRangeLabel(r)
       : fmtDate(r.date);
+    const prev = prevRows?.[i];
     return {
       label,
       Gross: Math.round(r.grossSales),
       Net: Math.round(r.netSales),
       Total: Math.round(r.totalSales),
+      ...(prev ? { "Prev Total": Math.round(prev.totalSales), "Prev Net": Math.round(prev.netSales) } : {}),
     };
-  }), [rows, view]);
+  }), [rows, prevRows, view]);
 
   if (data.length === 0) return null;
+  const hasPrev = !!prevRows && prevRows.length > 0;
 
   return (
     <div className="bg-gray-900 rounded-xl border border-gray-800 p-5 mb-4">
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-sm font-semibold text-white">Trend</h2>
-        <span className="text-xs text-gray-500">Gross · Net · Total over {data.length} {view === "monthly" ? "months" : view === "weekly" ? "days" : "days"}</span>
+        <span className="text-xs text-gray-500">
+          Gross · Net · Total{hasPrev ? ` · ${prevLabel ?? "previous"}` : ""}
+        </span>
       </div>
-      <div style={{ width: "100%", height: 260 }}>
+      <div style={{ width: "100%", height: 280 }}>
         <ResponsiveContainer>
           <LineChart data={data} margin={{ top: 5, right: 16, bottom: 0, left: 8 }}>
             <CartesianGrid stroke="#1f2937" vertical={false} />
@@ -648,6 +713,12 @@ function SalesTrendChart({
             <Line type="monotone" dataKey="Gross" stroke="#94a3b8" strokeWidth={2} dot={false} />
             <Line type="monotone" dataKey="Net"   stroke="#60a5fa" strokeWidth={2} dot={false} />
             <Line type="monotone" dataKey="Total" stroke="#34d399" strokeWidth={2.5} dot={{ r: 3, fill: "#34d399" }} />
+            {hasPrev && (
+              <>
+                <Line type="monotone" dataKey="Prev Net"   stroke="#60a5fa" strokeWidth={1.5} strokeDasharray="4 4" dot={false} />
+                <Line type="monotone" dataKey="Prev Total" stroke="#34d399" strokeWidth={1.5} strokeDasharray="4 4" dot={false} />
+              </>
+            )}
           </LineChart>
         </ResponsiveContainer>
       </div>
@@ -658,10 +729,12 @@ function SalesTrendChart({
 function CompareDropdown({
   mode,
   onChange,
+  rangeKey,
   prevRange,
 }: {
   mode: CompareMode;
   onChange: (m: CompareMode) => void;
+  rangeKey: RangeKey;
   prevRange: { start: string; end: string } | null;
 }) {
   const [open, setOpen] = useState(false);
@@ -676,15 +749,12 @@ function CompareDropdown({
   }, [open]);
 
   const active = mode !== "off";
-  const label =
-    mode === "off" ? "Compare"
-    : mode === "prev_period" ? (prevRange ? `vs ${prevRange.start} – ${prevRange.end}` : "vs prev period")
-    : (prevRange ? `vs ${prevRange.start} – ${prevRange.end} (YoY)` : "vs same window last year");
+  const label = compareLabel(rangeKey, mode);
 
-  const opts: { key: CompareMode; label: string; sub?: string }[] = [
-    { key: "off",         label: "Off" },
-    { key: "prev_period", label: "Previous period",       sub: "Same-length window before this one" },
-    { key: "prev_year",   label: "Same window last year", sub: "Year-over-year comparison" },
+  const opts: { key: CompareMode; label: string; sub: string }[] = [
+    { key: "off",         label: "Off",                   sub: "Hide comparison" },
+    { key: "prev_year",   label: compareLabel(rangeKey, "prev_year").replace(/^vs /, ""),   sub: "Year-over-year comparison" },
+    { key: "prev_period", label: compareLabel(rangeKey, "prev_period").replace(/^vs /, ""), sub: prevRange ? `${prevRange.start} → ${prevRange.end}` : "Same-length window before this one" },
   ];
 
   return (
@@ -736,6 +806,7 @@ export default function SalesPage() {
   const [compareMode, setCompareMode] = useState<CompareMode>("off");
   const showCompare = compareMode !== "off";
   const [prevTotals, setPrevTotals] = useState<ReturnType<typeof sumBuckets> | null>(null);
+  const [prevDaily, setPrevDaily] = useState<SalesBucket[] | null>(null);
   const [prevLoading, setPrevLoading] = useState(false);
 
   // Range-scoped data (drives the table)
@@ -801,7 +872,7 @@ export default function SalesPage() {
   // Fetch previous period when compare is toggled on
   useEffect(() => {
     const prev = getCompareRange(rangeKey, compareMode);
-    if (!prev) { setPrevTotals(null); return; }
+    if (!prev) { setPrevTotals(null); setPrevDaily(null); return; }
     setPrevLoading(true);
     Promise.all([
       fetch(`/api/shopify/channel-sales?start=${prev.start}&end=${prev.end}&_=${refreshKey}`).then(r => r.json()),
@@ -828,10 +899,11 @@ export default function SalesPage() {
             prevMkt[m.date] = { gross: m.gross, returns: m.returns, net: m.net };
           }
         }
-        const prevDaily: SalesBucket[] = d.daily.map((row: SalesBucket) =>
+        const merged: SalesBucket[] = d.daily.map((row: SalesBucket) =>
           mergeBucket(row, prevShl[row.date], prevMkt[row.date])
         );
-        setPrevTotals(sumBuckets(prevDaily));
+        setPrevDaily(merged);
+        setPrevTotals(sumBuckets(merged));
       }
     }).finally(() => setPrevLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1006,6 +1078,16 @@ export default function SalesPage() {
   const tableRows = view === "daily" ? daily : view === "weekly" ? weekDailyRows : monthly;
   const totals = useMemo(() => sumBuckets(tableRows), [tableRows]);
 
+  // Previous-period rows aligned to the active view. Same length as
+  // tableRows whenever the prev fetch completes; index N in prevTableRows
+  // corresponds to index N in tableRows.
+  const prevTableRows = useMemo<SalesBucket[] | null>(() => {
+    if (!prevDaily || !showCompare) return null;
+    if (view === "daily") return prevDaily.slice(0, tableRows.length);
+    const rolled = rollDailyToView(prevDaily, view);
+    return rolled.slice(0, tableRows.length);
+  }, [prevDaily, view, tableRows.length, showCompare]);
+
   // Drill-in modal state
   const [drillIn, setDrillIn] = useState<{ channel: DrillChannel; start: string; end: string; rowLabel: string } | null>(null);
   const [metricDrill, setMetricDrill] = useState<{
@@ -1069,7 +1151,7 @@ export default function SalesPage() {
             </svg>
             Refresh
           </button>
-          <CompareDropdown mode={compareMode} onChange={setCompareMode} prevRange={prevRange} />
+          <CompareDropdown mode={compareMode} onChange={setCompareMode} rangeKey={rangeKey} prevRange={prevRange} />
 
           <DateRangeDropdown value={rangeKey} onChange={setRangeKey} />
         </div>
@@ -1245,7 +1327,12 @@ export default function SalesPage() {
       {loading && <TableSkeleton rows={10} cols={13} />}
 
       {!loading && tableRows.length > 0 && (
-        <SalesTrendChart rows={tableRows} view={view} />
+        <SalesTrendChart
+          rows={tableRows}
+          prevRows={prevTableRows}
+          view={view}
+          compareLabel={compareLabel(rangeKey, compareMode)}
+        />
       )}
 
       {!loading && tableRows.length > 0 && (
@@ -1304,8 +1391,9 @@ export default function SalesPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-800">
-                {tableRows.map(row => {
+                {tableRows.map((row, i) => {
                   const isToday = view === "daily" && row.date === today;
+                  const prev = prevTableRows?.[i];
                   return (
                     <tr
                       key={row.date}
@@ -1329,10 +1417,20 @@ export default function SalesPage() {
                         render={v => v > 0 ? <span className="text-red-400">({fmt(v)})</span> : <span className="text-gray-600">—</span>}
                       />
                       <MetricCell value={row.redo} onClick={() => openMetric("redo", row)} className="text-cyan-400" />
-                      <MetricCell value={row.netSales} onClick={() => openMetric("net", row)} className="font-semibold text-white" />
+                      <MetricCell
+                        value={row.netSales}
+                        onClick={() => openMetric("net", row)}
+                        className="font-semibold text-white"
+                        prev={prev?.netSales}
+                      />
                       <td className="py-2 px-3 text-right text-gray-400">{row.shipping > 0 ? fmt(row.shipping) : <span className="text-gray-600">—</span>}</td>
                       <td className="py-2 px-3 text-right text-gray-400">{row.salesTax > 0 ? fmt(row.salesTax) : <span className="text-gray-600">—</span>}</td>
-                      <MetricCell value={row.totalSales} onClick={() => openMetric("total", row)} className="font-semibold text-green-400" />
+                      <MetricCell
+                        value={row.totalSales}
+                        onClick={() => openMetric("total", row)}
+                        className="font-semibold text-green-400"
+                        prev={prev?.totalSales}
+                      />
                     </tr>
                   );
                 })}

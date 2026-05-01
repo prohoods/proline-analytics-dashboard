@@ -130,6 +130,37 @@ export function getCompareRange(key: RangeKey, mode: CompareMode): DateRange | n
   return getPreviousRange(key);
 }
 
+// Most useful default depends on the range. For period-anchored ranges like
+// "ytd", "quarter", "prev_year", or a specific month, year-over-year is the
+// signal that matters. For rolling windows (7d/15d/30d/...), the previous
+// equivalent window is what most people mean.
+export function defaultCompareMode(key: RangeKey): CompareMode {
+  if (key === "ytd" || key === "quarter" || key === "prev_year") return "prev_year";
+  if (/^\d{4}-\d{2}$/.test(key)) return "prev_year";
+  return "prev_period";
+}
+
+// Human-readable label for a compare button: "vs YTD 2025" / "vs Apr 2025"
+// / "vs prev 30 days" rather than a raw date range.
+export function compareLabel(key: RangeKey, mode: CompareMode): string {
+  if (mode === "off") return "Compare";
+  const prev = getCompareRange(key, mode);
+  if (!prev) return "Compare";
+  if (mode === "prev_year") {
+    if (key === "ytd")        return `vs YTD ${prev.year}`;
+    if (key === "quarter")    return `vs same quarter ${prev.year}`;
+    if (key === "prev_year")  return `vs ${prev.year}`;
+    const m = key.match(/^(\d{4})-(\d{2})$/);
+    if (m) return `vs ${MONTHS[parseInt(m[2]) - 1].slice(0, 3)} ${prev.year}`;
+    return `vs same window ${prev.year}`;
+  }
+  // prev_period
+  const cur = getRange(key);
+  const days = Math.round((new Date(cur.end).getTime() - new Date(cur.start).getTime()) / 86400000) + 1;
+  if (key === "ytd") return "vs prior YTD-length window";
+  return `vs prev ${days} days`;
+}
+
 export const RANGE_OPTIONS: { key: RangeKey; label: string }[] = [
   { key: "7d", label: "Last 7 Days" },
   { key: "15d", label: "Last 15 Days" },
