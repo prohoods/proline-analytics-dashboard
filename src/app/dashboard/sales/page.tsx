@@ -153,7 +153,8 @@ export default function SalesPage() {
         if (d.error) throw new Error(d.error);
         setShopifyData(d);
         // Default selectedWeek to most recent week
-        if (d.weekly?.length > 0) setSelectedWeek(d.weekly[0].date);
+        // Weekly is ascending now, so default to the most recent (last) bucket.
+        if (d.weekly?.length > 0) setSelectedWeek(d.weekly[d.weekly.length - 1].date);
       })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
@@ -328,6 +329,12 @@ export default function SalesPage() {
   // Active table rows
   const tableRows = view === "daily" ? daily : view === "weekly" ? weekDailyRows : monthly;
   const totals = useMemo(() => sumBuckets(tableRows), [tableRows]);
+
+  // Hide the Other column when it's all zeros — the marketplace skip + status
+  // tag stripping leaves it empty most of the time, and an empty column is
+  // just visual noise. The "What's in Other?" panel still surfaces if any
+  // unclassified orders exist.
+  const showOther = totals.other > 0;
 
   // ── Persistent header stats ──────────────────────────────────────────────
   const ytdDailyWithMkt = useMemo(() =>
@@ -595,7 +602,7 @@ export default function SalesPage() {
                   <th className="py-3 px-3 text-right">Pro</th>
                   <th className="py-3 px-3 text-right">Phone</th>
                   <th className="py-3 px-3 text-right text-purple-400">SHL</th>
-                  <th className="py-3 px-3 text-right text-gray-600">Other</th>
+                  {showOther && <th className="py-3 px-3 text-right text-gray-600">Other</th>}
                   <th className="py-3 px-3 text-right text-orange-400">Mktplc</th>
                   <th className="py-3 px-3 text-right border-l border-gray-800">Gross</th>
                   <th className="py-3 px-3 text-right text-red-400">Discounts</th>
@@ -623,7 +630,7 @@ export default function SalesPage() {
                       <td className="py-2 px-3 text-right">{dash(row.prolinePro)}</td>
                       <td className="py-2 px-3 text-right">{dash(row.phone)}</td>
                       <td className="py-2 px-3 text-right text-purple-400">{(row.shl ?? 0) > 0 ? fmt(row.shl!) : <span className="text-gray-600">—</span>}</td>
-                      <td className="py-2 px-3 text-right text-gray-500">{dash(row.other)}</td>
+                      {showOther && <td className="py-2 px-3 text-right text-gray-500">{dash(row.other)}</td>}
                       <td className="py-2 px-3 text-right text-orange-400">{(row.marketplaces ?? 0) > 0 ? fmt(row.marketplaces!) : <span className="text-gray-600">—</span>}</td>
                       <td className="py-2 px-3 text-right border-l border-gray-800">{fmt(row.grossSales)}</td>
                       <td className="py-2 px-3 text-right">{neg(row.discounts)}</td>
@@ -644,7 +651,7 @@ export default function SalesPage() {
                   <td className="py-3 px-3 text-right">{fmt(totals.prolinePro)}</td>
                   <td className="py-3 px-3 text-right">{fmt(totals.phone)}</td>
                   <td className="py-3 px-3 text-right text-purple-400">{fmt(totals.shl)}</td>
-                  <td className="py-3 px-3 text-right text-gray-500">{fmt(totals.other)}</td>
+                  {showOther && <td className="py-3 px-3 text-right text-gray-500">{fmt(totals.other)}</td>}
                   <td className="py-3 px-3 text-right text-orange-400">{fmt(totals.marketplaces)}</td>
                   <td className="py-3 px-3 text-right border-l border-gray-800">{fmt(totals.grossSales)}</td>
                   <td className="py-3 px-3 text-right text-red-400">({fmt(totals.discounts)})</td>

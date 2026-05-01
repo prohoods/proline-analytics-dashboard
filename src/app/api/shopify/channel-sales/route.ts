@@ -227,7 +227,8 @@ export async function GET(request: NextRequest) {
       dailyMap[date].totalSales -= (subAmt - redoAmt + taxAmt);
     }
 
-    const daily = Object.values(dailyMap).sort((a, b) => b.date.localeCompare(a.date));
+    // Ascending: oldest → newest, so the table reads Jan → April top-to-bottom.
+    const daily = Object.values(dailyMap).sort((a, b) => a.date.localeCompare(b.date));
 
     // Weekly rollup
     const weekMap: Record<string, SalesBucket[]> = {};
@@ -239,9 +240,9 @@ export async function GET(request: NextRequest) {
     const weekly = Object.entries(weekMap)
       .map(([wk, days]) => ({
         ...rollup(days, wk),
-        weekStart: weekStartDate(days[days.length - 1].date), // earliest day in bucket
+        weekStart: weekStartDate(days[0].date), // any day in the bucket resolves to Monday
       }))
-      .sort((a, b) => b.date.localeCompare(a.date));
+      .sort((a, b) => a.date.localeCompare(b.date));
 
     // Monthly rollup
     const monthMap: Record<string, SalesBucket[]> = {};
@@ -252,7 +253,7 @@ export async function GET(request: NextRequest) {
     }
     const monthly = Object.entries(monthMap)
       .map(([ym, days]) => rollup(days, ym))
-      .sort((a, b) => b.date.localeCompare(a.date));
+      .sort((a, b) => a.date.localeCompare(b.date));
 
     const today = new Date().toISOString().substring(0, 10);
     const includesLive = end >= today;
