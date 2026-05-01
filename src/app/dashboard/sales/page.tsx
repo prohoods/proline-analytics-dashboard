@@ -705,7 +705,7 @@ function SalesTrendChart({
     const label =
       view === "monthly" ? (() => {
         const [y, m] = r.date.split("-").map(Number);
-        return `${MONTHS[m - 1]} ${String(y).slice(2)}`;
+        return `${MONTHS[m - 1]} '${String(y).slice(2)}`;
       })()
       : view === "weekly" ? weekRangeLabel(r)
       : fmtDate(r.date);
