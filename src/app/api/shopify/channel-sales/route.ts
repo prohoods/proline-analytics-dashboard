@@ -1,16 +1,35 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getOrdersWithRefundsInWindow, resolveOrderRefunds, mapLimit, ShopifyOrder } from "@/lib/shopify";
 
-type Channel = "prh" | "prolinePro" | "phone" | "other";
+type Channel = "prh" | "prolinePro" | "phone" | "other" | "skip";
+
+// Status tags that get added AFTER an order is placed — they describe what
+// happened to the order, not how the sale came in. If we don't strip them
+// before classifying, a refunded PRH order ends up in "Other" instead of PRH,
+// which inflates Other and undercounts every real channel.
+const STATUS_TAGS = new Set(["REFUNDED", "redo_claim"]);
+
+// Tags that mark Amazon/Wayfair/HomeDepot orders synced into Shopify for
+// inventory. The actual revenue lives on the marketplace platform and is
+// tracked separately via the Marketplaces sheet — counting these in Shopify
+// channels would either show $0 (current behavior, polluting Other) or
+// double-count if Shopify ever fills in the totals.
+const MARKETPLACE_TAGS = new Set(["Market Place Order", "Marketplace"]);
 
 function classifyOrder(order: ShopifyOrder): Channel {
-  const tags = order.tags.trim();
-  // ProlinePro wins over phone — when a B2B account places an order via
-  // call-in, the order is tagged with both "[]" (phone) AND "ProlinePro B2B".
-  // We want it counted as PRO, not Phone, so this check has to come first.
-  if (tags.includes("ProlinePro B2B")) return "prolinePro";
-  if (tags === "[]") return "phone";
-  if (tags === "") return "prh";
+  const allTags = order.tags.split(",").map(t => t.trim()).filter(Boolean);
+
+  // Marketplace-synced orders are tracked via the Sheets-fed Mktplc column.
+  if (allTags.some(t => MARKETPLACE_TAGS.has(t))) return "skip";
+
+  // Drop status tags so they can't override the channel signal.
+  const tags = allTags.filter(t => !STATUS_TAGS.has(t));
+
+  // ProlinePro wins over phone — call-in orders from a B2B account carry
+  // both "[]" and "ProlinePro B2B"; we want them counted as PRO once.
+  if (tags.some(t => t === "ProlinePro B2B")) return "prolinePro";
+  if (tags.length === 1 && tags[0] === "[]") return "phone";
+  if (tags.length === 0) return "prh";
   return "other";
 }
 
@@ -147,12 +166,16 @@ export async function GET(request: NextRequest) {
       if (date < start || date > end) continue;
       if (!dailyMap[date]) dailyMap[date] = emptyBucket(date);
 
+      const channel = classifyOrder(order);
+      // Marketplace-synced orders are tracked via the Sheets pipeline; skip
+      // them entirely so they don't show up under Gross/Discounts/Net here.
+      if (channel === "skip") continue;
+
       const subtotal   = parseFloat(order.subtotal_price);
       const totalPrice = parseFloat(order.total_price);
       const tax        = parseFloat(order.total_tax);
       const discounts  = parseFloat(order.total_discounts ?? "0");
       const shipping   = Math.max(0, totalPrice - subtotal - tax);
-      const channel    = classifyOrder(order);
 
       if (channel === "other") {
         const tagKey = order.tags.trim() || "(empty)";

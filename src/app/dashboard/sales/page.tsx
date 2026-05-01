@@ -495,7 +495,7 @@ export default function SalesPage() {
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
           </summary>
           <div className="border-t border-gray-800 px-4 py-3 text-xs">
-            <div className="text-gray-500 mb-2">Orders with tags that don&apos;t match PRH (no tag), Phone (<code className="bg-gray-800 px-1 rounded">[]</code>), or PRO (<code className="bg-gray-800 px-1 rounded">ProlinePro B2B</code>) land here. If a pattern looks like a real channel, tell me and I&apos;ll add it to the classifier.</div>
+            <div className="text-gray-500 mb-2">Orders that didn&apos;t match PRH/Phone/PRO after stripping status tags (REFUNDED, redo_claim) and excluding marketplace-synced orders. If a pattern looks like a real channel, tell me and I&apos;ll add a rule.</div>
             <table className="w-full text-xs">
               <thead className="text-gray-500 uppercase">
                 <tr><th className="text-left py-1.5">Tags</th><th className="text-right py-1.5">Orders</th><th className="text-right py-1.5">Subtotal</th><th className="text-left py-1.5 pl-4">Sample order</th></tr>
@@ -692,7 +692,7 @@ function MethodologyNote() {
           <div>
             <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Column Definitions</h3>
             <div className="space-y-2 text-xs text-gray-400">
-              <div><span className="text-gray-200 font-medium">PRH / PRO / PHONE / OTHER</span> — Shopify orders split by tag, in priority order: <code className="bg-gray-800 px-1 rounded">ProlinePro B2B</code> = PRO (wins over phone if both tags are present), tag exactly <code className="bg-gray-800 px-1 rounded">[]</code> = Phone, no tags at all = PRH (website), anything else = Other (custom tags like REFUNDED, etc — open the order in Shopify to see the tag).</div>
+              <div><span className="text-gray-200 font-medium">PRH / PRO / PHONE / OTHER</span> — Shopify orders split by tag, in priority order: <code className="bg-gray-800 px-1 rounded">ProlinePro B2B</code> = PRO (wins over phone if both tags are present), <code className="bg-gray-800 px-1 rounded">[]</code> alone = Phone, no tags = PRH (website), anything else = Other. Status tags (<code className="bg-gray-800 px-1 rounded">REFUNDED</code>, <code className="bg-gray-800 px-1 rounded">redo_claim</code>) are stripped before classification — they describe what happened to the order, not how the sale came in. Orders tagged <code className="bg-gray-800 px-1 rounded">Market Place Order</code>/<code className="bg-gray-800 px-1 rounded">Marketplace</code> are excluded entirely (tracked via the Mktplc column from Sheets).</div>
               <div><span className="text-gray-200 font-medium">SHL</span> — Smart Home Luxury Shopify store (separate account). Net revenue by order date.</div>
               <div><span className="text-gray-200 font-medium">MKTPLC</span> — Amazon, Wayfair, Home Depot. Pulled from Google Sheets (manually entered).</div>
               <div><span className="text-gray-200 font-medium">GROSS</span> — Line item prices before discounts (<code className="bg-gray-800 px-1 rounded">subtotal + total_discounts</code>).</div>
