@@ -15,7 +15,6 @@ const navSections: NavSection[] = [
     items: [
       { href: "/dashboard",          label: "Overview",             icon: "⬛" },
       { href: "/dashboard/sales",    label: "Daily & Monthly Sales",icon: "📈" },
-      { href: "/dashboard/monthly-pnl", label: "Monthly P&L",       icon: "📊" },
       { href: "/dashboard/shopify",  label: "Shopify Live Orders",  icon: "🟢" },
       { href: "/dashboard/shl",      label: "Smart Home Luxury",    icon: "🏠" },
       { href: "/dashboard/marketplace", label: "Marketplace Sales", icon: "🏪" },

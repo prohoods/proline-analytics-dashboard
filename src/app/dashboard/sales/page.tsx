@@ -688,11 +688,13 @@ function SalesTrendChart({
   prevRows,
   view,
   compareLabel: prevLabel,
+  prevLoading,
 }: {
   rows: SalesBucket[];
   prevRows?: SalesBucket[] | null;
   view: ViewTab;
   compareLabel?: string;
+  prevLoading?: boolean;
 }) {
   const [enabled, setEnabled] = useState<Set<string>>(() => new Set(["Gross", "Net", "Total"]));
   const toggle = (k: string) => setEnabled(prev => {
@@ -727,6 +729,7 @@ function SalesTrendChart({
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <h2 className="text-sm font-semibold text-white">Trend</h2>
         {hasPrev && <span className="text-xs text-gray-500">Dashed = {prevLabel ?? "previous"}</span>}
+        {!hasPrev && prevLoading && <span className="text-xs text-gray-500">Loading comparison…</span>}
       </div>
 
       {/* Series toggles */}
@@ -948,45 +951,58 @@ export default function SalesPage() {
       .finally(() => setLoading(false));
   }, [rangeKey, refreshKey]);
 
-  // Fetch previous period when compare is toggled on
+  // Fetch previous period when compare is toggled on. We fetch BOTH Proline
+  // and SHL for the prev window — the always-on shlDays state only covers the
+  // current year, so YoY compares would otherwise have no SHL contribution.
+  // Marketplace is all-time and read from `marketplace` state directly.
+  const [prevError, setPrevError] = useState<string>("");
   useEffect(() => {
     const prev = getCompareRange(rangeKey, compareMode);
-    if (!prev) { setPrevTotals(null); setPrevDaily(null); return; }
+    if (!prev) {
+      setPrevTotals(null);
+      setPrevDaily(null);
+      setPrevError("");
+      return;
+    }
     setPrevLoading(true);
+    setPrevError("");
+    setPrevDaily(null);
+    setPrevTotals(null);
+
     Promise.all([
       fetch(`/api/shopify/channel-sales?start=${prev.start}&end=${prev.end}&_=${refreshKey}`).then(r => r.json()),
-    ]).then(([d]) => {
-      if (!d.error && d.daily) {
-        // Build prev daily with full business-wide merge so the comparison
-        // matches the current-period math (Proline + SHL + Marketplaces).
-        const prevShl: Record<string, ShlContribution> = {};
-        for (const day of shlDays) {
-          if (day.date >= prev.start && day.date <= prev.end) {
-            prevShl[day.date] = {
-              gross: day.grossRevenue ?? 0,
-              discounts: day.discounts ?? 0,
-              refunds: day.refunds ?? 0,
-              shipping: day.shipping ?? 0,
-              netTax: (day.tax ?? 0) - (day.refundTax ?? 0),
-              net: day.netRevenue ?? 0,
-            };
-          }
-        }
-        const prevMkt: Record<string, { gross: number; returns: number; net: number }> = {};
-        for (const m of marketplace?.days ?? []) {
-          if (m.date >= prev.start && m.date <= prev.end) {
-            prevMkt[m.date] = { gross: m.gross, returns: m.returns, net: m.net };
-          }
-        }
-        const merged: SalesBucket[] = d.daily.map((row: SalesBucket) =>
-          mergeBucket(row, prevShl[row.date], prevMkt[row.date])
-        );
-        setPrevDaily(merged);
-        setPrevTotals(sumBuckets(merged));
+      fetch(`/api/shopify-shl/orders?start=${prev.start}&end=${prev.end}&_=${refreshKey}`).then(r => r.json()).catch(() => ({ daily: [] })),
+    ]).then(([proline, shl]) => {
+      if (proline?.error || !proline?.daily) {
+        throw new Error(proline?.error || "No prev data");
       }
+      const prevShl: Record<string, ShlContribution> = {};
+      for (const day of (shl?.daily ?? []) as SHLDay[]) {
+        prevShl[day.date] = {
+          gross: day.grossRevenue ?? 0,
+          discounts: day.discounts ?? 0,
+          refunds: day.refunds ?? 0,
+          shipping: day.shipping ?? 0,
+          netTax: (day.tax ?? 0) - (day.refundTax ?? 0),
+          net: day.netRevenue ?? 0,
+        };
+      }
+      const prevMkt: Record<string, { gross: number; returns: number; net: number }> = {};
+      for (const m of marketplace?.days ?? []) {
+        if (m.date >= prev.start && m.date <= prev.end) {
+          prevMkt[m.date] = { gross: m.gross, returns: m.returns, net: m.net };
+        }
+      }
+      const merged: SalesBucket[] = proline.daily.map((row: SalesBucket) =>
+        mergeBucket(row, prevShl[row.date], prevMkt[row.date])
+      );
+      setPrevDaily(merged);
+      setPrevTotals(sumBuckets(merged));
+    }).catch(e => {
+      console.error("compare fetch failed:", e);
+      setPrevError(e instanceof Error ? e.message : String(e));
     }).finally(() => setPrevLoading(false));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [compareMode, rangeKey, refreshKey]);
+  }, [compareMode, rangeKey, refreshKey, marketplace]);
 
   const range = getRange(rangeKey);
   const prevRange = getCompareRange(rangeKey, compareMode);
@@ -1405,12 +1421,19 @@ export default function SalesPage() {
 
       {loading && <TableSkeleton rows={10} cols={13} />}
 
+      {showCompare && prevError && (
+        <div className="mb-4 px-4 py-2 rounded-lg bg-red-900/20 border border-red-800/40 text-sm text-red-300">
+          Compare data unavailable: {prevError}
+        </div>
+      )}
+
       {!loading && tableRows.length > 0 && (
         <SalesTrendChart
           rows={tableRows}
           prevRows={prevTableRows}
           view={view}
           compareLabel={compareLabel(rangeKey, compareMode)}
+          prevLoading={showCompare && prevLoading}
         />
       )}
 
