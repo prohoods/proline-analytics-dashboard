@@ -1438,8 +1438,8 @@ export default function SalesPage() {
       )}
 
       {!loading && tableRows.length > 0 && (
-        <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-800 flex items-center justify-between">
+        <div className="bg-gray-900 rounded-xl border border-gray-800">
+          <div className="px-6 py-4 border-b border-gray-800 flex items-center justify-between rounded-t-xl">
             <h2 className="text-sm font-semibold text-white">
               {view === "weekly"
                 ? `Week of ${weekRangeLabel(weekly.find(w => w.date === selectedWeek) ?? weekly[0])}`
@@ -1471,10 +1471,10 @@ export default function SalesPage() {
               </button>
             </div>
           </div>
-          <div className="overflow-x-auto">
+          <div>
             <table className="w-full text-sm">
-              <thead className="sticky top-0 z-10">
-                <tr className="text-gray-500 text-xs uppercase tracking-wider bg-gray-800 border-b border-gray-800">
+              <thead className="sticky top-[52px] z-10">
+                <tr className="text-gray-500 text-xs uppercase tracking-wider bg-gray-800 border-b border-gray-800 shadow-md shadow-black/40">
                   <th className="py-3 px-3 text-left">{view === "monthly" ? "Month" : "Date"}</th>
                   <th className="py-3 px-3 text-right">PRH</th>
                   <th className="py-3 px-3 text-right">Pro</th>
