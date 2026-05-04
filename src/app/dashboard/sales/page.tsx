@@ -1473,23 +1473,23 @@ export default function SalesPage() {
           </div>
           <div>
             <table className="w-full text-sm">
-              <thead className="sticky top-[52px] z-10">
-                <tr className="text-gray-500 text-xs uppercase tracking-wider bg-gray-800 border-b border-gray-800 shadow-md shadow-black/40">
-                  <th className="py-3 px-3 text-left">{view === "monthly" ? "Month" : "Date"}</th>
-                  <th className="py-3 px-3 text-right">PRH</th>
-                  <th className="py-3 px-3 text-right">Pro</th>
-                  <th className="py-3 px-3 text-right">Phone</th>
-                  <th className="py-3 px-3 text-right text-purple-400">SHL</th>
-                  {showOther && <th className="py-3 px-3 text-right text-gray-600">Other</th>}
-                  <th className="py-3 px-3 text-right text-orange-400">Mktplc</th>
-                  <th className="py-3 px-3 text-right border-l border-gray-800">Gross</th>
-                  <th className="py-3 px-3 text-right text-red-400">Discounts</th>
-                  <th className="py-3 px-3 text-right text-red-400">Refunds</th>
-                  <th className="py-3 px-3 text-right text-cyan-400" title="Redo shipping protection fees — collected at checkout, remitted to Redo. Not Proline revenue.">Redo</th>
-                  <th className="py-3 px-3 text-right font-semibold text-white">Net</th>
-                  <th className="py-3 px-3 text-right">Shipping</th>
-                  <th className="py-3 px-3 text-right" title="Combined Proline + SHL net sales tax (tax collected − refunded tax)">Tax <span className="text-gray-600 normal-case">(Proline+SHL)</span></th>
-                  <th className="py-3 px-3 text-right font-semibold text-green-400">Total</th>
+              <thead className="sticky top-[60px] z-10 text-gray-500 text-xs uppercase tracking-wider shadow-md shadow-black/40">
+                <tr className="border-b border-gray-800">
+                  <th className="py-3 px-3 text-left bg-gray-800">{view === "monthly" ? "Month" : "Date"}</th>
+                  <th className="py-3 px-3 text-right bg-gray-800">PRH</th>
+                  <th className="py-3 px-3 text-right bg-gray-800">Pro</th>
+                  <th className="py-3 px-3 text-right bg-gray-800">Phone</th>
+                  <th className="py-3 px-3 text-right text-purple-400 bg-gray-800">SHL</th>
+                  {showOther && <th className="py-3 px-3 text-right text-gray-600 bg-gray-800">Other</th>}
+                  <th className="py-3 px-3 text-right text-orange-400 bg-gray-800">Mktplc</th>
+                  <th className="py-3 px-3 text-right border-l border-gray-800 bg-gray-800">Gross</th>
+                  <th className="py-3 px-3 text-right text-red-400 bg-gray-800">Discounts</th>
+                  <th className="py-3 px-3 text-right text-red-400 bg-gray-800">Refunds</th>
+                  <th className="py-3 px-3 text-right text-cyan-400 bg-gray-800" title="Redo shipping protection fees — collected at checkout, remitted to Redo. Not Proline revenue.">Redo</th>
+                  <th className="py-3 px-3 text-right font-semibold text-white bg-gray-800">Net</th>
+                  <th className="py-3 px-3 text-right bg-gray-800">Shipping</th>
+                  <th className="py-3 px-3 text-right bg-gray-800" title="Combined Proline + SHL net sales tax (tax collected − refunded tax)">Tax <span className="text-gray-600 normal-case">(Proline+SHL)</span></th>
+                  <th className="py-3 px-3 text-right font-semibold text-green-400 bg-gray-800">Total</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-800">
