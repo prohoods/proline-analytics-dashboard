@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo, useRef } from "react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from "recharts";
 import DateRangeDropdown from "@/components/DateRangeDropdown";
-import { RangeKey, getRange, getCompareRange, defaultCompareMode, compareLabel, type CompareMode } from "@/lib/date-ranges";
+import { RangeKey, getRange, getCompareRange, defaultCompareMode, compareLabel, COMPARE_OPTIONS, type CompareMode } from "@/lib/date-ranges";
 import DeltaBadge from "@/components/DeltaBadge";
 import { TableSkeleton, SkeletonCard } from "@/components/Skeleton";
 import { exportToCSV } from "@/lib/export-csv";
@@ -833,11 +833,8 @@ function CompareDropdown({
   const active = mode !== "off";
   const label = compareLabel(rangeKey, mode);
 
-  const opts: { key: CompareMode; label: string; sub: string }[] = [
-    { key: "off",         label: "Off",                   sub: "Hide comparison" },
-    { key: "prev_year",   label: compareLabel(rangeKey, "prev_year").replace(/^vs /, ""),   sub: "Year-over-year comparison" },
-    { key: "prev_period", label: compareLabel(rangeKey, "prev_period").replace(/^vs /, ""), sub: prevRange ? `${prevRange.start} → ${prevRange.end}` : "Same-length window before this one" },
-  ];
+  const opts = COMPARE_OPTIONS;
+  void prevRange;
 
   return (
     <div ref={ref} className="relative">
