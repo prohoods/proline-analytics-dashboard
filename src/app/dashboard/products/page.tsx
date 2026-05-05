@@ -21,6 +21,14 @@ interface ZoneRow {
   avgCost: number;
 }
 
+interface ZoneBreakdownRow {
+  zip3: string;
+  state: string;
+  shipments: number;
+  totalCost: number;
+  avgCost: number;
+}
+
 interface Product {
   title: string;
   sku: string;
@@ -597,30 +605,131 @@ function MarginBadge({ pct }: { pct: number | null }) {
   return <span className={`font-semibold ${color}`}>{fmtPct(pct)}</span>;
 }
 
-// Sortable column header that also opens an explainer when clicked on the
-// info icon. Sort triggers on the label text, info opens the popover.
+function ZoneBreakdownPanel({ rows }: { rows: ZoneBreakdownRow[] }) {
+  const [sortKey, setSortKey] = useState<"shipments" | "avgCost" | "totalCost">("shipments");
+  const [showAll, setShowAll] = useState(false);
+
+  const sorted = [...rows].sort((a, b) => b[sortKey] - a[sortKey]);
+  const totalShipments = rows.reduce((s, r) => s + r.shipments, 0);
+  const totalCost = rows.reduce((s, r) => s + r.totalCost, 0);
+  const overallAvg = totalShipments > 0 ? totalCost / totalShipments : 0;
+
+  const display = showAll ? sorted : sorted.slice(0, 15);
+  const cheapest = [...rows].filter(r => r.shipments >= 5).sort((a, b) => a.avgCost - b.avgCost)[0];
+  const priciest = [...rows].filter(r => r.shipments >= 5).sort((a, b) => b.avgCost - a.avgCost)[0];
+
+  const SortBtn = ({ k, label }: { k: typeof sortKey; label: string }) => (
+    <button
+      onClick={() => setSortKey(k)}
+      className={`px-3 py-1.5 rounded-lg text-xs transition-colors border ${sortKey === k ? "bg-blue-600/20 border-blue-600/40 text-blue-300" : "bg-gray-800 border-gray-700 text-gray-400 hover:text-gray-200"}`}
+    >
+      {label}
+    </button>
+  );
+
+  return (
+    <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+      <div className="px-5 py-4 border-b border-gray-800 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-white">Shipping cost by destination region</div>
+          <div className="text-xs text-gray-500 mt-0.5">
+            ZIP3 = first 3 digits of destination ZIP. Roughly maps to carrier shipping zones.
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <SortBtn k="shipments" label="Most shipments" />
+          <SortBtn k="avgCost" label="Highest avg cost" />
+          <SortBtn k="totalCost" label="Most $ spent" />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-px bg-gray-800">
+        <div className="bg-gray-900 p-4">
+          <div className="text-xs text-gray-500 uppercase tracking-wide">Overall avg / shipment</div>
+          <div className="text-2xl font-bold text-white mt-1">{fmt2(overallAvg)}</div>
+          <div className="text-xs text-gray-600 mt-1">{fmtN(totalShipments)} shipments · {rows.length} ZIP3 zones</div>
+        </div>
+        {cheapest && (
+          <div className="bg-gray-900 p-4">
+            <div className="text-xs text-gray-500 uppercase tracking-wide">Cheapest region</div>
+            <div className="text-2xl font-bold text-emerald-400 mt-1">{fmt2(cheapest.avgCost)}</div>
+            <div className="text-xs text-gray-600 mt-1 font-mono">
+              {cheapest.zip3}xx {cheapest.state && `· ${cheapest.state}`} · {fmtN(cheapest.shipments)} shipments
+            </div>
+          </div>
+        )}
+        {priciest && (
+          <div className="bg-gray-900 p-4">
+            <div className="text-xs text-gray-500 uppercase tracking-wide">Priciest region</div>
+            <div className="text-2xl font-bold text-rose-400 mt-1">{fmt2(priciest.avgCost)}</div>
+            <div className="text-xs text-gray-600 mt-1 font-mono">
+              {priciest.zip3}xx {priciest.state && `· ${priciest.state}`} · {fmtN(priciest.shipments)} shipments
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-900 border-b border-gray-800">
+            <tr>
+              <th className="px-4 py-2 text-left text-xs text-gray-500 uppercase tracking-wide font-semibold">ZIP3</th>
+              <th className="px-4 py-2 text-left text-xs text-gray-500 uppercase tracking-wide font-semibold">State</th>
+              <th className="px-4 py-2 text-right text-xs text-gray-500 uppercase tracking-wide font-semibold">Shipments</th>
+              <th className="px-4 py-2 text-right text-xs text-gray-500 uppercase tracking-wide font-semibold">Avg Cost</th>
+              <th className="px-4 py-2 text-right text-xs text-gray-500 uppercase tracking-wide font-semibold">vs Overall</th>
+              <th className="px-4 py-2 text-right text-xs text-gray-500 uppercase tracking-wide font-semibold">Total Spent</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-800">
+            {display.map(r => {
+              const delta = overallAvg > 0 ? ((r.avgCost - overallAvg) / overallAvg) * 100 : 0;
+              const deltaColor = delta > 10 ? "text-rose-400" : delta < -10 ? "text-emerald-400" : "text-gray-500";
+              return (
+                <tr key={r.zip3} className="hover:bg-gray-800/40">
+                  <td className="px-4 py-2 font-mono text-blue-400">{r.zip3}xx</td>
+                  <td className="px-4 py-2 text-gray-400 font-mono">{r.state || "—"}</td>
+                  <td className="px-4 py-2 text-right text-gray-300">{fmtN(r.shipments)}</td>
+                  <td className="px-4 py-2 text-right text-white font-semibold">{fmt2(r.avgCost)}</td>
+                  <td className={`px-4 py-2 text-right ${deltaColor}`}>
+                    {delta > 0 ? "+" : ""}{delta.toFixed(0)}%
+                  </td>
+                  <td className="px-4 py-2 text-right text-gray-400">{fmt(r.totalCost)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {sorted.length > 15 && (
+        <div className="px-5 py-3 border-t border-gray-800 text-center">
+          <button onClick={() => setShowAll(v => !v)} className="text-xs text-blue-400 hover:text-blue-300">
+            {showAll ? "Show top 15" : `Show all ${sorted.length} zones`}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SortableTH({
-  label, sortKey, currentSort, currentDir, onSort, exKey, onExplain, align = "right",
+  label, sortKey, currentSort, currentDir, onSort, align = "right",
 }: {
   label: string;
   sortKey: SortKey;
   currentSort: SortKey;
   currentDir: "asc" | "desc";
   onSort: (k: SortKey) => void;
-  exKey: string;
-  onExplain: (k: string) => void;
   align?: "left" | "right";
 }) {
   const arrow = currentSort !== sortKey ? <span className="text-gray-600 ml-1">↕</span>
     : <span className="text-blue-400 ml-1">{currentDir === "desc" ? "↓" : "↑"}</span>;
   return (
     <th className={`px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide whitespace-nowrap select-none ${align === "right" ? "text-right" : "text-left"}`}>
-      <div className={`flex items-center gap-1.5 ${align === "right" ? "justify-end" : ""}`}>
-        <button onClick={() => onSort(sortKey)} className="hover:text-gray-200 cursor-pointer">{label}{arrow}</button>
-        <button onClick={(e) => { e.stopPropagation(); onExplain(exKey); }} className="text-gray-600 hover:text-blue-400 group">
-          <InfoIcon />
-        </button>
-      </div>
+      <button onClick={() => onSort(sortKey)} className={`hover:text-gray-200 cursor-pointer w-full ${align === "right" ? "text-right" : "text-left"}`}>
+        {label}{arrow}
+      </button>
     </th>
   );
 }
@@ -628,6 +737,7 @@ function SortableTH({
 export default function ProductsPage() {
   const [rangeKey, setRangeKey] = useState<RangeKey>("ytd");
   const [products, setProducts] = useState<Product[]>([]);
+  const [zoneBreakdown, setZoneBreakdown] = useState<ZoneBreakdownRow[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -651,6 +761,7 @@ export default function ProductsPage() {
       .then(d => {
         if (d.error) throw new Error(d.error);
         setProducts(d.products);
+        setZoneBreakdown(d.zoneBreakdown ?? []);
         setSummary(d.summary);
       })
       .catch(e => setError(e.message))
@@ -885,6 +996,11 @@ export default function ProductsPage() {
             />
           </div>
 
+          {/* Shipping cost by destination region */}
+          {zoneBreakdown.length > 0 && (
+            <ZoneBreakdownPanel rows={zoneBreakdown} />
+          )}
+
           {/* Controls */}
           <div className="flex flex-wrap gap-3 items-center">
             <input
@@ -909,17 +1025,17 @@ export default function ProductsPage() {
               <table className="w-full text-sm">
                 <thead className="sticky top-0 z-10 bg-gray-900 border-b border-gray-800">
                   <tr>
-                    <SortableTH label="Product"     sortKey="grossRevenue"      currentSort={sortBy} currentDir={sortDir} onSort={handleSort} exKey="grossRevenue"      onExplain={setExplaining} align="left" />
-                    <SortableTH label="Units"       sortKey="unitsSold"         currentSort={sortBy} currentDir={sortDir} onSort={handleSort} exKey="unitsSold"         onExplain={setExplaining} />
-                    <SortableTH label="Gross Rev"   sortKey="grossRevenue"      currentSort={sortBy} currentDir={sortDir} onSort={handleSort} exKey="grossRevenue"      onExplain={setExplaining} />
-                    <SortableTH label="Net Rev"     sortKey="netRevenue"        currentSort={sortBy} currentDir={sortDir} onSort={handleSort} exKey="netRevenue"        onExplain={setExplaining} />
-                    <SortableTH label="Avg Price"   sortKey="avgPrice"          currentSort={sortBy} currentDir={sortDir} onSort={handleSort} exKey="avgPrice"          onExplain={setExplaining} />
-                    <SortableTH label="COGS"        sortKey="totalCOGS"         currentSort={sortBy} currentDir={sortDir} onSort={handleSort} exKey="totalCOGS"         onExplain={setExplaining} />
-                    <SortableTH label="Profit"      sortKey="grossProfit"       currentSort={sortBy} currentDir={sortDir} onSort={handleSort} exKey="grossProfit"       onExplain={setExplaining} />
-                    <SortableTH label="Margin %"    sortKey="grossMarginPct"    currentSort={sortBy} currentDir={sortDir} onSort={handleSort} exKey="marginPct"         onExplain={setExplaining} />
-                    <SortableTH label="Ship/Unit"   sortKey="avgShippingPerUnit" currentSort={sortBy} currentDir={sortDir} onSort={handleSort} exKey="shipPerUnit"      onExplain={setExplaining} />
-                    <SortableTH label="True Margin" sortKey="trueMarginPct"     currentSort={sortBy} currentDir={sortDir} onSort={handleSort} exKey="trueMargin"        onExplain={setExplaining} />
-                    <SortableTH label="Refund Rate" sortKey="refundRate"        currentSort={sortBy} currentDir={sortDir} onSort={handleSort} exKey="refundRate"        onExplain={setExplaining} />
+                    <SortableTH label="Product"     sortKey="grossRevenue"       currentSort={sortBy} currentDir={sortDir} onSort={handleSort} align="left" />
+                    <SortableTH label="Units"       sortKey="unitsSold"          currentSort={sortBy} currentDir={sortDir} onSort={handleSort} />
+                    <SortableTH label="Gross Rev"   sortKey="grossRevenue"       currentSort={sortBy} currentDir={sortDir} onSort={handleSort} />
+                    <SortableTH label="Net Rev"     sortKey="netRevenue"         currentSort={sortBy} currentDir={sortDir} onSort={handleSort} />
+                    <SortableTH label="Avg Price"   sortKey="avgPrice"           currentSort={sortBy} currentDir={sortDir} onSort={handleSort} />
+                    <SortableTH label="COGS"        sortKey="totalCOGS"          currentSort={sortBy} currentDir={sortDir} onSort={handleSort} />
+                    <SortableTH label="Profit"      sortKey="grossProfit"        currentSort={sortBy} currentDir={sortDir} onSort={handleSort} />
+                    <SortableTH label="Margin %"    sortKey="grossMarginPct"     currentSort={sortBy} currentDir={sortDir} onSort={handleSort} />
+                    <SortableTH label="Ship/Unit"   sortKey="avgShippingPerUnit" currentSort={sortBy} currentDir={sortDir} onSort={handleSort} />
+                    <SortableTH label="True Margin" sortKey="trueMarginPct"      currentSort={sortBy} currentDir={sortDir} onSort={handleSort} />
+                    <SortableTH label="Refund Rate" sortKey="refundRate"         currentSort={sortBy} currentDir={sortDir} onSort={handleSort} />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-800">

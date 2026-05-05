@@ -16,6 +16,10 @@ export async function GET(request: NextRequest) {
 
     const { orders } = await getOrdersWithRefundsInWindow(start, end);
 
+    // Page-level ZIP3 aggregation: every shipped order's full shipping cost
+    // attributed to its destination ZIP3, plus zip3 → state for display.
+    const globalZoneAgg = new Map<string, { totalCost: number; shipments: number; state: string }>();
+
     interface RefundIncident {
       orderName: string;
       date: string;
@@ -61,6 +65,15 @@ export async function GET(request: NextRequest) {
         const orderShipping = shippingByOrder.get(order.name) ?? 0;
         const totalQty = order.line_items.reduce((s, it) => s + it.quantity, 0) || 1;
         const zip3 = (order.shipping_address?.zip ?? "").substring(0, 3);
+        const state = order.shipping_address?.province_code ?? "";
+
+        if (orderShipping > 0 && zip3.length === 3) {
+          const g = globalZoneAgg.get(zip3) ?? { totalCost: 0, shipments: 0, state };
+          g.totalCost += orderShipping;
+          g.shipments += 1;
+          if (!g.state && state) g.state = state;
+          globalZoneAgg.set(zip3, g);
+        }
 
         for (const item of order.line_items) {
           const key = item.sku || item.title;
@@ -200,8 +213,19 @@ export async function GET(request: NextRequest) {
     const shippingCoveredOrders = shippingByOrder.size;
     const coveredProducts = products.filter(p => p.costPerUnit != null).length;
 
+    const zoneBreakdown = Array.from(globalZoneAgg.entries())
+      .map(([zip3, z]) => ({
+        zip3,
+        state: z.state,
+        shipments: z.shipments,
+        totalCost: z.totalCost,
+        avgCost: z.shipments > 0 ? z.totalCost / z.shipments : 0,
+      }))
+      .sort((a, b) => b.shipments - a.shipments);
+
     return NextResponse.json({
       products,
+      zoneBreakdown,
       summary: {
         totalGross,
         totalNet,
