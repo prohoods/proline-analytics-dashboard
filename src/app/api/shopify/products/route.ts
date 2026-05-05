@@ -3,6 +3,7 @@ import { getOrdersWithRefundsInWindow } from "@/lib/shopify";
 import { getCOGS } from "@/lib/cogs";
 import { TARIFF_RATE } from "@/lib/constants";
 import { getShippingByOrder } from "@/lib/db";
+import { classifyOrder, CATEGORY_LIST, type ProductCategory } from "@/lib/categories";
 
 export async function GET(request: NextRequest) {
   try {
@@ -19,6 +20,16 @@ export async function GET(request: NextRequest) {
     // Page-level ZIP3 aggregation: every shipped order's full shipping cost
     // attributed to its destination ZIP3, plus zip3 → state for display.
     const globalZoneAgg = new Map<string, { totalCost: number; shipments: number; state: string }>();
+
+    // State-level aggregation, with per-category breakdown. Each shipped
+    // order is classified by its biggest item (Range Hood > Insert > Parts)
+    // and the full order shipping cost is attributed to that category.
+    type StateAgg = {
+      shipments: number;
+      totalCost: number;
+      byCategory: Map<ProductCategory, { shipments: number; totalCost: number }>;
+    };
+    const stateAgg = new Map<string, StateAgg>();
 
     interface RefundIncident {
       orderName: string;
@@ -73,6 +84,18 @@ export async function GET(request: NextRequest) {
           g.shipments += 1;
           if (!g.state && state) g.state = state;
           globalZoneAgg.set(zip3, g);
+        }
+
+        if (orderShipping > 0 && state) {
+          const category = classifyOrder(order.line_items.map(li => ({ sku: li.sku, title: li.title })));
+          const sa = stateAgg.get(state) ?? { shipments: 0, totalCost: 0, byCategory: new Map() };
+          sa.shipments += 1;
+          sa.totalCost += orderShipping;
+          const bc = sa.byCategory.get(category) ?? { shipments: 0, totalCost: 0 };
+          bc.shipments += 1;
+          bc.totalCost += orderShipping;
+          sa.byCategory.set(category, bc);
+          stateAgg.set(state, sa);
         }
 
         for (const item of order.line_items) {
@@ -213,6 +236,44 @@ export async function GET(request: NextRequest) {
     const shippingCoveredOrders = shippingByOrder.size;
     const coveredProducts = products.filter(p => p.costPerUnit != null).length;
 
+    const stateBreakdown = Array.from(stateAgg.entries())
+      .map(([state, sa]) => ({
+        state,
+        shipments: sa.shipments,
+        totalCost: sa.totalCost,
+        avgCost: sa.shipments > 0 ? sa.totalCost / sa.shipments : 0,
+        byCategory: CATEGORY_LIST.map(cat => {
+          const bc = sa.byCategory.get(cat);
+          return {
+            category: cat,
+            shipments: bc?.shipments ?? 0,
+            totalCost: bc?.totalCost ?? 0,
+            avgCost: bc && bc.shipments > 0 ? bc.totalCost / bc.shipments : 0,
+          };
+        }),
+      }))
+      .sort((a, b) => b.shipments - a.shipments);
+
+    // National per-category averages — used as the projection baseline for
+    // states where we don't yet have category-level shipping data.
+    const categoryNational = CATEGORY_LIST.map(cat => {
+      let totalCost = 0;
+      let shipments = 0;
+      for (const sa of stateAgg.values()) {
+        const bc = sa.byCategory.get(cat);
+        if (bc) {
+          totalCost += bc.totalCost;
+          shipments += bc.shipments;
+        }
+      }
+      return {
+        category: cat,
+        shipments,
+        totalCost,
+        avgCost: shipments > 0 ? totalCost / shipments : 0,
+      };
+    });
+
     const zoneBreakdown = Array.from(globalZoneAgg.entries())
       .map(([zip3, z]) => ({
         zip3,
@@ -226,6 +287,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       products,
       zoneBreakdown,
+      stateBreakdown,
+      categoryNational,
       summary: {
         totalGross,
         totalNet,

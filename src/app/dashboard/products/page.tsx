@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import DateRangeDropdown from "@/components/DateRangeDropdown";
 import { RangeKey, getRange } from "@/lib/date-ranges";
 import { KPISkeleton, TableSkeleton } from "@/components/Skeleton";
@@ -27,6 +27,23 @@ interface ZoneBreakdownRow {
   shipments: number;
   totalCost: number;
   avgCost: number;
+}
+
+type Category = "Range Hood" | "BBQ Hood" | "Insert" | "Parts" | "Other";
+
+interface CategoryBreakdown {
+  category: Category;
+  shipments: number;
+  totalCost: number;
+  avgCost: number;
+}
+
+interface StateBreakdownRow {
+  state: string;
+  shipments: number;
+  totalCost: number;
+  avgCost: number;
+  byCategory: CategoryBreakdown[];
 }
 
 interface Product {
@@ -605,7 +622,192 @@ function MarginBadge({ pct }: { pct: number | null }) {
   return <span className={`font-semibold ${color}`}>{fmtPct(pct)}</span>;
 }
 
+// Per-state shipping panel with category breakdown. The user's question:
+// "what does it cost to ship a range hood to TX vs parts to TX" — answered
+// here by classifying each order by its biggest item and aggregating by
+// destination state.
+function StateBreakdownPanel({
+  rows,
+  national,
+}: {
+  rows: StateBreakdownRow[];
+  national: CategoryBreakdown[];
+}) {
+  const [sortKey, setSortKey] = useState<"shipments" | "avgCost" | "totalCost">("shipments");
+  const [filterCategory, setFilterCategory] = useState<Category | "All">("All");
+  const [expanded, setExpanded] = useState<string | null>(null);
+
+  const visibleRows = rows.map(r => {
+    if (filterCategory === "All") return r;
+    const bc = r.byCategory.find(c => c.category === filterCategory);
+    return {
+      ...r,
+      shipments: bc?.shipments ?? 0,
+      totalCost: bc?.totalCost ?? 0,
+      avgCost: bc && bc.shipments > 0 ? bc.totalCost / bc.shipments : 0,
+    };
+  }).filter(r => r.shipments > 0);
+
+  const sorted = [...visibleRows].sort((a, b) => b[sortKey] - a[sortKey]);
+  const totalShipments = visibleRows.reduce((s, r) => s + r.shipments, 0);
+  const totalCost = visibleRows.reduce((s, r) => s + r.totalCost, 0);
+  const overallAvg = totalShipments > 0 ? totalCost / totalShipments : 0;
+
+  const cheapest = [...visibleRows].filter(r => r.shipments >= 3).sort((a, b) => a.avgCost - b.avgCost)[0];
+  const priciest = [...visibleRows].filter(r => r.shipments >= 3).sort((a, b) => b.avgCost - a.avgCost)[0];
+
+  const SortBtn = ({ k, label }: { k: typeof sortKey; label: string }) => (
+    <button
+      onClick={() => setSortKey(k)}
+      className={`px-3 py-1.5 rounded-lg text-xs transition-colors border ${sortKey === k ? "bg-blue-600/20 border-blue-600/40 text-blue-300" : "bg-gray-800 border-gray-700 text-gray-400 hover:text-gray-200"}`}
+    >
+      {label}
+    </button>
+  );
+
+  const CategoryPill = ({ c }: { c: Category | "All" }) => (
+    <button
+      onClick={() => setFilterCategory(c)}
+      className={`px-3 py-1.5 rounded-lg text-xs transition-colors border ${filterCategory === c ? "bg-purple-600/20 border-purple-600/40 text-purple-300" : "bg-gray-800 border-gray-700 text-gray-400 hover:text-gray-200"}`}
+    >
+      {c}
+    </button>
+  );
+
+  return (
+    <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+      <div className="px-5 py-4 border-b border-gray-800 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-white">Shipping cost by state · category breakdown</div>
+          <div className="text-xs text-gray-500 mt-0.5">
+            Each order is classified by its biggest item — shipping a range hood costs 5–10× more than shipping parts. Click a state to see all categories.
+          </div>
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          <SortBtn k="shipments" label="Most shipments" />
+          <SortBtn k="avgCost" label="Highest avg" />
+          <SortBtn k="totalCost" label="Most $ spent" />
+        </div>
+      </div>
+
+      <div className="px-5 py-3 border-b border-gray-800 flex flex-wrap gap-2 items-center">
+        <span className="text-xs text-gray-500 uppercase tracking-wide mr-1">Filter:</span>
+        <CategoryPill c="All" />
+        {(["Range Hood", "BBQ Hood", "Insert", "Parts", "Other"] as const).map(c => {
+          const nat = national.find(n => n.category === c);
+          if (!nat || nat.shipments === 0) return null;
+          return <CategoryPill key={c} c={c} />;
+        })}
+      </div>
+
+      {/* National per-category averages — gives context for state numbers */}
+      {filterCategory === "All" && (
+        <div className="px-5 py-3 border-b border-gray-800 bg-gray-950/50">
+          <div className="text-xs text-gray-500 uppercase tracking-wide mb-2">National average per shipment, by category</div>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            {national.filter(c => c.shipments > 0).map(c => (
+              <div key={c.category} className="bg-gray-900 border border-gray-800 rounded-lg p-3">
+                <div className="text-xs text-gray-500">{c.category}</div>
+                <div className="text-lg font-bold text-white mt-1">{fmt2(c.avgCost)}</div>
+                <div className="text-xs text-gray-600 mt-0.5">{fmtN(c.shipments)} shipments</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-px bg-gray-800">
+        <div className="bg-gray-900 p-4">
+          <div className="text-xs text-gray-500 uppercase tracking-wide">
+            {filterCategory === "All" ? "Overall avg / shipment" : `Avg / ${filterCategory.toLowerCase()} shipment`}
+          </div>
+          <div className="text-2xl font-bold text-white mt-1">{fmt2(overallAvg)}</div>
+          <div className="text-xs text-gray-600 mt-1">{fmtN(totalShipments)} shipments · {visibleRows.length} states</div>
+        </div>
+        {cheapest && (
+          <div className="bg-gray-900 p-4">
+            <div className="text-xs text-gray-500 uppercase tracking-wide">Cheapest state</div>
+            <div className="text-2xl font-bold text-emerald-400 mt-1">{fmt2(cheapest.avgCost)}</div>
+            <div className="text-xs text-gray-600 mt-1 font-mono">{cheapest.state} · {fmtN(cheapest.shipments)} shipments</div>
+          </div>
+        )}
+        {priciest && (
+          <div className="bg-gray-900 p-4">
+            <div className="text-xs text-gray-500 uppercase tracking-wide">Priciest state</div>
+            <div className="text-2xl font-bold text-rose-400 mt-1">{fmt2(priciest.avgCost)}</div>
+            <div className="text-xs text-gray-600 mt-1 font-mono">{priciest.state} · {fmtN(priciest.shipments)} shipments</div>
+          </div>
+        )}
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-900 border-b border-gray-800">
+            <tr>
+              <th className="px-4 py-2 text-left text-xs text-gray-500 uppercase tracking-wide font-semibold">State</th>
+              <th className="px-4 py-2 text-right text-xs text-gray-500 uppercase tracking-wide font-semibold">Shipments</th>
+              <th className="px-4 py-2 text-right text-xs text-gray-500 uppercase tracking-wide font-semibold">Avg Cost</th>
+              <th className="px-4 py-2 text-right text-xs text-gray-500 uppercase tracking-wide font-semibold">vs National</th>
+              <th className="px-4 py-2 text-right text-xs text-gray-500 uppercase tracking-wide font-semibold">Total Spent</th>
+              <th className="px-4 py-2 text-right text-xs text-gray-500 uppercase tracking-wide font-semibold w-12"></th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-800">
+            {sorted.map(r => {
+              const delta = overallAvg > 0 ? ((r.avgCost - overallAvg) / overallAvg) * 100 : 0;
+              const deltaColor = delta > 10 ? "text-rose-400" : delta < -10 ? "text-emerald-400" : "text-gray-500";
+              const isOpen = expanded === r.state;
+              return (
+                <Fragment key={r.state}>
+                  <tr
+                    onClick={() => setExpanded(isOpen ? null : r.state)}
+                    className="hover:bg-gray-800/40 cursor-pointer"
+                  >
+                    <td className="px-4 py-2 font-mono text-blue-400 font-semibold">{r.state}</td>
+                    <td className="px-4 py-2 text-right text-gray-300">{fmtN(r.shipments)}</td>
+                    <td className="px-4 py-2 text-right text-white font-semibold">{fmt2(r.avgCost)}</td>
+                    <td className={`px-4 py-2 text-right ${deltaColor}`}>{delta > 0 ? "+" : ""}{delta.toFixed(0)}%</td>
+                    <td className="px-4 py-2 text-right text-gray-400">{fmt(r.totalCost)}</td>
+                    <td className="px-4 py-2 text-right text-gray-600 text-xs">{isOpen ? "▾" : "▸"}</td>
+                  </tr>
+                  {isOpen && filterCategory === "All" && (
+                    <tr className="bg-gray-950/60">
+                      <td colSpan={6} className="px-6 py-4">
+                        <div className="text-xs text-gray-500 uppercase tracking-wide mb-2">{r.state} — by category</div>
+                        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                          {r.byCategory.filter(c => c.shipments > 0).map(c => {
+                            const nat = national.find(n => n.category === c.category);
+                            const natDelta = nat && nat.avgCost > 0 ? ((c.avgCost - nat.avgCost) / nat.avgCost) * 100 : 0;
+                            const natColor = natDelta > 10 ? "text-rose-400" : natDelta < -10 ? "text-emerald-400" : "text-gray-500";
+                            return (
+                              <div key={c.category} className="bg-gray-900 border border-gray-800 rounded-lg p-3">
+                                <div className="text-xs text-gray-500">{c.category}</div>
+                                <div className="text-lg font-bold text-white mt-1">{fmt2(c.avgCost)}</div>
+                                <div className="text-xs text-gray-600 mt-0.5">{fmtN(c.shipments)} shipments · {fmt(c.totalCost)}</div>
+                                {nat && nat.shipments > 0 && (
+                                  <div className={`text-xs mt-1 ${natColor}`}>
+                                    {natDelta > 0 ? "+" : ""}{natDelta.toFixed(0)}% vs national
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function ZoneBreakdownPanel({ rows }: { rows: ZoneBreakdownRow[] }) {
+  const [open, setOpen] = useState(false);
   const [sortKey, setSortKey] = useState<"shipments" | "avgCost" | "totalCost">("shipments");
   const [showAll, setShowAll] = useState(false);
 
@@ -629,18 +831,23 @@ function ZoneBreakdownPanel({ rows }: { rows: ZoneBreakdownRow[] }) {
 
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-      <div className="px-5 py-4 border-b border-gray-800 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <div className="text-sm font-semibold text-white">Shipping cost by destination region</div>
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="w-full px-5 py-4 border-b border-gray-800 flex items-center justify-between hover:bg-gray-800/40 transition-colors"
+      >
+        <div className="text-left">
+          <div className="text-sm font-semibold text-white">Drill deeper: shipping by ZIP3 region</div>
           <div className="text-xs text-gray-500 mt-0.5">
-            ZIP3 = first 3 digits of destination ZIP. Roughly maps to carrier shipping zones.
+            For when you want sub-state granularity. ZIP3 = first 3 digits of destination ZIP.
           </div>
         </div>
-        <div className="flex gap-2">
-          <SortBtn k="shipments" label="Most shipments" />
-          <SortBtn k="avgCost" label="Highest avg cost" />
-          <SortBtn k="totalCost" label="Most $ spent" />
-        </div>
+        <span className="text-gray-500 text-xs">{open ? "▾ Hide" : "▸ Show"}</span>
+      </button>
+      {!open ? null : (<>
+      <div className="px-5 py-3 border-b border-gray-800 flex justify-end gap-2">
+        <SortBtn k="shipments" label="Most shipments" />
+        <SortBtn k="avgCost" label="Highest avg cost" />
+        <SortBtn k="totalCost" label="Most $ spent" />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-px bg-gray-800">
@@ -709,6 +916,7 @@ function ZoneBreakdownPanel({ rows }: { rows: ZoneBreakdownRow[] }) {
           </button>
         </div>
       )}
+      </>)}
     </div>
   );
 }
@@ -738,6 +946,8 @@ export default function ProductsPage() {
   const [rangeKey, setRangeKey] = useState<RangeKey>("ytd");
   const [products, setProducts] = useState<Product[]>([]);
   const [zoneBreakdown, setZoneBreakdown] = useState<ZoneBreakdownRow[]>([]);
+  const [stateBreakdown, setStateBreakdown] = useState<StateBreakdownRow[]>([]);
+  const [categoryNational, setCategoryNational] = useState<CategoryBreakdown[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -762,6 +972,8 @@ export default function ProductsPage() {
         if (d.error) throw new Error(d.error);
         setProducts(d.products);
         setZoneBreakdown(d.zoneBreakdown ?? []);
+        setStateBreakdown(d.stateBreakdown ?? []);
+        setCategoryNational(d.categoryNational ?? []);
         setSummary(d.summary);
       })
       .catch(e => setError(e.message))
@@ -996,7 +1208,12 @@ export default function ProductsPage() {
             />
           </div>
 
-          {/* Shipping cost by destination region */}
+          {/* Shipping cost by destination state, with category breakdown */}
+          {stateBreakdown.length > 0 && (
+            <StateBreakdownPanel rows={stateBreakdown} national={categoryNational} />
+          )}
+
+          {/* ZIP3 view (more granular — collapsed by default) */}
           {zoneBreakdown.length > 0 && (
             <ZoneBreakdownPanel rows={zoneBreakdown} />
           )}
