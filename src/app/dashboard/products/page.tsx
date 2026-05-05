@@ -49,6 +49,8 @@ interface StateBreakdownRow {
 interface Product {
   title: string;
   sku: string;
+  category: Category;
+  categoryReason: string;
   unitsSold: number;
   netUnits: number;
   grossRevenue: number;
@@ -624,6 +626,119 @@ function MarginBadge({ pct }: { pct: number | null }) {
 
 // One tile in the category-filter row at the top of the state breakdown.
 // Selected tile highlights blue; clicking sets the category filter.
+// Audit view: every SKU sold in the current window with its current
+// category + the rule that triggered it. Sorted by units sold so
+// high-impact misclassifications surface first.
+function CategoryAuditModal({ products, onClose }: { products: Product[]; onClose: () => void }) {
+  const [filter, setFilter] = useState<Category | "All">("All");
+  const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const sorted = [...products].sort((a, b) => b.unitsSold - a.unitsSold);
+  const filtered = sorted.filter(p => {
+    if (filter !== "All" && p.category !== filter) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      if (!p.sku.toLowerCase().includes(q) && !p.title.toLowerCase().includes(q)) return false;
+    }
+    return true;
+  });
+
+  const counts: Record<string, number> = {};
+  for (const p of products) counts[p.category] = (counts[p.category] ?? 0) + 1;
+
+  const categoryColor: Record<Category, string> = {
+    "Range Hood": "bg-blue-500/15 text-blue-300 border-blue-500/30",
+    "BBQ Hood": "bg-orange-500/15 text-orange-300 border-orange-500/30",
+    "Insert": "bg-purple-500/15 text-purple-300 border-purple-500/30",
+    "Parts": "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+    "Other": "bg-gray-700/40 text-gray-300 border-gray-600",
+  };
+
+  return (
+    <div onClick={onClose} className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
+      <div onClick={e => e.stopPropagation()} className="bg-gray-900 border border-gray-700 rounded-xl shadow-2xl max-w-5xl w-full max-h-[88vh] flex flex-col">
+        <div className="px-6 py-4 border-b border-gray-800 flex items-center justify-between">
+          <div>
+            <div className="text-base font-semibold text-white">Review category mappings</div>
+            <div className="text-xs text-gray-500 mt-0.5">
+              Sorted by units sold — biggest sellers first. Tell me which are wrong and I'll tune the rules in src/lib/categories.ts.
+            </div>
+          </div>
+          <button onClick={onClose} className="text-gray-500 hover:text-white text-xl leading-none">×</button>
+        </div>
+
+        <div className="px-6 py-3 border-b border-gray-800 flex flex-wrap gap-2 items-center">
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search SKU or title…"
+            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 flex-1 min-w-[200px]"
+          />
+          <button
+            onClick={() => setFilter("All")}
+            className={`px-3 py-1.5 rounded-lg text-xs border ${filter === "All" ? "bg-blue-600/20 border-blue-600/40 text-blue-300" : "bg-gray-800 border-gray-700 text-gray-400 hover:text-gray-200"}`}
+          >
+            All ({products.length})
+          </button>
+          {(["Range Hood", "BBQ Hood", "Insert", "Parts", "Other"] as const).map(c => (
+            (counts[c] ?? 0) > 0 && (
+              <button
+                key={c}
+                onClick={() => setFilter(c)}
+                className={`px-3 py-1.5 rounded-lg text-xs border ${filter === c ? "bg-blue-600/20 border-blue-600/40 text-blue-300" : "bg-gray-800 border-gray-700 text-gray-400 hover:text-gray-200"}`}
+              >
+                {c} ({counts[c]})
+              </button>
+            )
+          ))}
+        </div>
+
+        <div className="overflow-auto flex-1">
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 bg-gray-900 border-b border-gray-800">
+              <tr>
+                <th className="px-4 py-2 text-left text-xs text-gray-500 uppercase tracking-wide font-semibold">Category</th>
+                <th className="px-4 py-2 text-left text-xs text-gray-500 uppercase tracking-wide font-semibold">SKU</th>
+                <th className="px-4 py-2 text-left text-xs text-gray-500 uppercase tracking-wide font-semibold">Title</th>
+                <th className="px-4 py-2 text-right text-xs text-gray-500 uppercase tracking-wide font-semibold">Units</th>
+                <th className="px-4 py-2 text-left text-xs text-gray-500 uppercase tracking-wide font-semibold">Why</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-800">
+              {filtered.length === 0 && (
+                <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-500">No products match.</td></tr>
+              )}
+              {filtered.map(p => (
+                <tr key={p.sku || p.title} className="hover:bg-gray-800/40">
+                  <td className="px-4 py-2 whitespace-nowrap">
+                    <span className={`text-xs font-semibold px-2 py-0.5 rounded border ${categoryColor[p.category]}`}>
+                      {p.category}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2 font-mono text-blue-400 text-xs">{p.sku || "—"}</td>
+                  <td className="px-4 py-2 text-gray-300 text-xs max-w-md truncate" title={p.title}>{p.title}</td>
+                  <td className="px-4 py-2 text-right text-gray-400">{fmtN(p.unitsSold)}</td>
+                  <td className="px-4 py-2 text-gray-500 text-xs">{p.categoryReason}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="px-6 py-3 border-t border-gray-800 text-xs text-gray-500">
+          Showing {filtered.length} of {products.length} products. Press Esc to close.
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function CategoryTile({
   label, avg, shipments, selected, onClick,
 }: {
@@ -656,9 +771,11 @@ function CategoryTile({
 function StateBreakdownPanel({
   rows,
   national,
+  onReviewCategories,
 }: {
   rows: StateBreakdownRow[];
   national: CategoryBreakdown[];
+  onReviewCategories: () => void;
 }) {
   const [sortKey, setSortKey] = useState<"shipments" | "avgCost" | "totalCost">("shipments");
   const [filterCategory, setFilterCategory] = useState<Category | "All">("All");
@@ -709,7 +826,13 @@ function StateBreakdownPanel({
               Each order classified by its biggest item. Pick a category below to filter — click any state for full breakdown.
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
+            <button
+              onClick={onReviewCategories}
+              className="px-3 py-1.5 rounded-lg text-xs border bg-gray-800 border-gray-700 text-gray-300 hover:text-white hover:border-gray-600"
+            >
+              Review categories
+            </button>
             <SortBtn k="shipments" label="Most shipments" />
             <SortBtn k="avgCost" label="Highest avg" />
             <SortBtn k="totalCost" label="Most $ spent" />
@@ -968,6 +1091,7 @@ export default function ProductsPage() {
   const [uploading, setUploading] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [explaining, setExplaining] = useState<string | null>(null);
+  const [showCategoryAudit, setShowCategoryAudit] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -1218,7 +1342,11 @@ export default function ProductsPage() {
 
           {/* Shipping cost by destination state, with category breakdown */}
           {stateBreakdown.length > 0 && (
-            <StateBreakdownPanel rows={stateBreakdown} national={categoryNational} />
+            <StateBreakdownPanel
+              rows={stateBreakdown}
+              national={categoryNational}
+              onReviewCategories={() => setShowCategoryAudit(true)}
+            />
           )}
 
           {/* ZIP3 view (more granular — collapsed by default) */}
@@ -1349,6 +1477,9 @@ export default function ProductsPage() {
 
       {selected && <ProductDetailPanel product={selected} onClose={() => setSelected(null)} onExplain={setExplaining} />}
       {explaining && EX[explaining] && <ExplainerPopover ex={EX[explaining]} onClose={() => setExplaining(null)} />}
+      {showCategoryAudit && (
+        <CategoryAuditModal products={products} onClose={() => setShowCategoryAudit(false)} />
+      )}
     </div>
   );
 }

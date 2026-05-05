@@ -19,28 +19,44 @@ const HOOD_TITLE_KEYWORDS = ["range hood", "wall mount", "island", "under cabine
 // e.g. ".30", ".36", " 36", ".48" — sizes that almost always mean a full hood.
 const SIZE_SUFFIX = /\b(24|28|30|34|36|40|42|46|48|52|54|58|60|72)\b/;
 
+export interface Classification {
+  category: ProductCategory;
+  reason: string;
+}
+
 export function classifyProduct(sku: string, title: string): ProductCategory {
+  return classifyProductWithReason(sku, title).category;
+}
+
+export function classifyProductWithReason(sku: string, title: string): Classification {
   const s = (sku || "").toLowerCase();
   const t = (title || "").toLowerCase();
   const both = `${s} ${t}`;
 
-  // Parts win against most other tags — a "blower pack" is parts even if SKU
-  // starts with PLJL.
-  if (PARTS_KEYWORDS.some(k => both.includes(k)) && !INSERT_PATTERNS.some(p => p.test(both))) {
-    return "Parts";
+  const partsHit = PARTS_KEYWORDS.find(k => both.includes(k));
+  if (partsHit && !INSERT_PATTERNS.some(p => p.test(both))) {
+    return { category: "Parts", reason: `Title/SKU contains parts keyword "${partsHit}"` };
   }
 
-  if (BBQ_PATTERNS.some(p => p.test(both))) return "BBQ Hood";
-  if (INSERT_PATTERNS.some(p => p.test(both))) return "Insert";
+  const bbqHit = BBQ_PATTERNS.find(p => p.test(both));
+  if (bbqHit) return { category: "BBQ Hood", reason: `Matches BBQ pattern ${bbqHit.source}` };
 
-  const hasHoodPrefix = HOOD_SKU_PREFIXES.some(p => sku?.toUpperCase().startsWith(p));
-  const hasHoodKeyword = HOOD_TITLE_KEYWORDS.some(k => t.includes(k));
-  const hasSize = SIZE_SUFFIX.test(both);
+  const insHit = INSERT_PATTERNS.find(p => p.test(both));
+  if (insHit) return { category: "Insert", reason: `Matches insert pattern ${insHit.source}` };
 
-  if ((hasHoodPrefix || hasHoodKeyword) && hasSize) return "Range Hood";
-  if (hasHoodPrefix && !PARTS_KEYWORDS.some(k => both.includes(k))) return "Range Hood";
+  const hoodPrefix = HOOD_SKU_PREFIXES.find(p => sku?.toUpperCase().startsWith(p));
+  const hoodKeyword = HOOD_TITLE_KEYWORDS.find(k => t.includes(k));
+  const sizeHit = both.match(SIZE_SUFFIX);
 
-  return "Other";
+  if ((hoodPrefix || hoodKeyword) && sizeHit) {
+    const why = hoodPrefix ? `SKU prefix "${hoodPrefix}"` : `title contains "${hoodKeyword}"`;
+    return { category: "Range Hood", reason: `${why} + size suffix ${sizeHit[0]}` };
+  }
+  if (hoodPrefix) {
+    return { category: "Range Hood", reason: `SKU prefix "${hoodPrefix}" (no size detected)` };
+  }
+
+  return { category: "Other", reason: "No classification rule matched" };
 }
 
 // Ranking from heaviest/largest → smallest. We classify an order by the

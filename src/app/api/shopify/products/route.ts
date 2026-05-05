@@ -3,7 +3,7 @@ import { getOrdersWithRefundsInWindow } from "@/lib/shopify";
 import { getCOGS } from "@/lib/cogs";
 import { TARIFF_RATE } from "@/lib/constants";
 import { getShippingByOrder } from "@/lib/db";
-import { classifyOrder, CATEGORY_LIST, type ProductCategory } from "@/lib/categories";
+import { classifyOrder, classifyProductWithReason, CATEGORY_LIST, type ProductCategory } from "@/lib/categories";
 
 export async function GET(request: NextRequest) {
   try {
@@ -195,9 +195,12 @@ export async function GET(request: NextRequest) {
         }))
         .sort((a, b) => b.shipments - a.shipments)
         .slice(0, 10);
+      const classification = classifyProductWithReason(p.sku, p.title);
       return {
         title: p.title,
         sku: p.sku,
+        category: classification.category,
+        categoryReason: classification.reason,
         unitsSold: p.unitsSold,
         netUnits,
         grossRevenue: p.grossRevenue,
