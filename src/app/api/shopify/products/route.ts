@@ -33,6 +33,8 @@ export async function GET(request: NextRequest) {
       refundedRevenue: number;
       shippingCost: number;
       shippedUnits: number;
+      // Per-SKU zone aggregation: zip3 → { totalCost, shipments }
+      zoneAgg: Map<string, { totalCost: number; shipments: number }>;
       refundIncidents: RefundIncident[];
     }> = {};
 
@@ -58,6 +60,7 @@ export async function GET(request: NextRequest) {
         // quantity. SKUs in orders without a shipping record contribute 0.
         const orderShipping = shippingByOrder.get(order.name) ?? 0;
         const totalQty = order.line_items.reduce((s, it) => s + it.quantity, 0) || 1;
+        const zip3 = (order.shipping_address?.zip ?? "").substring(0, 3);
 
         for (const item of order.line_items) {
           const key = item.sku || item.title;
@@ -71,14 +74,22 @@ export async function GET(request: NextRequest) {
               refundedRevenue: 0,
               shippingCost: 0,
               shippedUnits: 0,
+              zoneAgg: new Map(),
               refundIncidents: [],
             };
           }
           skuMap[key].unitsSold += item.quantity;
           skuMap[key].grossRevenue += parseFloat(item.price) * item.quantity;
           if (orderShipping > 0) {
-            skuMap[key].shippingCost += orderShipping * (item.quantity / totalQty);
+            const allocated = orderShipping * (item.quantity / totalQty);
+            skuMap[key].shippingCost += allocated;
             skuMap[key].shippedUnits += item.quantity;
+            if (zip3.length === 3) {
+              const z = skuMap[key].zoneAgg.get(zip3) ?? { totalCost: 0, shipments: 0 };
+              z.totalCost += allocated;
+              z.shipments += item.quantity;
+              skuMap[key].zoneAgg.set(zip3, z);
+            }
           }
         }
       }
@@ -103,6 +114,7 @@ export async function GET(request: NextRequest) {
               refundedRevenue: 0,
               shippingCost: 0,
               shippedUnits: 0,
+              zoneAgg: new Map(),
               refundIncidents: [],
             };
           }
@@ -138,6 +150,15 @@ export async function GET(request: NextRequest) {
       const avgShippingPerUnit = p.shippedUnits > 0 ? p.shippingCost / p.shippedUnits : null;
       const trueProfit = grossProfit != null ? grossProfit - shippingCost : null;
       const trueMarginPct = trueProfit != null && netRevenue > 0 ? (trueProfit / netRevenue) * 100 : null;
+      const topZones = Array.from(p.zoneAgg.entries())
+        .map(([zip3, z]) => ({
+          zip3,
+          shipments: z.shipments,
+          totalCost: z.totalCost,
+          avgCost: z.shipments > 0 ? z.totalCost / z.shipments : 0,
+        }))
+        .sort((a, b) => b.shipments - a.shipments)
+        .slice(0, 10);
       return {
         title: p.title,
         sku: p.sku,
@@ -162,6 +183,7 @@ export async function GET(request: NextRequest) {
         shippedUnits: p.shippedUnits,
         trueProfit,
         trueMarginPct,
+        topZones,
         refundIncidents: p.refundIncidents.sort((a, b) => b.date.localeCompare(a.date)),
       };
     }).sort((a, b) => b.grossRevenue - a.grossRevenue);
