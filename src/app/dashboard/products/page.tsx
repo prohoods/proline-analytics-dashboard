@@ -33,6 +33,11 @@ interface Product {
   totalCOGS: number | null;            // landed × billable units (used for margin)
   grossProfit: number | null;
   grossMarginPct: number | null;
+  shippingCost: number;
+  avgShippingPerUnit: number | null;    // null when no shipping data found for any of this SKU's orders
+  shippedUnits: number;
+  trueProfit: number | null;            // grossProfit minus allocated shipping
+  trueMarginPct: number | null;         // trueProfit ÷ netRevenue
   refundIncidents: RefundIncident[];
 }
 
@@ -48,6 +53,11 @@ interface Summary {
   productCount: number;
   coveredProducts: number;
   tariffRate: number;
+  totalShipping: number;
+  totalTrueProfit: number;
+  trueMarginPct: number;
+  shippingCoveredOrders: number;
+  totalOrdersInWindow: number;
 }
 
 const fmt = (n: number) =>
@@ -57,7 +67,7 @@ const fmt2 = (n: number) =>
 const fmtN = (n: number) => new Intl.NumberFormat("en-US").format(n);
 const fmtPct = (n: number) => n.toFixed(1) + "%";
 
-type SortKey = "grossRevenue" | "netRevenue" | "unitsSold" | "refundRate" | "avgPrice" | "grossProfit" | "grossMarginPct" | "totalCOGS";
+type SortKey = "grossRevenue" | "netRevenue" | "unitsSold" | "refundRate" | "avgPrice" | "grossProfit" | "grossMarginPct" | "totalCOGS" | "avgShippingPerUnit" | "trueMarginPct";
 
 function MetricCard({ label, value, sub }: { label: string; value: React.ReactNode; sub?: string }) {
   return (
@@ -274,12 +284,15 @@ export default function ProductsPage() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [showNoCOGS, setShowNoCOGS] = useState(true);
   const [selected, setSelected] = useState<Product | null>(null);
+  const [uploadStatus, setUploadStatus] = useState<string>("");
+  const [uploading, setUploading] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     const { start, end } = getRange(rangeKey);
     setLoading(true);
     setError("");
-    fetch(`/api/shopify/products?start=${start}&end=${end}`)
+    fetch(`/api/shopify/products?start=${start}&end=${end}&_=${refreshKey}`)
       .then(r => r.json())
       .then(d => {
         if (d.error) throw new Error(d.error);
@@ -288,7 +301,28 @@ export default function ProductsPage() {
       })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
-  }, [rangeKey]);
+  }, [rangeKey, refreshKey]);
+
+  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    setUploadStatus("Uploading…");
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/shipping/upload", { method: "POST", body: fd });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || "Upload failed");
+      setUploadStatus(`Added ${data.inserted} new shipments (${data.skippedDuplicates} duplicates skipped). Total in DB: ${data.totalRowsInDb}`);
+      setRefreshKey(k => k + 1);
+    } catch (err) {
+      setUploadStatus(`Error: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+    }
+  }
 
   function handleSort(key: SortKey) {
     if (sortBy === key) setSortDir(d => d === "desc" ? "asc" : "desc");
@@ -335,6 +369,10 @@ export default function ProductsPage() {
       total_cogs_landed: p.totalCOGS != null ? p.totalCOGS.toFixed(2) : "",
       gross_profit: p.grossProfit != null ? p.grossProfit.toFixed(2) : "",
       gross_margin_pct: p.grossMarginPct != null ? fmtPct(p.grossMarginPct) : "",
+      avg_shipping_per_unit: p.avgShippingPerUnit != null ? p.avgShippingPerUnit.toFixed(2) : "",
+      total_shipping: p.shippingCost.toFixed(2),
+      true_profit: p.trueProfit != null ? p.trueProfit.toFixed(2) : "",
+      true_margin_pct: p.trueMarginPct != null ? fmtPct(p.trueMarginPct) : "",
     })), `product-profitability-${rangeKey}.csv`);
   }
 
@@ -349,12 +387,22 @@ export default function ProductsPage() {
           <p className="text-gray-400 text-sm mt-1">Revenue, COGS, and gross margin by SKU</p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
+          <label className={`px-3 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm rounded-lg transition-colors cursor-pointer ${uploading ? "opacity-50 pointer-events-none" : ""}`}>
+            {uploading ? "Uploading…" : "Upload REDO CSV"}
+            <input type="file" accept=".csv" onChange={handleUpload} disabled={uploading} className="hidden" />
+          </label>
           <button onClick={handleExport} className="px-3 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm rounded-lg transition-colors">
             Export CSV
           </button>
           <DateRangeDropdown value={rangeKey} onChange={setRangeKey} />
         </div>
       </div>
+
+      {uploadStatus && (
+        <div className={`text-sm rounded-lg px-4 py-2 ${uploadStatus.startsWith("Error") ? "bg-red-900/20 border border-red-800/40 text-red-300" : "bg-blue-900/20 border border-blue-800/40 text-blue-300"}`}>
+          {uploadStatus}
+        </div>
+      )}
 
       {error && <div className="text-red-400 bg-red-900/20 rounded-xl p-4 text-sm">{error}</div>}
 
@@ -426,6 +474,38 @@ export default function ProductsPage() {
             </div>
           </div>
 
+          {/* Shipping KPIs */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-gray-900 border border-orange-800/30 rounded-xl p-5">
+              <div className="text-xs text-orange-400 uppercase tracking-wide mb-1">Total Shipping Cost</div>
+              <div className="text-2xl font-bold text-orange-400">{fmt(summary.totalShipping)}</div>
+              <div className="text-xs text-gray-500 mt-1">
+                {summary.totalOrdersInWindow > 0
+                  ? `${summary.shippingCoveredOrders} / ${summary.totalOrdersInWindow} orders matched`
+                  : "No orders in window"}
+              </div>
+            </div>
+            <div className="bg-gray-900 border border-emerald-800/40 rounded-xl p-5">
+              <div className="text-xs text-emerald-400 uppercase tracking-wide mb-1">True Profit (after shipping)</div>
+              <div className="text-2xl font-bold text-emerald-400">{fmt(summary.totalTrueProfit)}</div>
+              <div className="text-xs text-gray-500 mt-1">Gross Profit − Shipping</div>
+            </div>
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+              <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">True Margin %</div>
+              <div className={`text-2xl font-bold ${summary.trueMarginPct >= 40 ? "text-green-400" : summary.trueMarginPct >= 25 ? "text-yellow-400" : "text-red-400"}`}>
+                {fmtPct(summary.trueMarginPct)}
+              </div>
+              <div className="text-xs text-gray-600 mt-1">Includes shipping</div>
+            </div>
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+              <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Avg Shipping / Order</div>
+              <div className="text-2xl font-bold text-white">
+                {summary.shippingCoveredOrders > 0 ? fmt2(summary.totalShipping / summary.shippingCoveredOrders) : "—"}
+              </div>
+              <div className="text-xs text-gray-500 mt-1">Across matched orders</div>
+            </div>
+          </div>
+
           {/* Controls */}
           <div className="flex flex-wrap gap-3 items-center">
             <input
@@ -458,12 +538,14 @@ export default function ProductsPage() {
                     <th className={`${th} text-right`} onClick={() => handleSort("totalCOGS")}>COGS <SortIcon k="totalCOGS" /></th>
                     <th className={`${th} text-right`} onClick={() => handleSort("grossProfit")}>Profit <SortIcon k="grossProfit" /></th>
                     <th className={`${th} text-right`} onClick={() => handleSort("grossMarginPct")}>Margin % <SortIcon k="grossMarginPct" /></th>
+                    <th className={`${th} text-right`} onClick={() => handleSort("avgShippingPerUnit")}>Ship/Unit <SortIcon k="avgShippingPerUnit" /></th>
+                    <th className={`${th} text-right`} onClick={() => handleSort("trueMarginPct")}>True Margin <SortIcon k="trueMarginPct" /></th>
                     <th className={`${th} text-right`} onClick={() => handleSort("refundRate")}>Refund Rate <SortIcon k="refundRate" /></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-800">
                   {filtered.length === 0 && (
-                    <tr><td colSpan={9} className="px-4 py-8 text-center text-gray-500">No products found.</td></tr>
+                    <tr><td colSpan={11} className="px-4 py-8 text-center text-gray-500">No products found.</td></tr>
                   )}
                   {filtered.map((p, i) => (
                     <tr
@@ -490,6 +572,12 @@ export default function ProductsPage() {
                       <td className="px-4 py-2.5 text-right">
                         <MarginBadge pct={p.grossMarginPct} />
                       </td>
+                      <td className="px-4 py-2.5 text-right text-orange-300/90">
+                        {p.avgShippingPerUnit != null ? fmt2(p.avgShippingPerUnit) : <span className="text-gray-600">—</span>}
+                      </td>
+                      <td className="px-4 py-2.5 text-right">
+                        <MarginBadge pct={p.trueMarginPct} />
+                      </td>
                       <td className="px-4 py-2.5 text-right">
                         <span className={`text-xs font-medium ${p.refundRate > 10 ? "text-red-400" : p.refundRate > 5 ? "text-yellow-400" : "text-gray-400"}`}>
                           {fmtPct(p.refundRate)}
@@ -512,6 +600,18 @@ export default function ProductsPage() {
                         const net = filtered.reduce((s, p) => s + p.netRevenue, 0);
                         const profit = filtered.reduce((s, p) => s + (p.grossProfit ?? 0), 0);
                         const pct = net > 0 ? (profit / net) * 100 : 0;
+                        return <MarginBadge pct={pct} />;
+                      })()}
+                    </td>
+                    <td className="px-4 py-3 text-right text-orange-300/90">
+                      {fmt(filtered.reduce((s, p) => s + p.shippingCost, 0))}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      {(() => {
+                        const net = filtered.reduce((s, p) => s + p.netRevenue, 0);
+                        const profit = filtered.reduce((s, p) => s + (p.grossProfit ?? 0), 0);
+                        const ship = filtered.reduce((s, p) => s + p.shippingCost, 0);
+                        const pct = net > 0 ? ((profit - ship) / net) * 100 : 0;
                         return <MarginBadge pct={pct} />;
                       })()}
                     </td>

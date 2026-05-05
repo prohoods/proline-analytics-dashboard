@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getOrdersWithRefundsInWindow } from "@/lib/shopify";
 import { getCOGS } from "@/lib/cogs";
 import { TARIFF_RATE } from "@/lib/constants";
+import { getShippingByOrder } from "@/lib/db";
 
 export async function GET(request: NextRequest) {
   try {
@@ -30,8 +31,19 @@ export async function GET(request: NextRequest) {
       grossRevenue: number;
       refundedUnits: number;
       refundedRevenue: number;
+      shippingCost: number;
+      shippedUnits: number;
       refundIncidents: RefundIncident[];
     }> = {};
+
+    // Pull shipping costs for every order in the window in one query.
+    const ordersInWindow = orders.filter(o => {
+      const d = o.created_at.substring(0, 10);
+      return d >= start && d <= end;
+    });
+    const shippingByOrder = await getShippingByOrder(
+      ordersInWindow.map(o => o.name)
+    );
 
     const orderInWindow = (order: typeof orders[number]) => {
       const d = order.created_at.substring(0, 10);
@@ -42,6 +54,11 @@ export async function GET(request: NextRequest) {
       // Sales aggregation: only count orders created in the window. Cross-window
       // orders only made it into the result set because of refund activity.
       if (orderInWindow(order)) {
+        // Allocate this order's shipping cost across its SKUs proportional to
+        // quantity. SKUs in orders without a shipping record contribute 0.
+        const orderShipping = shippingByOrder.get(order.name) ?? 0;
+        const totalQty = order.line_items.reduce((s, it) => s + it.quantity, 0) || 1;
+
         for (const item of order.line_items) {
           const key = item.sku || item.title;
           if (!skuMap[key]) {
@@ -52,11 +69,17 @@ export async function GET(request: NextRequest) {
               grossRevenue: 0,
               refundedUnits: 0,
               refundedRevenue: 0,
+              shippingCost: 0,
+              shippedUnits: 0,
               refundIncidents: [],
             };
           }
           skuMap[key].unitsSold += item.quantity;
           skuMap[key].grossRevenue += parseFloat(item.price) * item.quantity;
+          if (orderShipping > 0) {
+            skuMap[key].shippingCost += orderShipping * (item.quantity / totalQty);
+            skuMap[key].shippedUnits += item.quantity;
+          }
         }
       }
 
@@ -78,6 +101,8 @@ export async function GET(request: NextRequest) {
               grossRevenue: 0,
               refundedUnits: 0,
               refundedRevenue: 0,
+              shippingCost: 0,
+              shippedUnits: 0,
               refundIncidents: [],
             };
           }
@@ -109,6 +134,10 @@ export async function GET(request: NextRequest) {
       const totalCOGS = landedCostPerUnit != null ? landedCostPerUnit * billableUnits : null;
       const grossProfit = totalCOGS != null ? netRevenue - totalCOGS : null;
       const grossMarginPct = grossProfit != null && netRevenue > 0 ? (grossProfit / netRevenue) * 100 : null;
+      const shippingCost = p.shippingCost;
+      const avgShippingPerUnit = p.shippedUnits > 0 ? p.shippingCost / p.shippedUnits : null;
+      const trueProfit = grossProfit != null ? grossProfit - shippingCost : null;
+      const trueMarginPct = trueProfit != null && netRevenue > 0 ? (trueProfit / netRevenue) * 100 : null;
       return {
         title: p.title,
         sku: p.sku,
@@ -128,6 +157,11 @@ export async function GET(request: NextRequest) {
         totalCOGS,
         grossProfit,
         grossMarginPct,
+        shippingCost,
+        avgShippingPerUnit,
+        shippedUnits: p.shippedUnits,
+        trueProfit,
+        trueMarginPct,
         refundIncidents: p.refundIncidents.sort((a, b) => b.date.localeCompare(a.date)),
       };
     }).sort((a, b) => b.grossRevenue - a.grossRevenue);
@@ -139,6 +173,9 @@ export async function GET(request: NextRequest) {
     const totalTariff = products.reduce((s, p) => s + (p.totalTariff ?? 0), 0);
     const totalCOGS = products.reduce((s, p) => s + (p.totalCOGS ?? 0), 0);
     const totalProfit = products.reduce((s, p) => s + (p.grossProfit ?? 0), 0);
+    const totalShipping = products.reduce((s, p) => s + (p.shippingCost ?? 0), 0);
+    const totalTrueProfit = totalProfit - totalShipping;
+    const shippingCoveredOrders = shippingByOrder.size;
     const coveredProducts = products.filter(p => p.costPerUnit != null).length;
 
     return NextResponse.json({
@@ -155,6 +192,11 @@ export async function GET(request: NextRequest) {
         productCount: products.length,
         coveredProducts,
         tariffRate: TARIFF_RATE,
+        totalShipping,
+        totalTrueProfit,
+        trueMarginPct: totalNet > 0 ? (totalTrueProfit / totalNet) * 100 : 0,
+        shippingCoveredOrders,
+        totalOrdersInWindow: ordersInWindow.length,
       },
     }, {
       headers: { "Cache-Control": "public, s-maxage=900, stale-while-revalidate=60" },

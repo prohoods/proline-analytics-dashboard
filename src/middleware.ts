@@ -13,6 +13,7 @@ export function middleware(request: NextRequest) {
     pathname.startsWith("/api/auth") ||
     pathname.startsWith("/api/finance") ||
     pathname.startsWith("/api/shopify-shl") ||
+    pathname.startsWith("/api/shipping") ||
     pathname.startsWith("/api/debug") ||
     pathname.startsWith("/api/shopify/debug-refunds") ||
     pathname.startsWith("/api/google-ads/debug")
