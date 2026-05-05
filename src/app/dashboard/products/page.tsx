@@ -622,6 +622,33 @@ function MarginBadge({ pct }: { pct: number | null }) {
   return <span className={`font-semibold ${color}`}>{fmtPct(pct)}</span>;
 }
 
+// One tile in the category-filter row at the top of the state breakdown.
+// Selected tile highlights blue; clicking sets the category filter.
+function CategoryTile({
+  label, avg, shipments, selected, onClick,
+}: {
+  label: string;
+  avg: number;
+  shipments: number;
+  selected: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`text-left p-3 rounded-lg border transition-colors ${
+        selected
+          ? "bg-blue-600/15 border-blue-500/50 ring-1 ring-blue-500/40"
+          : "bg-gray-900 border-gray-800 hover:border-gray-700 hover:bg-gray-800/40"
+      }`}
+    >
+      <div className={`text-[11px] uppercase tracking-wide ${selected ? "text-blue-300" : "text-gray-500"}`}>{label}</div>
+      <div className={`text-lg font-bold mt-0.5 ${selected ? "text-white" : "text-gray-200"}`}>{fmt2(avg)}</div>
+      <div className="text-[11px] text-gray-600 mt-0.5">{fmtN(shipments)} shipments</div>
+    </button>
+  );
+}
+
 // Per-state shipping panel with category breakdown. The user's question:
 // "what does it cost to ship a range hood to TX vs parts to TX" — answered
 // here by classifying each order by its biggest item and aggregating by
@@ -653,9 +680,6 @@ function StateBreakdownPanel({
   const totalCost = visibleRows.reduce((s, r) => s + r.totalCost, 0);
   const overallAvg = totalShipments > 0 ? totalCost / totalShipments : 0;
 
-  const cheapest = [...visibleRows].filter(r => r.shipments >= 3).sort((a, b) => a.avgCost - b.avgCost)[0];
-  const priciest = [...visibleRows].filter(r => r.shipments >= 3).sort((a, b) => b.avgCost - a.avgCost)[0];
-
   const SortBtn = ({ k, label }: { k: typeof sortKey; label: string }) => (
     <button
       onClick={() => setSortKey(k)}
@@ -665,79 +689,55 @@ function StateBreakdownPanel({
     </button>
   );
 
-  const CategoryPill = ({ c }: { c: Category | "All" }) => (
-    <button
-      onClick={() => setFilterCategory(c)}
-      className={`px-3 py-1.5 rounded-lg text-xs transition-colors border ${filterCategory === c ? "bg-purple-600/20 border-purple-600/40 text-purple-300" : "bg-gray-800 border-gray-700 text-gray-400 hover:text-gray-200"}`}
-    >
-      {c}
-    </button>
-  );
+  // Average benchmark used for the "vs Avg" column. When filtered to a
+  // category, we compare each state's avg to that category's national avg.
+  // When viewing "All", we compare to the overall mean.
+  const avgLabel = filterCategory === "All" ? "national average" : `national avg for ${filterCategory.toLowerCase()}`;
 
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-      <div className="px-5 py-4 border-b border-gray-800 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <div className="text-sm font-semibold text-white">Shipping cost by state · category breakdown</div>
-          <div className="text-xs text-gray-500 mt-0.5">
-            Each order is classified by its biggest item — shipping a range hood costs 5–10× more than shipping parts. Click a state to see all categories.
+      <div className="px-5 py-4 border-b border-gray-800">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <div className="text-sm font-semibold text-white">Shipping cost by state</div>
+              <span className="text-[10px] uppercase tracking-wide bg-amber-500/15 text-amber-300 border border-amber-500/30 rounded px-1.5 py-0.5">
+                Ground shipping only
+              </span>
+            </div>
+            <div className="text-xs text-gray-500 mt-1">
+              Each order classified by its biggest item. Pick a category below to filter — click any state for full breakdown.
+            </div>
           </div>
-        </div>
-        <div className="flex gap-2 flex-wrap">
-          <SortBtn k="shipments" label="Most shipments" />
-          <SortBtn k="avgCost" label="Highest avg" />
-          <SortBtn k="totalCost" label="Most $ spent" />
+          <div className="flex gap-2">
+            <SortBtn k="shipments" label="Most shipments" />
+            <SortBtn k="avgCost" label="Highest avg" />
+            <SortBtn k="totalCost" label="Most $ spent" />
+          </div>
         </div>
       </div>
 
-      <div className="px-5 py-3 border-b border-gray-800 flex flex-wrap gap-2 items-center">
-        <span className="text-xs text-gray-500 uppercase tracking-wide mr-1">Filter:</span>
-        <CategoryPill c="All" />
-        {(["Range Hood", "BBQ Hood", "Insert", "Parts", "Other"] as const).map(c => {
-          const nat = national.find(n => n.category === c);
-          if (!nat || nat.shipments === 0) return null;
-          return <CategoryPill key={c} c={c} />;
-        })}
-      </div>
-
-      {/* National per-category averages — gives context for state numbers */}
-      {filterCategory === "All" && (
-        <div className="px-5 py-3 border-b border-gray-800 bg-gray-950/50">
-          <div className="text-xs text-gray-500 uppercase tracking-wide mb-2">National average per shipment, by category</div>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-            {national.filter(c => c.shipments > 0).map(c => (
-              <div key={c.category} className="bg-gray-900 border border-gray-800 rounded-lg p-3">
-                <div className="text-xs text-gray-500">{c.category}</div>
-                <div className="text-lg font-bold text-white mt-1">{fmt2(c.avgCost)}</div>
-                <div className="text-xs text-gray-600 mt-0.5">{fmtN(c.shipments)} shipments</div>
-              </div>
-            ))}
-          </div>
+      {/* Category tiles double as filter — click to focus the table on one category */}
+      <div className="px-5 py-4 border-b border-gray-800 bg-gray-950/40">
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
+          <CategoryTile
+            label="All categories"
+            avg={national.reduce((s, c) => s + c.totalCost, 0) / Math.max(1, national.reduce((s, c) => s + c.shipments, 0))}
+            shipments={national.reduce((s, c) => s + c.shipments, 0)}
+            selected={filterCategory === "All"}
+            onClick={() => setFilterCategory("All")}
+          />
+          {national.filter(c => c.shipments > 0).map(c => (
+            <CategoryTile
+              key={c.category}
+              label={c.category}
+              avg={c.avgCost}
+              shipments={c.shipments}
+              selected={filterCategory === c.category}
+              onClick={() => setFilterCategory(c.category)}
+            />
+          ))}
         </div>
-      )}
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-px bg-gray-800">
-        <div className="bg-gray-900 p-4">
-          <div className="text-xs text-gray-500 uppercase tracking-wide">
-            {filterCategory === "All" ? "Overall avg / shipment" : `Avg / ${filterCategory.toLowerCase()} shipment`}
-          </div>
-          <div className="text-2xl font-bold text-white mt-1">{fmt2(overallAvg)}</div>
-          <div className="text-xs text-gray-600 mt-1">{fmtN(totalShipments)} shipments · {visibleRows.length} states</div>
-        </div>
-        {cheapest && (
-          <div className="bg-gray-900 p-4">
-            <div className="text-xs text-gray-500 uppercase tracking-wide">Cheapest state</div>
-            <div className="text-2xl font-bold text-emerald-400 mt-1">{fmt2(cheapest.avgCost)}</div>
-            <div className="text-xs text-gray-600 mt-1 font-mono">{cheapest.state} · {fmtN(cheapest.shipments)} shipments</div>
-          </div>
-        )}
-        {priciest && (
-          <div className="bg-gray-900 p-4">
-            <div className="text-xs text-gray-500 uppercase tracking-wide">Priciest state</div>
-            <div className="text-2xl font-bold text-rose-400 mt-1">{fmt2(priciest.avgCost)}</div>
-            <div className="text-xs text-gray-600 mt-1 font-mono">{priciest.state} · {fmtN(priciest.shipments)} shipments</div>
-          </div>
-        )}
       </div>
 
       <div className="overflow-x-auto">
@@ -746,8 +746,13 @@ function StateBreakdownPanel({
             <tr>
               <th className="px-4 py-2 text-left text-xs text-gray-500 uppercase tracking-wide font-semibold">State</th>
               <th className="px-4 py-2 text-right text-xs text-gray-500 uppercase tracking-wide font-semibold">Shipments</th>
-              <th className="px-4 py-2 text-right text-xs text-gray-500 uppercase tracking-wide font-semibold">Avg Cost</th>
-              <th className="px-4 py-2 text-right text-xs text-gray-500 uppercase tracking-wide font-semibold">vs National</th>
+              <th className="px-4 py-2 text-right text-xs text-gray-500 uppercase tracking-wide font-semibold">Avg / Shipment</th>
+              <th
+                className="px-4 py-2 text-right text-xs text-gray-500 uppercase tracking-wide font-semibold"
+                title={`How much pricier or cheaper this state is vs the ${avgLabel} (${fmt2(overallAvg)}). +15% means orders to this state cost 15% more on average.`}
+              >
+                vs Avg <span className="text-gray-700 normal-case lowercase">({fmt2(overallAvg)})</span>
+              </th>
               <th className="px-4 py-2 text-right text-xs text-gray-500 uppercase tracking-wide font-semibold">Total Spent</th>
               <th className="px-4 py-2 text-right text-xs text-gray-500 uppercase tracking-wide font-semibold w-12"></th>
             </tr>
@@ -785,8 +790,11 @@ function StateBreakdownPanel({
                                 <div className="text-lg font-bold text-white mt-1">{fmt2(c.avgCost)}</div>
                                 <div className="text-xs text-gray-600 mt-0.5">{fmtN(c.shipments)} shipments · {fmt(c.totalCost)}</div>
                                 {nat && nat.shipments > 0 && (
-                                  <div className={`text-xs mt-1 ${natColor}`}>
-                                    {natDelta > 0 ? "+" : ""}{natDelta.toFixed(0)}% vs national
+                                  <div
+                                    className={`text-xs mt-1 ${natColor}`}
+                                    title={`National avg for ${c.category.toLowerCase()} shipments: ${fmt2(nat.avgCost)}`}
+                                  >
+                                    {natDelta > 0 ? "+" : ""}{natDelta.toFixed(0)}% vs nat. avg
                                   </div>
                                 )}
                               </div>
