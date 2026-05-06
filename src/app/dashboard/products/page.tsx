@@ -1,10 +1,14 @@
 "use client";
 
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import DateRangeDropdown from "@/components/DateRangeDropdown";
 import { RangeKey, getRange } from "@/lib/date-ranges";
 import { KPISkeleton, TableSkeleton } from "@/components/Skeleton";
 import { exportToCSV } from "@/lib/export-csv";
+import { USShippingMap, type MapStateData } from "@/components/USShippingMap";
+import { ShippingProjections, useShippingProjections } from "@/components/ShippingProjections";
+import { COGS } from "@/lib/cogs";
+import { TARIFF_RATE } from "@/lib/constants";
 
 interface RefundIncident {
   orderName: string;
@@ -863,6 +867,16 @@ function StateBreakdownPanel({
         </div>
       </div>
 
+      {/* US choropleth — colored by avg shipping cost (or shipments) for the
+          currently-selected category filter. Categorical color scale clamped
+          to the 5–95 percentile so a single outlier doesn't wash out the map. */}
+      <div className="px-5 py-4 border-b border-gray-800">
+        <USShippingMap
+          data={visibleRows.map(r => ({ state: r.state, avgCost: r.avgCost, shipments: r.shipments })) as MapStateData[]}
+          metric={sortKey === "shipments" ? "shipments" : "avgCost"}
+        />
+      </div>
+
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-gray-900 border-b border-gray-800">
@@ -1092,6 +1106,18 @@ export default function ProductsPage() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [explaining, setExplaining] = useState<string | null>(null);
   const [showCategoryAudit, setShowCategoryAudit] = useState(false);
+  const projections = useShippingProjections();
+
+  // Landed COGS (base + tariff) per SKU — used by the per-product calculator
+  // to compute true margin after shipping. Computed once from the static map.
+  const cogsLanded = useMemo<Record<string, number | null>>(() => {
+    const out: Record<string, number | null> = {};
+    for (const sku in COGS) {
+      const base = COGS[sku];
+      out[sku] = base != null ? base * (1 + TARIFF_RATE) : null;
+    }
+    return out;
+  }, []);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -1347,6 +1373,11 @@ export default function ProductsPage() {
               national={categoryNational}
               onReviewCategories={() => setShowCategoryAudit(true)}
             />
+          )}
+
+          {/* Trailing-30-day projections — separate from page date range */}
+          {projections.data && (
+            <ShippingProjections data={projections.data} cogsBySku={cogsLanded} />
           )}
 
           {/* ZIP3 view (more granular — collapsed by default) */}
