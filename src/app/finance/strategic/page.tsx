@@ -78,7 +78,7 @@ export default function StrategicPage() {
   const readinessScore = Math.round(Object.values(readinessScores).reduce((s, v) => s + v, 0) / Object.keys(readinessScores).length);
 
   return (
-    <div className="p-6 space-y-6 max-w-6xl">
+    <div className="p-6 space-y-6">
       {/* Header */}
       <div className="flex items-center gap-3">
         <div className="w-10 h-10 rounded-xl bg-emerald-900/40 border border-emerald-800/40 flex items-center justify-center text-xl">🎯</div>

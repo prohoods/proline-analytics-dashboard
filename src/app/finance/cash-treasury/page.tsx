@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { statements, monthRevenue, monthNetExpenses, q1 } from "@/lib/financial-data";
 import CategoryDrillDown from "@/components/CategoryDrillDown";
+import InfoTooltip from "@/components/InfoTooltip";
 
 function fmt(n: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n);
@@ -52,7 +53,14 @@ export default function CashTreasuryPage() {
           💰
         </div>
         <div>
-          <h1 className="text-2xl font-bold text-white">Cash &amp; Treasury</h1>
+          <div className="flex items-center">
+            <h1 className="text-2xl font-bold text-white">Cash &amp; Treasury</h1>
+            <InfoTooltip title="Cash &amp; Treasury">
+              <p className="mb-2">This page is the answer to a CFO&apos;s most basic question: <strong>how much cash do we have, and how long will it last?</strong></p>
+              <p className="mb-2"><strong>Current Cash</strong> is the combined balance across known KeyBank accounts. <strong>Net Cash Flow</strong> is revenue minus expenses for the quarter — positive means we&apos;re generating cash, negative means we&apos;re burning it. <strong>Runway</strong> = current cash ÷ average monthly burn — how many months we can keep operating without new revenue.</p>
+              <p>Why it matters: cash is the only thing that can&apos;t be faked. This is the page you check first thing every Monday.</p>
+            </InfoTooltip>
+          </div>
           <p className="text-gray-500 text-sm mt-0.5">Bank balances, cash flow trajectory, and runway — Q1 2026</p>
         </div>
       </div>

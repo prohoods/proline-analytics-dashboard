@@ -11,6 +11,7 @@ import {
   CATEGORY_TEXT,
 } from "@/lib/financial-data";
 import CategoryDrillDown from "@/components/CategoryDrillDown";
+import InfoTooltip from "@/components/InfoTooltip";
 import {
   LineChart,
   Line,
@@ -66,14 +67,21 @@ export default function OperationalPage() {
   });
 
   return (
-    <div className="p-6 space-y-6 max-w-6xl">
+    <div className="p-6 space-y-6">
       <CategoryDrillDown category={drillCategory} onClose={() => setDrillCategory(null)} />
 
       {/* Header */}
       <div className="flex items-center gap-3">
         <div className="w-10 h-10 rounded-xl bg-emerald-900/40 border border-emerald-800/40 flex items-center justify-center text-xl">⚙️</div>
         <div>
-          <h1 className="text-2xl font-bold text-white">Operational Performance</h1>
+          <div className="flex items-center">
+            <h1 className="text-2xl font-bold text-white">Operational Performance</h1>
+            <InfoTooltip title="Operational Performance">
+              <p className="mb-2">This page measures how efficiently the business turns revenue into profit — the core CFO question of &quot;for every $1 we sell, where does it go?&quot;</p>
+              <p className="mb-2"><strong>Gross margin</strong> = revenue minus cost of goods (factory + import + freight). What&apos;s left to cover everything else. <strong>Marketing/Revenue</strong>, <strong>Freight/Revenue</strong>, <strong>Payroll/Revenue</strong> are cost ratios — each shown as a percentage of sales so you can see if any line is creeping up over time.</p>
+              <p>Why it matters: revenue can grow while margin shrinks. These ratios catch that early.</p>
+            </InfoTooltip>
+          </div>
           <p className="text-gray-500 text-sm mt-0.5">Q1 2026 cost ratios and operational KPIs</p>
         </div>
       </div>

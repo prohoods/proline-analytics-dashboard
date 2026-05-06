@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { statements, q1, sumCategory } from "@/lib/financial-data";
+import InfoTooltip from "@/components/InfoTooltip";
 import {
   LineChart,
   Line,
@@ -101,12 +102,19 @@ export default function PlanningPage() {
   const totalNet = endingCash - startingCash;
 
   return (
-    <div className="p-6 space-y-6 max-w-6xl">
+    <div className="p-6 space-y-6">
       {/* Header */}
       <div className="flex items-center gap-3">
         <div className="w-10 h-10 rounded-xl bg-emerald-900/40 border border-emerald-800/40 flex items-center justify-center text-xl">📈</div>
         <div>
-          <h1 className="text-2xl font-bold text-white">Planning &amp; Forecasting</h1>
+          <div className="flex items-center">
+            <h1 className="text-2xl font-bold text-white">Planning &amp; Forecasting</h1>
+            <InfoTooltip title="Planning &amp; Forecasting">
+              <p className="mb-2">This is a <strong>13-week cash forecast</strong> — a CFO&apos;s tool to project cash position week by week and stress-test decisions before making them.</p>
+              <p className="mb-2">The model starts from the current bank balance and walks forward, applying Q1 averages for revenue, COGS, marketing, and fixed costs. The sliders let you change the assumptions — &quot;what if revenue grows 10%?&quot; or &quot;what if we hire 2 people?&quot; — and the chart re-projects.</p>
+              <p>Why it matters: this is how you find the lowest cash point in the next quarter <em>before</em> you get there, and decide if you can afford a hire, a marketing push, or an inventory order.</p>
+            </InfoTooltip>
+          </div>
           <p className="text-gray-500 text-sm mt-0.5">13-week rolling cash forecast — adjust assumptions below to see impact</p>
         </div>
       </div>

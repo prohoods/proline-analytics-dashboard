@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { statements, sumByCategory, totalByCategory, q1, CATEGORY_COLORS, CATEGORY_TEXT, monthRevenue, monthNetExpenses } from "@/lib/financial-data";
 import CategoryDrillDown from "@/components/CategoryDrillDown";
 import InfoTooltip from "@/components/InfoTooltip";
@@ -22,61 +22,6 @@ function fmt(n: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n);
 }
 
-function AISummary() {
-  const [summary, setSummary] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [generatedAt, setGeneratedAt] = useState("");
-
-  useEffect(() => {
-    fetch("/api/finance/summary")
-      .then(r => r.json())
-      .then(d => {
-        if (d.error) { setError(d.error); }
-        else { setSummary(d.summary); setGeneratedAt(d.generatedAt); }
-        setLoading(false);
-      })
-      .catch(() => { setError("Failed to load summary"); setLoading(false); });
-  }, []);
-
-  return (
-    <div className="bg-gray-900 border border-emerald-900/40 rounded-xl p-5">
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded-md bg-emerald-800/60 flex items-center justify-center">
-            <svg className="w-3.5 h-3.5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m1.636-6.364l.707.707M12 20v1M7.05 17.95l-.707.707M17.95 17.95l.707.707" />
-            </svg>
-          </div>
-          <span className="text-sm font-semibold text-white">AI Financial Summary</span>
-          <span className="text-xs text-gray-600">· Q1 2026</span>
-        </div>
-        {generatedAt && (
-          <span className="text-xs text-gray-600">
-            Generated {new Date(generatedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
-          </span>
-        )}
-      </div>
-
-      {loading && (
-        <div className="space-y-2">
-          <div className="h-4 bg-gray-800 rounded animate-pulse w-full" />
-          <div className="h-4 bg-gray-800 rounded animate-pulse w-5/6" />
-          <div className="h-4 bg-gray-800 rounded animate-pulse w-4/5" />
-          <div className="h-4 bg-gray-800 rounded animate-pulse w-3/4" />
-        </div>
-      )}
-
-      {error && !loading && (
-        <p className="text-xs text-red-400">Could not generate summary: {error}</p>
-      )}
-
-      {summary && !loading && (
-        <p className="text-sm text-gray-300 leading-relaxed">{summary}</p>
-      )}
-    </div>
-  );
-}
 function fmtK(n: number) {
   const sign = n < 0 ? "-" : "+";
   return sign + "$" + (Math.abs(n) / 1000).toFixed(0) + "K";
@@ -113,13 +58,16 @@ export default function CFOOverview() {
       <CategoryDrillDown category={drillCategory} onClose={() => setDrillCategory(null)} />
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-white">Financial Overview</h1>
-
+        <div className="flex items-center">
+          <h1 className="text-2xl font-bold text-white">Financial Overview</h1>
+          <InfoTooltip title="Financial Overview">
+            <p className="mb-2">This is the <strong>top-level snapshot</strong> of where the company stands financially this quarter — the page a CFO opens first.</p>
+            <p className="mb-2"><strong>Revenue</strong> = cash deposits into the operating account. <strong>Expenses</strong> = every dollar that left either KeyBank account, excluding internal transfers between our own accounts (which aren&apos;t real spend). <strong>Net Cash Flow</strong> tells you whether the business made or burned cash this quarter.</p>
+            <p>Below the KPIs you&apos;ll see month-by-month trends and where the money is going by category. Click any category to drill into the underlying transactions.</p>
+          </InfoTooltip>
+        </div>
         <p className="text-gray-400 text-sm mt-1">Q1 2026 — Account …0115 (operating) + Account …2285 (payroll/expense), inter-account transfers excluded</p>
       </div>
-
-      {/* AI Summary */}
-      <AISummary />
 
       {/* Q1 KPI cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

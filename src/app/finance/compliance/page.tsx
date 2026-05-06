@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { statements, sumCategory, q1 } from "@/lib/financial-data";
 import CategoryDrillDown from "@/components/CategoryDrillDown";
+import InfoTooltip from "@/components/InfoTooltip";
 
 function fmt(n: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n);
@@ -47,14 +48,21 @@ export default function CompliancePage() {
   };
 
   return (
-    <div className="p-6 space-y-6 max-w-6xl">
+    <div className="p-6 space-y-6">
       <CategoryDrillDown category={drillCategory} onClose={() => setDrillCategory(null)} />
 
       {/* Header */}
       <div className="flex items-center gap-3">
         <div className="w-10 h-10 rounded-xl bg-emerald-900/40 border border-emerald-800/40 flex items-center justify-center text-xl">⚖️</div>
         <div>
-          <h1 className="text-2xl font-bold text-white">Regulatory &amp; Compliance</h1>
+          <div className="flex items-center">
+            <h1 className="text-2xl font-bold text-white">Regulatory &amp; Compliance</h1>
+            <InfoTooltip title="Regulatory &amp; Compliance">
+              <p className="mb-2">This page tracks every tax filing and government obligation the company has — what we owe, what&apos;s been filed, and what&apos;s coming due.</p>
+              <p className="mb-2"><strong>Sales tax</strong> is collected from customers in all 50 states and remitted monthly through Avalara. <strong>Federal &amp; state income tax</strong> (Form 1120, Utah TC-20) are annual. <strong>Payroll taxes</strong> (Form 941, Utah unemployment) are quarterly.</p>
+              <p>Why it matters: missed filings trigger penalties and interest. This is the page a CFO uses to make sure nothing slips.</p>
+            </InfoTooltip>
+          </div>
           <p className="text-gray-500 text-sm mt-0.5">Tax filings, sales tax obligations, and compliance calendar</p>
         </div>
       </div>

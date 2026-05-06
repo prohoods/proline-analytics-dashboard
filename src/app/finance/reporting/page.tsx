@@ -12,6 +12,7 @@ import {
   type PLGroupKey,
 } from "@/lib/financial-data";
 import CategoryDrillDown from "@/components/CategoryDrillDown";
+import InfoTooltip from "@/components/InfoTooltip";
 
 function fmt(n: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n);
@@ -64,7 +65,7 @@ export default function FinancialReportingPage() {
   const netMargin = revenue === 0 ? 0 : (netIncome / revenue) * 100;
 
   return (
-    <div className="p-6 space-y-6 max-w-6xl">
+    <div className="p-6 space-y-6">
       <CategoryDrillDown category={drillCategory} month={activeMonth} onClose={() => setDrillCategory(null)} />
 
       {/* Header */}
@@ -72,7 +73,14 @@ export default function FinancialReportingPage() {
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-emerald-900/40 border border-emerald-800/40 flex items-center justify-center text-xl">📊</div>
           <div>
-            <h1 className="text-2xl font-bold text-white">Financial Reporting</h1>
+            <div className="flex items-center">
+              <h1 className="text-2xl font-bold text-white">Financial Reporting</h1>
+              <InfoTooltip title="Financial Reporting">
+                <p className="mb-2">This is the company&apos;s <strong>Profit &amp; Loss statement</strong> — the standard CFO/board view of how the business performed in a period.</p>
+                <p className="mb-2">It&apos;s organized top-down: <strong>Revenue → COGS → Gross Profit → OpEx → Operating Income → Net Income</strong>. Each layer subtracts a category of cost so you can see exactly where money is going. Toggle between MTD (month), QTD (quarter), or YTD (year-to-date).</p>
+                <p>This is <em>cash-basis</em> — built from actual bank movements, not invoices. So &quot;revenue&quot; means cash received, not orders booked.</p>
+              </InfoTooltip>
+            </div>
             <p className="text-gray-500 text-sm mt-0.5">Cash-basis P&amp;L — {periodLabel}</p>
           </div>
         </div>

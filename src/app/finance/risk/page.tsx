@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { statements, q1 } from "@/lib/financial-data";
 import CategoryDrillDown from "@/components/CategoryDrillDown";
+import InfoTooltip from "@/components/InfoTooltip";
 
 function fmt(n: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n);
@@ -82,14 +83,22 @@ export default function RiskPage() {
     .slice(0, 10);
 
   return (
-    <div className="p-6 space-y-6 max-w-6xl">
+    <div className="p-6 space-y-6">
       <CategoryDrillDown category={drillCategory} onClose={() => setDrillCategory(null)} />
 
       {/* Header */}
       <div className="flex items-center gap-3">
         <div className="w-10 h-10 rounded-xl bg-emerald-900/40 border border-emerald-800/40 flex items-center justify-center text-xl">🛡️</div>
         <div>
-          <h1 className="text-2xl font-bold text-white">Risk &amp; Controls</h1>
+          <div className="flex items-center">
+            <h1 className="text-2xl font-bold text-white">Risk &amp; Controls</h1>
+            <InfoTooltip title="Risk &amp; Controls">
+              <p className="mb-2">This page surfaces where the business is most exposed financially — and whether anything looks unusual.</p>
+              <p className="mb-2"><strong>Concentration risk</strong> = how much of our Q1 spend went to a small number of vendors. If one vendor goes down (factory delay, billing dispute), how much of the business is affected?</p>
+              <p className="mb-2"><strong>Anomaly detection</strong> = transactions that are far above or below their category&apos;s typical range. Useful for catching duplicate payments, fraud, or one-off spikes that need an explanation.</p>
+              <p>Why it matters: knowing where you&apos;re concentrated and what looks off is the foundation of operating discipline.</p>
+            </InfoTooltip>
+          </div>
           <p className="text-gray-500 text-sm mt-0.5">Concentration risk, anomaly detection, and internal controls — Q1 2026</p>
         </div>
       </div>
