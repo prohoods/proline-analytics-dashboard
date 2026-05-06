@@ -1,9 +1,10 @@
 // Classifies a Shopify line item into a shipping-cost-relevant category.
 // Why categories: shipping a 60lb range hood costs vastly more than shipping
-// a 1lb replacement filter. Lumping them into a single "avg per shipment"
-// hides what's actually expensive. Categorization is title/SKU-driven —
-// COGS coverage is incomplete, so we can't rely on it.
-export type ProductCategory = "Range Hood" | "Insert" | "BBQ Hood" | "Parts" | "Other";
+// a 1lb replacement filter. Lumping them into a single avg hides what's
+// actually expensive. Inserts and BBQ hoods roll up into Range Hood — they
+// ship at similar weight/dim profile, so for shipping-cost analysis they're
+// the same animal.
+export type ProductCategory = "Range Hood" | "Parts" | "Other";
 
 const PARTS_KEYWORDS = [
   "blower", "filter", "remote", "bulb", "charcoal", "grease",
@@ -39,10 +40,10 @@ export function classifyProductWithReason(sku: string, title: string): Classific
   }
 
   const bbqHit = BBQ_PATTERNS.find(p => p.test(both));
-  if (bbqHit) return { category: "BBQ Hood", reason: `Matches BBQ pattern ${bbqHit.source}` };
+  if (bbqHit) return { category: "Range Hood", reason: `BBQ/outdoor hood (matches ${bbqHit.source}) — rolls up to Range Hood` };
 
   const insHit = INSERT_PATTERNS.find(p => p.test(both));
-  if (insHit) return { category: "Insert", reason: `Matches insert pattern ${insHit.source}` };
+  if (insHit) return { category: "Range Hood", reason: `Insert (matches ${insHit.source}) — rolls up to Range Hood` };
 
   const hoodPrefix = HOOD_SKU_PREFIXES.find(p => sku?.toUpperCase().startsWith(p));
   const hoodKeyword = HOOD_TITLE_KEYWORDS.find(k => t.includes(k));
@@ -63,9 +64,7 @@ export function classifyProductWithReason(sku: string, title: string): Classific
 // "biggest" item it contains because shipping cost is dominated by the
 // largest piece in the box.
 const CATEGORY_RANK: Record<ProductCategory, number> = {
-  "Range Hood": 5,
-  "BBQ Hood": 4,
-  "Insert": 3,
+  "Range Hood": 3,
   "Parts": 2,
   "Other": 1,
 };
@@ -83,4 +82,4 @@ export function classifyOrder(items: { sku: string; title: string }[]): ProductC
   return best;
 }
 
-export const CATEGORY_LIST: ProductCategory[] = ["Range Hood", "BBQ Hood", "Insert", "Parts", "Other"];
+export const CATEGORY_LIST: ProductCategory[] = ["Range Hood", "Parts", "Other"];

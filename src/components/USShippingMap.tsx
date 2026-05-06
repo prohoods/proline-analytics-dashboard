@@ -8,12 +8,11 @@ import { FIPS_TO_STATE, STATE_NAMES } from "@/lib/state-fips";
 // on first paint of the page; cached afterwards.
 const TOPO_URL = "https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json";
 
-const fmt2 = (n: number) =>
-  new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 const fmtN = (n: number) => new Intl.NumberFormat("en-US").format(n);
 
-// Linear interpolator from cheap (emerald) → expensive (rose). I picked these
-// to match the rest of the dashboard's red/green delta convention.
+// Linear interpolator from low (emerald) → high (rose). I picked these
+// to match the rest of the dashboard's red/green delta convention. Used
+// for the choropleth — emerald = small spend / few shipments, rose = big.
 function interpolateCost(t: number): string {
   // t in [0, 1]
   const cheap = [16, 185, 129];   // emerald-500
@@ -36,7 +35,7 @@ function interpolateCost(t: number): string {
 
 export interface MapStateData {
   state: string;
-  avgCost: number;
+  totalCost: number;
   shipments: number;
 }
 
@@ -58,7 +57,7 @@ export function USShippingMap({
   onSelectState,
 }: {
   data: MapStateData[];
-  metric: "avgCost" | "shipments";
+  metric: "totalCost" | "shipments";
   emptyColor?: string;
   stateTotals?: MapStateTotals | null;
   onSelectState?: (state: string) => void;
@@ -160,7 +159,7 @@ export function USShippingMap({
             <div className="text-white font-semibold">{STATE_NAMES[hover.state] ?? hover.state}</div>
             {d ? (
               <>
-                <div className="text-gray-400 mt-0.5">Avg / shipment: <span className="text-white">{fmt2(d.avgCost)}</span></div>
+                <div className="text-gray-400 mt-0.5">Spent (range): <span className="text-white">{fmt0(d.totalCost)}</span></div>
                 <div className="text-gray-400">Shipments: <span className="text-white">{fmtN(d.shipments)}</span></div>
               </>
             ) : (
@@ -180,13 +179,17 @@ export function USShippingMap({
       })()}
 
       <div className="flex items-center gap-3 mt-3 text-xs text-gray-500">
-        <span>Cheaper</span>
+        <span>Less</span>
         <div className="flex-1 h-2 rounded" style={{
           background: `linear-gradient(to right, ${interpolateCost(0)}, ${interpolateCost(0.5)}, ${interpolateCost(1)})`
         }} />
-        <span>Pricier</span>
+        <span>More</span>
         <span className="ml-2 text-gray-600">·</span>
-        <span className="text-gray-600">{fmt2(lo)} – {fmt2(hi)}</span>
+        <span className="text-gray-600">
+          {metric === "totalCost"
+            ? `${fmt0(lo)} – ${fmt0(hi)}`
+            : `${fmtN(Math.round(lo))} – ${fmtN(Math.round(hi))} shipments`}
+        </span>
       </div>
     </div>
   );

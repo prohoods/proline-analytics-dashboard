@@ -161,8 +161,6 @@ export function ShippingProjections({ data, cogsBySku }: { data: ProjectionsData
                     <span className="font-mono text-blue-400 truncate">{c.sku}</span>
                     <span className={`text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded border ${
                       c.category === "Range Hood" ? "bg-blue-500/15 text-blue-300 border-blue-500/30" :
-                      c.category === "BBQ Hood" ? "bg-orange-500/15 text-orange-300 border-orange-500/30" :
-                      c.category === "Insert" ? "bg-purple-500/15 text-purple-300 border-purple-500/30" :
                       c.category === "Parts" ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30" :
                       "bg-gray-700/40 text-gray-300 border-gray-600"
                     }`}>{c.category}</span>
