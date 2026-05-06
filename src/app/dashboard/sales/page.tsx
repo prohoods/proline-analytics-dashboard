@@ -1169,16 +1169,20 @@ export default function SalesPage() {
     return daily.filter(d => isoWeek(d.date) === selectedWeek);
   }, [daily, selectedWeek]);
 
-  // Active table rows
-  const tableRows = view === "daily" ? daily : view === "weekly" ? weekDailyRows : monthly;
+  // Active table rows. Daily view shows most recent first.
+  const tableRows = useMemo(() => {
+    const base = view === "daily" ? daily : view === "weekly" ? weekDailyRows : monthly;
+    return view === "daily" ? [...base].reverse() : base;
+  }, [view, daily, weekDailyRows, monthly]);
   const totals = useMemo(() => sumBuckets(tableRows), [tableRows]);
 
   // Previous-period rows aligned to the active view. Same length as
   // tableRows whenever the prev fetch completes; index N in prevTableRows
-  // corresponds to index N in tableRows.
+  // corresponds to index N in tableRows (so for daily we reverse the
+  // prev-period slice to match the descending display order).
   const prevTableRows = useMemo<SalesBucket[] | null>(() => {
     if (!prevDaily || !showCompare) return null;
-    if (view === "daily") return prevDaily.slice(0, tableRows.length);
+    if (view === "daily") return [...prevDaily].slice(0, tableRows.length).reverse();
     const rolled = rollDailyToView(prevDaily, view);
     return rolled.slice(0, tableRows.length);
   }, [prevDaily, view, tableRows.length, showCompare]);
