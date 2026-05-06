@@ -57,6 +57,7 @@ export default function ScorecardPage() {
   const [amazonRaw,     setAmazonRaw]     = useState<{ month: string; cost: number }[]>([]);
   const [connexityRaw,  setConnexityRaw]  = useState<{ month: string; cost: number }[]>([]);
   const [pinterestRaw,  setPinterestRaw]  = useState<{ month: string; cost: number }[]>([]);
+  const [tiktokRaw,     setTiktokRaw]     = useState<{ month: string; cost: number }[]>([]);
   // Marketplace
   const [marketplace,   setMarketplace]   = useState<{ days: MarketplaceDay[] } | null>(null);
   // Customer acquisition
@@ -76,6 +77,7 @@ export default function ScorecardPage() {
       fetch("/api/sheets/amazon-ads").then(r => r.json()).then(d => { if (!d.error) setAmazonRaw(d.rows ?? []); }),
       fetch("/api/sheets/connexity").then(r => r.json()).then(d => { if (!d.error) setConnexityRaw(d.rows ?? []); }),
       fetch("/api/sheets/pinterest").then(r => r.json()).then(d => { if (!d.error) setPinterestRaw(d.rows ?? []); }),
+      fetch("/api/sheets/tiktok").then(r => r.json()).then(d => { if (!d.error) setTiktokRaw(d.rows ?? []); }),
       fetch("/api/sheets/marketplace").then(r => r.json()).then(d => { if (!d.error) setMarketplace(d); }),
     ]).finally(() => setAdsLoading(false));
   }, []);
@@ -145,9 +147,10 @@ export default function ScorecardPage() {
     const amazon    = amazonRaw.filter(m => inRange(m.month)).reduce((s, r) => s + r.cost, 0);
     const connexity = connexityRaw.filter(m => inRange(m.month)).reduce((s, r) => s + r.cost, 0);
     const pinterest = pinterestRaw.filter(m => inRange(m.month)).reduce((s, r) => s + r.cost, 0);
-    const total = google + bing + meta + amazon + connexity + pinterest;
-    return { google, googleRev, bing, meta, amazon, connexity, pinterest, total };
-  }, [googleRaw, bingRaw, metaRaw, amazonRaw, connexityRaw, pinterestRaw, range.startYM, range.endYM]);
+    const tiktok    = tiktokRaw.filter(m => inRange(m.month)).reduce((s, r) => s + r.cost, 0);
+    const total = google + bing + meta + amazon + connexity + pinterest + tiktok;
+    return { google, googleRev, bing, meta, amazon, connexity, pinterest, tiktok, total };
+  }, [googleRaw, bingRaw, metaRaw, amazonRaw, connexityRaw, pinterestRaw, tiktokRaw, range.startYM, range.endYM]);
 
   // ── Efficiency metrics ─────────────────────────────────────────────
   const MER  = adSpend.total > 0 ? totalRevenue / adSpend.total : 0;
@@ -166,7 +169,7 @@ export default function ScorecardPage() {
 
     // Build manual spend by month
     const manualMap: Record<string, number> = {};
-    for (const arr of [bingRaw, metaRaw, amazonRaw, connexityRaw, pinterestRaw]) {
+    for (const arr of [bingRaw, metaRaw, amazonRaw, connexityRaw, pinterestRaw, tiktokRaw]) {
       for (const r of arr) {
         if (inRange(r.month)) manualMap[r.month] = (manualMap[r.month] ?? 0) + r.cost;
       }
@@ -183,7 +186,7 @@ export default function ScorecardPage() {
       const adPctM   = revenue > 0 ? (spend / revenue) * 100 : 0;
       return { month: ym, gross: s.grossSales, discounts: s.discounts, returns: s.returns, net: s.netSales, mkt, revenue, spend, mer, cm, adPct: adPctM };
     });
-  }, [salesData, googleRaw, bingRaw, metaRaw, amazonRaw, connexityRaw, pinterestRaw, mktByMonth, range.startYM, range.endYM]);
+  }, [salesData, googleRaw, bingRaw, metaRaw, amazonRaw, connexityRaw, pinterestRaw, tiktokRaw, mktByMonth, range.startYM, range.endYM]);
 
   // Channel mix (Shopify channels + marketplace)
   const channelTotal = shopify.prh + shopify.pro + shopify.phone + shopify.other + mktRevenue;
@@ -203,6 +206,7 @@ export default function ScorecardPage() {
     { label: "Amazon",     value: adSpend.amazon,     color: "bg-orange-500" },
     { label: "Connexity",  value: adSpend.connexity,  color: "bg-purple-500" },
     { label: "Pinterest",  value: adSpend.pinterest,  color: "bg-pink-500" },
+    { label: "TikTok",     value: adSpend.tiktok,     color: "bg-rose-500" },
   ].filter(p => p.value > 0);
 
   return (

@@ -15,6 +15,7 @@ const PLATFORMS = [
   { key: "amazon",     label: "Amazon Ads",        color: "bg-orange-500", href: "/dashboard/amazon-ads" },
   { key: "connexity",  label: "Connexity",         color: "bg-purple-500", href: "/dashboard/connexity" },
   { key: "pinterest",  label: "Pinterest",         color: "bg-pink-500",   href: "/dashboard/pinterest" },
+  { key: "tiktok",     label: "TikTok",            color: "bg-rose-500",   href: "/dashboard/tiktok" },
 ] as const;
 
 type PlatformKey = typeof PLATFORMS[number]["key"];
@@ -27,6 +28,7 @@ interface MonthRow {
   amazon: number;
   connexity: number;
   pinterest: number;
+  tiktok: number;
   total: number;
   googleRevenue: number;
   bingRevenue: number;
@@ -34,6 +36,7 @@ interface MonthRow {
   amazonRevenue: number;
   connexityRevenue: number;
   pinterestRevenue: number;
+  tiktokRevenue: number;
   totalRevenue: number;
 }
 
@@ -49,6 +52,7 @@ export default function AdSpendPage() {
   const [amazonRaw, setAmazonRaw] = useState<{ month: string; cost: number }[]>([]);
   const [connexityRaw, setConnexityRaw] = useState<{ month: string; cost: number }[]>([]);
   const [pinterestRaw, setPinterestRaw] = useState<{ month: string; cost: number }[]>([]);
+  const [tiktokRaw, setTiktokRaw] = useState<{ month: string; cost: number }[]>([]);
   const [errors, setErrors] = useState<Partial<Record<PlatformKey, string>>>({});
   const [loading, setLoading] = useState(true);
 
@@ -90,8 +94,12 @@ export default function AdSpendPage() {
         if (d.error) throw new Error(d.error);
         setPinterestRaw(d.rows ?? []);
       }),
+      fetch("/api/sheets/tiktok").then(r => r.json()).then(d => {
+        if (d.error) throw new Error(d.error);
+        setTiktokRaw(d.rows ?? []);
+      }),
     ]).then(results => {
-      const keys: PlatformKey[] = ["google", "bing", "meta", "amazon", "connexity", "pinterest"];
+      const keys: PlatformKey[] = ["google", "bing", "meta", "amazon", "connexity", "pinterest", "tiktok"];
       results.forEach((res, i) => {
         if (res.status === "rejected") errs[keys[i]] = res.reason?.message ?? "Failed";
       });
@@ -127,7 +135,7 @@ export default function AdSpendPage() {
 
     function ensure(month: string) {
       if (!map[month]) {
-        map[month] = { month, google: 0, bing: 0, meta: 0, amazon: 0, connexity: 0, pinterest: 0, total: 0, googleRevenue: 0, bingRevenue: 0, metaRevenue: 0, amazonRevenue: 0, connexityRevenue: 0, pinterestRevenue: 0, totalRevenue: 0 };
+        map[month] = { month, google: 0, bing: 0, meta: 0, amazon: 0, connexity: 0, pinterest: 0, tiktok: 0, total: 0, googleRevenue: 0, bingRevenue: 0, metaRevenue: 0, amazonRevenue: 0, connexityRevenue: 0, pinterestRevenue: 0, tiktokRevenue: 0, totalRevenue: 0 };
       }
     }
     function inRange(month: string) {
@@ -172,9 +180,15 @@ export default function AdSpendPage() {
       map[r.month].pinterest += r.cost;
       map[r.month].total += r.cost;
     }
+    for (const r of tiktokRaw) {
+      if (!inRange(r.month)) continue;
+      ensure(r.month);
+      map[r.month].tiktok += r.cost;
+      map[r.month].total += r.cost;
+    }
 
     return Object.values(map).sort((a, b) => b.month.localeCompare(a.month));
-  }, [googleRaw, bingRaw, metaRaw, amazonRaw, connexityRaw, pinterestRaw, range.startYM, range.endYM]);
+  }, [googleRaw, bingRaw, metaRaw, amazonRaw, connexityRaw, pinterestRaw, tiktokRaw, range.startYM, range.endYM]);
 
   // Summary totals
   const totalSpend = monthlyData.reduce((s, m) => s + m.total, 0);
@@ -206,6 +220,7 @@ export default function AdSpendPage() {
   const revenueKey: Record<PlatformKey, keyof MonthRow> = {
     google: "googleRevenue", bing: "bingRevenue", meta: "metaRevenue",
     amazon: "amazonRevenue", connexity: "connexityRevenue", pinterest: "pinterestRevenue",
+    tiktok: "tiktokRevenue",
   };
   const platformTotals = PLATFORMS.map(p => ({
     ...p,
@@ -374,6 +389,7 @@ export default function AdSpendPage() {
                       <th className="py-3 px-4 text-right text-orange-400">Amazon</th>
                       <th className="py-3 px-4 text-right text-purple-400">Connexity</th>
                       <th className="py-3 px-4 text-right text-pink-400">Pinterest</th>
+                      <th className="py-3 px-4 text-right text-rose-400">TikTok</th>
                       <th className="py-3 px-4 text-right font-semibold text-white">Total</th>
                       <th className="py-3 px-4 text-right text-green-400">Conv Value</th>
                       <th className="py-3 px-4 text-right">ROAS</th>
@@ -391,6 +407,7 @@ export default function AdSpendPage() {
                           <td className="py-2.5 px-4 text-right">{m.amazon > 0 ? fmt(m.amazon) : <span className="text-gray-700">—</span>}</td>
                           <td className="py-2.5 px-4 text-right">{m.connexity > 0 ? fmt(m.connexity) : <span className="text-gray-700">—</span>}</td>
                           <td className="py-2.5 px-4 text-right">{m.pinterest > 0 ? fmt(m.pinterest) : <span className="text-gray-700">—</span>}</td>
+                          <td className="py-2.5 px-4 text-right">{m.tiktok > 0 ? fmt(m.tiktok) : <span className="text-gray-700">—</span>}</td>
                           <td className="py-2.5 px-4 text-right font-semibold text-white">{fmt(m.total)}</td>
                           <td className="py-2.5 px-4 text-right text-green-400">{m.totalRevenue > 0 ? fmt(m.totalRevenue) : <span className="text-gray-700">—</span>}</td>
                           <td className={`py-2.5 px-4 text-right font-semibold ${roasColor(mRoas)}`}>
@@ -409,6 +426,7 @@ export default function AdSpendPage() {
                       <td className="py-3 px-4 text-right">{fmt(monthlyData.reduce((s, m) => s + m.amazon, 0))}</td>
                       <td className="py-3 px-4 text-right">{fmt(monthlyData.reduce((s, m) => s + m.connexity, 0))}</td>
                       <td className="py-3 px-4 text-right">{fmt(monthlyData.reduce((s, m) => s + m.pinterest, 0))}</td>
+                      <td className="py-3 px-4 text-right">{fmt(monthlyData.reduce((s, m) => s + m.tiktok, 0))}</td>
                       <td className="py-3 px-4 text-right">{fmt(totalSpend)}</td>
                       <td className="py-3 px-4 text-right text-green-400">{fmt(totalRevenue)}</td>
                       <td className={`py-3 px-4 text-right ${roasColor(blendedRoas)}`}>{blendedRoas > 0 ? `${blendedRoas.toFixed(2)}x` : "—"}</td>

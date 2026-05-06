@@ -42,6 +42,7 @@ function classifyChannel(order: { note_attributes: { name: string; value: string
     if (lower.includes("facebook") || lower.includes("meta") || lower.includes("ig")) return "Meta / Facebook";
     if (lower.includes("klaviyo") || lower.includes("email")) return "Email";
     if (lower.includes("pinterest")) return "Pinterest";
+    if (lower.includes("tiktok")) return "TikTok";
     return utm;
   }
 

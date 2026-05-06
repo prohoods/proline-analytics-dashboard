@@ -37,6 +37,7 @@ export default function DashboardOverview() {
   const [amazon, setAmazon] = useState<SheetData | null>(null);
   const [connexity, setConnexity] = useState<SheetData | null>(null);
   const [pinterest, setPinterest] = useState<SheetData | null>(null);
+  const [tiktok, setTiktok] = useState<SheetData | null>(null);
   const [marketplace, setMarketplace] = useState<MarketplaceSummary | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
@@ -52,7 +53,7 @@ export default function DashboardOverview() {
   const fetchAll = useCallback(() => {
     setLoading(true);
     setShopify(null); setGoogleMonths([]); setBing(null); setMeta(null);
-    setAmazon(null); setConnexity(null); setPinterest(null);
+    setAmazon(null); setConnexity(null); setPinterest(null); setTiktok(null);
 
     const r = getRange(rangeKey);
     const errs: Record<string, string> = {};
@@ -77,8 +78,9 @@ export default function DashboardOverview() {
       fetch("/api/sheets/amazon-ads").then(res => res.json()).then(d => { if (d.error) throw new Error(d.error); setAmazon(filterSheet(d)); }),
       fetch("/api/sheets/connexity").then(res => res.json()).then(d => { if (d.error) throw new Error(d.error); setConnexity(filterSheet(d)); }),
       fetch("/api/sheets/pinterest").then(res => res.json()).then(d => { if (d.error) throw new Error(d.error); setPinterest(filterSheet(d)); }),
+      fetch("/api/sheets/tiktok").then(res => res.json()).then(d => { if (d.error) throw new Error(d.error); setTiktok(filterSheet(d)); }),
     ]).then(results => {
-      const keys = ["shopify", "google", "bing", "meta", "amazon", "connexity", "pinterest"];
+      const keys = ["shopify", "google", "bing", "meta", "amazon", "connexity", "pinterest", "tiktok"];
       results.forEach((res, i) => { if (res.status === "rejected") errs[keys[i]] = res.reason?.message ?? "Failed"; });
       setErrors(errs);
       setLoading(false);
@@ -116,9 +118,11 @@ export default function DashboardOverview() {
   const connexityRevenue = connexity?.totals.revenue ?? 0;
   const pinterestSpend = pinterest?.totals.cost ?? 0;
   const pinterestRevenue = pinterest?.totals.revenue ?? 0;
+  const tiktokSpend = tiktok?.totals.cost ?? 0;
+  const tiktokRevenue = tiktok?.totals.revenue ?? 0;
 
-  const totalAdSpend = googleSpend + bingSpend + metaSpend + amazonSpend + connexitySpend + pinterestSpend;
-  const totalAdRevenue = googleRevenue + bingRevenue + metaRevenue + amazonRevenue + connexityRevenue + pinterestRevenue;
+  const totalAdSpend = googleSpend + bingSpend + metaSpend + amazonSpend + connexitySpend + pinterestSpend + tiktokSpend;
+  const totalAdRevenue = googleRevenue + bingRevenue + metaRevenue + amazonRevenue + connexityRevenue + pinterestRevenue + tiktokRevenue;
   const blendedROAS = totalAdSpend > 0 ? totalAdRevenue / totalAdSpend : 0;
   const totalRevenue = shopifyRevenue + marketplaceRevenue;
   const mer = totalAdSpend > 0 ? totalRevenue / totalAdSpend : 0;
@@ -132,6 +136,7 @@ export default function DashboardOverview() {
     { name: "Amazon Ads", spend: amazonSpend, revenue: amazonRevenue, roas: amazonSpend > 0 ? amazonRevenue / amazonSpend : 0, hasError: !!errors.amazon, href: "/dashboard/amazon-ads", color: "bg-orange-500" },
     { name: "Connexity", spend: connexitySpend, revenue: connexityRevenue, roas: connexitySpend > 0 ? connexityRevenue / connexitySpend : 0, hasError: !!errors.connexity, href: "/dashboard/connexity", color: "bg-purple-500" },
     { name: "Pinterest", spend: pinterestSpend, revenue: pinterestRevenue, roas: pinterestSpend > 0 ? pinterestRevenue / pinterestSpend : 0, hasError: !!errors.pinterest, href: "/dashboard/pinterest", color: "bg-red-500" },
+    { name: "TikTok", spend: tiktokSpend, revenue: tiktokRevenue, roas: tiktokSpend > 0 ? tiktokRevenue / tiktokSpend : 0, hasError: !!errors.tiktok, href: "/dashboard/tiktok", color: "bg-rose-500" },
   ];
 
   const roasColor = (r: number) => r >= 5 ? "text-green-400" : r >= 3 ? "text-yellow-400" : r > 0 ? "text-red-400" : "text-gray-600";

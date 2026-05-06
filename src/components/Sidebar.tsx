@@ -46,6 +46,7 @@ const navSections: NavSection[] = [
       { href: "/dashboard/meta",        label: "Meta",             icon: "📘" },
       { href: "/dashboard/pinterest",   label: "Pinterest",        icon: "📌" },
       { href: "/dashboard/amazon-ads",  label: "Amazon Ads",       icon: "🟠" },
+      { href: "/dashboard/tiktok",      label: "TikTok",           icon: "🎵" },
     ],
   },
   {
