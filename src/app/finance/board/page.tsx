@@ -1,12 +1,6 @@
 "use client";
 
-import {
-  statements,
-  monthRevenue,
-  monthNetExpenses,
-  sumGroup,
-  q1,
-} from "@/lib/financial-data";
+import { useFinancialData } from "@/lib/use-financial-data";
 import InfoTooltip from "@/components/InfoTooltip";
 import {
   LineChart,
@@ -30,6 +24,7 @@ function fmtK(n: number) {
 }
 
 export default function BoardPage() {
+  const { statements, monthRevenue, monthNetExpenses, sumGroup, q1 } = useFinancialData();
   // Monthly series
   const series = statements.map(m => {
     const revenue = monthRevenue(m);

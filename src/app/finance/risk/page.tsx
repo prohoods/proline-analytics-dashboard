@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { statements, q1 } from "@/lib/financial-data";
+import { useFinancialData } from "@/lib/use-financial-data";
+import type { MonthData } from "@/lib/financial-data";
 import CategoryDrillDown from "@/components/CategoryDrillDown";
 import InfoTooltip from "@/components/InfoTooltip";
 
@@ -25,7 +26,7 @@ interface VendorAgg {
   txs: Array<{ amount: number; month: string; notes: string }>;
 }
 
-function aggregateByVendor() {
+function aggregateByVendor(statements: MonthData[]) {
   const map = new Map<string, VendorAgg>();
   for (const m of statements) {
     for (const e of m.expenses) {
@@ -57,9 +58,10 @@ function aggregateByVendor() {
 }
 
 export default function RiskPage() {
+  const { statements, q1 } = useFinancialData();
   const [drillCategory, setDrillCategory] = useState<string | null>(null);
 
-  const vendors = aggregateByVendor().sort((a, b) => b.total - a.total);
+  const vendors = aggregateByVendor(statements).sort((a, b) => b.total - a.total);
   const topVendors = vendors.slice(0, 10);
   const totalSpend = q1.totalExpenses;
   const top5Share = vendors.slice(0, 5).reduce((s, v) => s + v.total, 0) / totalSpend * 100;

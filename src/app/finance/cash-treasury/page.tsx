@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { statements, monthRevenue, monthNetExpenses, q1 } from "@/lib/financial-data";
+import { useFinancialData } from "@/lib/use-financial-data";
 import CategoryDrillDown from "@/components/CategoryDrillDown";
 import InfoTooltip from "@/components/InfoTooltip";
 
@@ -24,6 +24,7 @@ const KNOWN_ACCOUNTS = [
 ];
 
 export default function CashTreasuryPage() {
+  const { statements, monthRevenue, monthNetExpenses, q1 } = useFinancialData();
   const [drillCategory, setDrillCategory] = useState<string | null>(null);
 
   const latest = statements[statements.length - 1];

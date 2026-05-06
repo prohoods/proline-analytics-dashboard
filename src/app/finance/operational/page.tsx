@@ -2,14 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import {
-  statements,
-  monthRevenue,
-  sumGroup,
-  sumCategory,
-  q1,
-  CATEGORY_TEXT,
-} from "@/lib/financial-data";
+import { CATEGORY_TEXT } from "@/lib/financial-data";
+import { useFinancialData } from "@/lib/use-financial-data";
 import CategoryDrillDown from "@/components/CategoryDrillDown";
 import InfoTooltip from "@/components/InfoTooltip";
 import {
@@ -28,6 +22,7 @@ function fmt(n: number) {
 }
 
 export default function OperationalPage() {
+  const { statements, monthRevenue, sumGroup, sumCategory, q1 } = useFinancialData();
   const [drillCategory, setDrillCategory] = useState<string | null>(null);
 
   const totalRevenue = q1.totalRevenue;

@@ -464,10 +464,15 @@ export function sumByCategory(m: MonthData): Record<string, number> {
   return result;
 }
 
-/** Sum expenses across all months by category */
+/** Sum expenses across all months by category (operates on baseline `statements`) */
 export function totalByCategory(): Record<string, number> {
+  return totalByCategoryFor(statements);
+}
+
+/** Sum expenses across an explicit statements array by category — used by the live data hook. */
+export function totalByCategoryFor(months: MonthData[]): Record<string, number> {
   const result: Record<string, number> = {};
-  for (const m of statements) {
+  for (const m of months) {
     for (const e of m.expenses) {
       result[e.category] = (result[e.category] ?? 0) + e.amount;
     }
@@ -475,7 +480,28 @@ export function totalByCategory(): Record<string, number> {
   return result;
 }
 
-/** Q1 2026 totals */
+export interface QuarterTotals {
+  totalRevenue: number;
+  totalExpenses: number;
+  netCashFlow: number;
+  acct115BeginBalance: number;
+  acct115EndBalance: number;
+}
+
+/** Compute Q1-style totals across an explicit statements array. */
+export function computeTotals(months: MonthData[]): QuarterTotals {
+  const totalRevenue = months.reduce((s, m) => s + monthRevenue(m), 0);
+  const totalExpenses = months.reduce((s, m) => s + monthNetExpenses(m), 0);
+  return {
+    totalRevenue,
+    totalExpenses,
+    netCashFlow: totalRevenue - totalExpenses,
+    acct115BeginBalance: months.length ? months[0].acct115BeginBalance : 0,
+    acct115EndBalance: months.length ? months[months.length - 1].acct115EndBalance : 0,
+  };
+}
+
+/** Q1 2026 totals — baseline only (kept for backward compatibility) */
 export const q1 = {
   totalRevenue: statements.reduce((s, m) => s + monthRevenue(m), 0),
   totalExpenses: statements.reduce((s, m) => s + monthNetExpenses(m), 0),
@@ -523,10 +549,15 @@ export const PL_GROUPS = {
 
 export type PLGroupKey = keyof typeof PL_GROUPS;
 
-/** Sum categories in a P&L group for a specific month, or all months if undefined. */
+/** Sum categories in a P&L group for a specific month, or all months if undefined. Baseline only. */
 export function sumGroup(groupKey: PLGroupKey, month?: MonthData): number {
+  return sumGroupFor(statements, groupKey, month);
+}
+
+/** Sum a P&L group across an explicit statements array. */
+export function sumGroupFor(allMonths: MonthData[], groupKey: PLGroupKey, month?: MonthData): number {
   const cats = PL_GROUPS[groupKey];
-  const months = month ? [month] : statements;
+  const months = month ? [month] : allMonths;
   let total = 0;
   for (const m of months) {
     for (const e of m.expenses) {
@@ -536,9 +567,14 @@ export function sumGroup(groupKey: PLGroupKey, month?: MonthData): number {
   return total;
 }
 
-/** Sum a specific category for a specific month, or all months. */
+/** Sum a specific category for a specific month, or all months. Baseline only. */
 export function sumCategory(category: string, month?: MonthData): number {
-  const months = month ? [month] : statements;
+  return sumCategoryFor(statements, category, month);
+}
+
+/** Sum a category across an explicit statements array. */
+export function sumCategoryFor(allMonths: MonthData[], category: string, month?: MonthData): number {
+  const months = month ? [month] : allMonths;
   let total = 0;
   for (const m of months) {
     for (const e of m.expenses) {
@@ -548,9 +584,14 @@ export function sumCategory(category: string, month?: MonthData): number {
   return total;
 }
 
-/** Sum expenses by business side (DTC vs SHL). Items without `side` count as DTC. */
+/** Sum expenses by business side (DTC vs SHL). Items without `side` count as DTC. Baseline only. */
 export function sumBySide(side: "DTC" | "SHL", month?: MonthData): number {
-  const months = month ? [month] : statements;
+  return sumBySideFor(statements, side, month);
+}
+
+/** Sum by side across an explicit statements array. */
+export function sumBySideFor(allMonths: MonthData[], side: "DTC" | "SHL", month?: MonthData): number {
+  const months = month ? [month] : allMonths;
   let total = 0;
   for (const m of months) {
     for (const e of m.expenses) {

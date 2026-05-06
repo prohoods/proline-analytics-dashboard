@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { statements, sumCategory, q1 } from "@/lib/financial-data";
+import { useFinancialData } from "@/lib/use-financial-data";
+import type { MonthData } from "@/lib/financial-data";
 import CategoryDrillDown from "@/components/CategoryDrillDown";
 import InfoTooltip from "@/components/InfoTooltip";
 
@@ -32,6 +33,7 @@ const FILINGS: Filing[] = [
 ];
 
 export default function CompliancePage() {
+  const { statements, sumCategory, q1 } = useFinancialData();
   const [drillCategory, setDrillCategory] = useState<string | null>(null);
 
   const totalAvalara = sumCategory("Taxes & Compliance");
@@ -202,7 +204,7 @@ export default function CompliancePage() {
   );
 }
 
-function monthRev(m: typeof statements[number]): number {
+function monthRev(m: MonthData): number {
   return m.acct115Deposits;
 }
 

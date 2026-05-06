@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { statements, q1, sumCategory } from "@/lib/financial-data";
+import { useFinancialData } from "@/lib/use-financial-data";
 import InfoTooltip from "@/components/InfoTooltip";
 import {
   LineChart,
@@ -34,6 +34,7 @@ const DEFAULTS = {
 };
 
 export default function PlanningPage() {
+  const { statements, q1, sumCategory } = useFinancialData();
   // Assumption knobs
   const [revGrowth, setRevGrowth] = useState(DEFAULTS.revGrowth);       // % monthly growth
   const [cogsPctDelta, setCogsPctDelta] = useState(DEFAULTS.cogsPctDelta); // bps change in COGS as % of revenue

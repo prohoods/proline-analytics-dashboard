@@ -1,16 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { statements, CATEGORY_COLORS, CATEGORY_TEXT, type MonthData } from "@/lib/financial-data";
+import { CATEGORY_COLORS, CATEGORY_TEXT, type MonthData } from "@/lib/financial-data";
+import { useFinancialData } from "@/lib/use-financial-data";
 
 function fmt(n: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n);
 }
 
 const ALL_MONTHS = "All Months";
-const monthOptions = [ALL_MONTHS, ...statements.map(m => m.month)];
 
 export default function ExpensesPage() {
+  const { statements } = useFinancialData();
+  const monthOptions = [ALL_MONTHS, ...statements.map(m => m.month)];
   const [selectedMonth, setSelectedMonth] = useState(ALL_MONTHS);
 
   const activeMths: MonthData[] = selectedMonth === ALL_MONTHS

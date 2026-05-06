@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { statements, sumByCategory, totalByCategory, q1, CATEGORY_COLORS, CATEGORY_TEXT, monthRevenue, monthNetExpenses } from "@/lib/financial-data";
+import { CATEGORY_COLORS, CATEGORY_TEXT } from "@/lib/financial-data";
+import { useFinancialData } from "@/lib/use-financial-data";
 import CategoryDrillDown from "@/components/CategoryDrillDown";
 import InfoTooltip from "@/components/InfoTooltip";
 
@@ -48,6 +49,7 @@ const CHART_CATEGORIES = [
 ];
 
 export default function CFOOverview() {
+  const { statements, sumByCategory, totalByCategory, q1, monthRevenue, monthNetExpenses } = useFinancialData();
   const totals = totalByCategory();
   const totalExpenses = q1.totalExpenses;
   const netCashFlow = q1.netCashFlow;

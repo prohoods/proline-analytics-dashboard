@@ -2,15 +2,12 @@
 
 import { useState } from "react";
 import {
-  statements,
-  monthRevenue,
   PL_GROUPS,
-  sumGroup,
-  sumCategory,
   CATEGORY_TEXT,
   type MonthData,
   type PLGroupKey,
 } from "@/lib/financial-data";
+import { useFinancialData } from "@/lib/use-financial-data";
 import CategoryDrillDown from "@/components/CategoryDrillDown";
 import InfoTooltip from "@/components/InfoTooltip";
 
@@ -25,6 +22,7 @@ function pct(n: number, base: number) {
 type Period = "MTD" | "QTD" | "YTD";
 
 export default function FinancialReportingPage() {
+  const { statements, monthRevenue, sumGroup, sumCategory } = useFinancialData();
   const [period, setPeriod] = useState<Period>("QTD");
   const [drillCategory, setDrillCategory] = useState<string | null>(null);
 

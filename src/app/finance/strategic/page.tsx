@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { q1, sumGroup } from "@/lib/financial-data";
+import { useFinancialData } from "@/lib/use-financial-data";
 import InfoTooltip from "@/components/InfoTooltip";
 import {
   BarChart,
@@ -46,6 +46,7 @@ const DEAL_ROOM_ITEMS = [
 ];
 
 export default function StrategicPage() {
+  const { q1, sumGroup } = useFinancialData();
   // EBITDA proxy — cash operating income (very rough, cash basis)
   const revenue = q1.totalRevenue;
   const cogs = sumGroup("COGS");
