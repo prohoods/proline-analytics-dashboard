@@ -7,18 +7,9 @@ export const runtime = "nodejs";
 const MAX_BYTES = 25 * 1024 * 1024;
 
 async function extractPdfText(buffer: ArrayBuffer): Promise<string> {
-  // pdfjs-dist legacy build runs under Node. Disable worker + fonts for server use.
-  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-  // @ts-expect-error — GlobalWorkerOptions exists on the legacy build
-  pdfjs.GlobalWorkerOptions.workerSrc = false;
-
-  const loadingTask = pdfjs.getDocument({
-    data: new Uint8Array(buffer),
-    useSystemFonts: true,
-    isEvalSupported: false,
-    disableFontFace: true,
-  });
-  const pdf = await loadingTask.promise;
+  // unpdf wraps a serverless-friendly pdfjs build — no DOMMatrix dependency.
+  const { getDocumentProxy } = await import("unpdf");
+  const pdf = await getDocumentProxy(new Uint8Array(buffer));
 
   const pageTexts: string[] = [];
   for (let i = 1; i <= pdf.numPages; i++) {

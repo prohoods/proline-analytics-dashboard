@@ -16,6 +16,7 @@ function fmt2(n: number) {
 const KNOWN_ACCOUNTS = [
   { last4: "0115", name: "Operating (Revenue)",     bank: "KeyBank", purpose: "All Shopify / Ferguson deposits flow in; wires, rent, factory pmts, KBBO ACH out", status: "active" as const },
   { last4: "2285", name: "Payroll / Expense",       bank: "KeyBank", purpose: "Funded from …0115; card + small vendor charges",                                   status: "active" as const },
+  { last4: "6013", name: "Basic Business Checking", bank: "KeyBank", purpose: "New as of April 2026 — small bill-pay outflows to individual contractors",         status: "active" as const },
   { last4: "1071", name: "Savings (sub-account)",   bank: "KeyBank", purpose: "Receives 'Internet Trf To DDA' transfers — balance unknown",                       status: "unknown" as const },
   { last4: "5601", name: "Sub-account 448615601888", bank: "KeyBank", purpose: "Receives internal transfers — balance unknown",                                    status: "unknown" as const },
   { last4: "7913", name: "Sub-account 448603037913", bank: "KeyBank", purpose: "Referenced by internal transfers — balance unknown",                               status: "unknown" as const },
