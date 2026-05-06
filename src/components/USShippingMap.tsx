@@ -40,14 +40,28 @@ export interface MapStateData {
   shipments: number;
 }
 
+export interface MapStateTotals {
+  yearStart: string;
+  monthStart: string;
+  asOf: string;
+  states: { state: string; ytdSpend: number; ytdShipments: number; mtdSpend: number; mtdShipments: number }[];
+}
+
+const fmt0 = (n: number) =>
+  new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n);
+
 export function USShippingMap({
   data,
   metric,
   emptyColor = "#1f2937",
+  stateTotals,
+  onSelectState,
 }: {
   data: MapStateData[];
   metric: "avgCost" | "shipments";
   emptyColor?: string;
+  stateTotals?: MapStateTotals | null;
+  onSelectState?: (state: string) => void;
 }) {
   const [hover, setHover] = useState<{ state: string; x: number; y: number } | null>(null);
 
@@ -56,6 +70,12 @@ export function USShippingMap({
     for (const d of data) m.set(d.state, d);
     return m;
   }, [data]);
+
+  const totalsByState = useMemo(() => {
+    const m = new Map<string, MapStateTotals["states"][number]>();
+    if (stateTotals) for (const s of stateTotals.states) m.set(s.state, s);
+    return m;
+  }, [stateTotals]);
 
   // Normalize the metric so the color scale isn't dominated by a single
   // outlier state. Clamp to the 5th–95th percentile for the scale; outliers
@@ -116,9 +136,10 @@ export function USShippingMap({
                     });
                   }}
                   onMouseLeave={() => setHover(null)}
+                  onClick={() => { if (code && onSelectState) onSelectState(code); }}
                   style={{
                     default: { outline: "none" },
-                    hover: { outline: "none", fill, opacity: 0.85, cursor: "pointer" },
+                    hover: { outline: "none", fill, opacity: 0.85, cursor: onSelectState ? "pointer" : "default" },
                     pressed: { outline: "none" },
                   }}
                 />
@@ -130,6 +151,7 @@ export function USShippingMap({
 
       {hover && (() => {
         const d = byState.get(hover.state);
+        const t = totalsByState.get(hover.state);
         return (
           <div
             className="absolute pointer-events-none bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-xs shadow-lg z-10"
@@ -142,7 +164,16 @@ export function USShippingMap({
                 <div className="text-gray-400">Shipments: <span className="text-white">{fmtN(d.shipments)}</span></div>
               </>
             ) : (
-              <div className="text-gray-500 mt-0.5">No data</div>
+              <div className="text-gray-500 mt-0.5">No data in range</div>
+            )}
+            {t && (
+              <>
+                <div className="border-t border-gray-800 mt-1.5 pt-1.5 text-gray-400">YTD: <span className="text-white">{fmt0(t.ytdSpend)}</span> <span className="text-gray-600">({fmtN(t.ytdShipments)})</span></div>
+                <div className="text-gray-400">MTD: <span className="text-white">{fmt0(t.mtdSpend)}</span> <span className="text-gray-600">({fmtN(t.mtdShipments)})</span></div>
+              </>
+            )}
+            {onSelectState && (
+              <div className="text-gray-600 mt-1 italic">Click for full breakdown</div>
             )}
           </div>
         );

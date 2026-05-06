@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import DateRangeDropdown from "@/components/DateRangeDropdown";
 import { RangeKey, getRange } from "@/lib/date-ranges";
 import { KPISkeleton, TableSkeleton } from "@/components/Skeleton";
@@ -9,6 +9,7 @@ import { USShippingMap, type MapStateData } from "@/components/USShippingMap";
 import { ShippingProjections, useShippingProjections } from "@/components/ShippingProjections";
 import { COGS } from "@/lib/cogs";
 import { TARIFF_RATE } from "@/lib/constants";
+import { STATE_NAMES } from "@/lib/state-fips";
 
 interface RefundIncident {
   orderName: string;
@@ -48,6 +49,22 @@ interface StateBreakdownRow {
   totalCost: number;
   avgCost: number;
   byCategory: CategoryBreakdown[];
+}
+
+interface StateTotals {
+  state: string;
+  ytdSpend: number;
+  ytdShipments: number;
+  mtdSpend: number;
+  mtdShipments: number;
+}
+
+interface StateTotalsPayload {
+  yearStart: string;
+  monthStart: string;
+  asOf: string;
+  total: { ytdSpend: number; ytdShipments: number; mtdSpend: number; mtdShipments: number };
+  states: StateTotals[];
 }
 
 interface Product {
@@ -763,7 +780,8 @@ function CategoryTile({
     >
       <div className={`text-[11px] uppercase tracking-wide ${selected ? "text-blue-300" : "text-gray-500"}`}>{label}</div>
       <div className={`text-lg font-bold mt-0.5 ${selected ? "text-white" : "text-gray-200"}`}>{fmt2(avg)}</div>
-      <div className="text-[11px] text-gray-600 mt-0.5">{fmtN(shipments)} shipments</div>
+      <div className="text-[10px] text-gray-600 mt-0.5">avg / shipment</div>
+      <div className="text-[11px] text-gray-600">{fmtN(shipments)} shipments</div>
     </button>
   );
 }
@@ -775,15 +793,18 @@ function CategoryTile({
 function StateBreakdownPanel({
   rows,
   national,
+  stateTotals,
   onReviewCategories,
 }: {
   rows: StateBreakdownRow[];
   national: CategoryBreakdown[];
+  stateTotals: StateTotalsPayload | null;
   onReviewCategories: () => void;
 }) {
   const [sortKey, setSortKey] = useState<"shipments" | "avgCost" | "totalCost">("shipments");
   const [filterCategory, setFilterCategory] = useState<Category | "All">("All");
-  const [expanded, setExpanded] = useState<string | null>(null);
+  const [showAll, setShowAll] = useState(false);
+  const [openState, setOpenState] = useState<string | null>(null);
 
   const visibleRows = rows.map(r => {
     if (filterCategory === "All") return r;
@@ -830,15 +851,17 @@ function StateBreakdownPanel({
               Each order classified by its biggest item. Pick a category below to filter — click any state for full breakdown.
             </div>
           </div>
-          <div className="flex gap-2 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={onReviewCategories}
               className="px-3 py-1.5 rounded-lg text-xs border bg-gray-800 border-gray-700 text-gray-300 hover:text-white hover:border-gray-600"
+              title="Audit how every SKU was classified — flag any wrong ones"
             >
               Review categories
             </button>
+            <span className="text-[11px] text-gray-500 ml-2">Sort by:</span>
             <SortBtn k="shipments" label="Most shipments" />
-            <SortBtn k="avgCost" label="Highest avg" />
+            <SortBtn k="avgCost" label="Highest avg cost" />
             <SortBtn k="totalCost" label="Most $ spent" />
           </div>
         </div>
@@ -868,12 +891,14 @@ function StateBreakdownPanel({
       </div>
 
       {/* US choropleth — colored by avg shipping cost (or shipments) for the
-          currently-selected category filter. Categorical color scale clamped
-          to the 5–95 percentile so a single outlier doesn't wash out the map. */}
+          currently-selected category filter. Click a state on the map or in
+          the table to open a detail modal. */}
       <div className="px-5 py-4 border-b border-gray-800">
         <USShippingMap
           data={visibleRows.map(r => ({ state: r.state, avgCost: r.avgCost, shipments: r.shipments })) as MapStateData[]}
           metric={sortKey === "shipments" ? "shipments" : "avgCost"}
+          stateTotals={stateTotals}
+          onSelectState={s => setOpenState(s)}
         />
       </div>
 
@@ -895,57 +920,203 @@ function StateBreakdownPanel({
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-800">
-            {sorted.map(r => {
+            {(showAll ? sorted : sorted.slice(0, 15)).map(r => {
               const delta = overallAvg > 0 ? ((r.avgCost - overallAvg) / overallAvg) * 100 : 0;
               const deltaColor = delta > 10 ? "text-rose-400" : delta < -10 ? "text-emerald-400" : "text-gray-500";
-              const isOpen = expanded === r.state;
               return (
-                <Fragment key={r.state}>
-                  <tr
-                    onClick={() => setExpanded(isOpen ? null : r.state)}
-                    className="hover:bg-gray-800/40 cursor-pointer"
-                  >
-                    <td className="px-4 py-2 font-mono text-blue-400 font-semibold">{r.state}</td>
-                    <td className="px-4 py-2 text-right text-gray-300">{fmtN(r.shipments)}</td>
-                    <td className="px-4 py-2 text-right text-white font-semibold">{fmt2(r.avgCost)}</td>
-                    <td className={`px-4 py-2 text-right ${deltaColor}`}>{delta > 0 ? "+" : ""}{delta.toFixed(0)}%</td>
-                    <td className="px-4 py-2 text-right text-gray-400">{fmt(r.totalCost)}</td>
-                    <td className="px-4 py-2 text-right text-gray-600 text-xs">{isOpen ? "▾" : "▸"}</td>
-                  </tr>
-                  {isOpen && filterCategory === "All" && (
-                    <tr className="bg-gray-950/60">
-                      <td colSpan={6} className="px-6 py-4">
-                        <div className="text-xs text-gray-500 uppercase tracking-wide mb-2">{r.state} — by category</div>
-                        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                          {r.byCategory.filter(c => c.shipments > 0).map(c => {
-                            const nat = national.find(n => n.category === c.category);
-                            const natDelta = nat && nat.avgCost > 0 ? ((c.avgCost - nat.avgCost) / nat.avgCost) * 100 : 0;
-                            const natColor = natDelta > 10 ? "text-rose-400" : natDelta < -10 ? "text-emerald-400" : "text-gray-500";
-                            return (
-                              <div key={c.category} className="bg-gray-900 border border-gray-800 rounded-lg p-3">
-                                <div className="text-xs text-gray-500">{c.category}</div>
-                                <div className="text-lg font-bold text-white mt-1">{fmt2(c.avgCost)}</div>
-                                <div className="text-xs text-gray-600 mt-0.5">{fmtN(c.shipments)} shipments · {fmt(c.totalCost)}</div>
-                                {nat && nat.shipments > 0 && (
-                                  <div
-                                    className={`text-xs mt-1 ${natColor}`}
-                                    title={`National avg for ${c.category.toLowerCase()} shipments: ${fmt2(nat.avgCost)}`}
-                                  >
-                                    {natDelta > 0 ? "+" : ""}{natDelta.toFixed(0)}% vs nat. avg
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                </Fragment>
+                <tr
+                  key={r.state}
+                  onClick={() => setOpenState(r.state)}
+                  className="hover:bg-gray-800/40 cursor-pointer"
+                >
+                  <td className="px-4 py-2 font-mono text-blue-400 font-semibold">{r.state}</td>
+                  <td className="px-4 py-2 text-right text-gray-300">{fmtN(r.shipments)}</td>
+                  <td className="px-4 py-2 text-right text-white font-semibold">{fmt2(r.avgCost)}</td>
+                  <td className={`px-4 py-2 text-right ${deltaColor}`}>{delta > 0 ? "+" : ""}{delta.toFixed(0)}%</td>
+                  <td className="px-4 py-2 text-right text-gray-400">{fmt(r.totalCost)}</td>
+                  <td className="px-4 py-2 text-right text-gray-600 text-xs">▸</td>
+                </tr>
               );
             })}
           </tbody>
         </table>
+      </div>
+
+      {sorted.length > 15 && (
+        <div className="px-5 py-3 border-t border-gray-800 text-center">
+          <button onClick={() => setShowAll(v => !v)} className="text-xs text-blue-400 hover:text-blue-300">
+            {showAll ? "Show top 15 only" : `Show all ${sorted.length} states`}
+          </button>
+        </div>
+      )}
+
+      {openState && (
+        <StateDetailModal
+          state={openState}
+          row={rows.find(r => r.state === openState) ?? null}
+          national={national}
+          totals={stateTotals?.states.find(s => s.state === openState) ?? null}
+          asOf={stateTotals?.asOf ?? null}
+          onClose={() => setOpenState(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// Per-state detail modal — opens when user clicks a state row, the ▸ chevron,
+// or a state on the map. Shows current-window category breakdown alongside
+// YTD/MTD spend totals so the user can answer "how much have we spent
+// shipping to TX this year" without leaving the page.
+function StateDetailModal({
+  state,
+  row,
+  national,
+  totals,
+  asOf,
+  onClose,
+}: {
+  state: string;
+  row: StateBreakdownRow | null;
+  national: CategoryBreakdown[];
+  totals: StateTotals | null;
+  asOf: string | null;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const stateName = STATE_NAMES[state] ?? state;
+  const nationalAvg = useMemo(() => {
+    const s = national.reduce((a, c) => a + c.shipments, 0);
+    const t = national.reduce((a, c) => a + c.totalCost, 0);
+    return s > 0 ? t / s : 0;
+  }, [national]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+      onClick={onClose}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        className="bg-gray-900 border border-gray-800 rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl"
+      >
+        <div className="px-6 py-4 border-b border-gray-800 flex items-start justify-between sticky top-0 bg-gray-900 z-10">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-blue-400 font-semibold">{state}</span>
+              <span className="text-lg font-semibold text-white">{stateName}</span>
+            </div>
+            <div className="text-xs text-gray-500 mt-1">
+              Ground shipping only · Click outside or press Esc to close
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-gray-500 hover:text-white text-xl leading-none px-2 -mt-1"
+            aria-label="Close"
+          >
+            ×
+          </button>
+        </div>
+
+        {/* Top metrics: current-window avg, YTD, MTD */}
+        <div className="px-6 py-5 border-b border-gray-800 bg-gray-950/40">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
+              <div className="text-[11px] uppercase tracking-wide text-gray-500">Avg / shipment</div>
+              <div className="text-2xl font-bold text-white mt-1">{row ? fmt2(row.avgCost) : "—"}</div>
+              <div className="text-[11px] text-gray-600 mt-0.5">
+                {row ? `${fmtN(row.shipments)} shipments in selected range` : "No data in this range"}
+              </div>
+              {row && nationalAvg > 0 && (
+                <div className="text-[11px] mt-1">
+                  {(() => {
+                    const d = ((row.avgCost - nationalAvg) / nationalAvg) * 100;
+                    const cls = d > 10 ? "text-rose-400" : d < -10 ? "text-emerald-400" : "text-gray-500";
+                    return <span className={cls}>{d > 0 ? "+" : ""}{d.toFixed(0)}% vs national</span>;
+                  })()}
+                </div>
+              )}
+            </div>
+            <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
+              <div className="text-[11px] uppercase tracking-wide text-gray-500">Year-to-date</div>
+              <div className="text-2xl font-bold text-white mt-1">{totals ? fmt(totals.ytdSpend) : "—"}</div>
+              <div className="text-[11px] text-gray-600 mt-0.5">
+                {totals ? `${fmtN(totals.ytdShipments)} shipments since Jan 1` : "—"}
+              </div>
+              {totals && totals.ytdShipments > 0 && (
+                <div className="text-[11px] text-gray-500 mt-1">
+                  avg {fmt2(totals.ytdSpend / totals.ytdShipments)} / shipment
+                </div>
+              )}
+            </div>
+            <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
+              <div className="text-[11px] uppercase tracking-wide text-gray-500">Month-to-date</div>
+              <div className="text-2xl font-bold text-white mt-1">{totals ? fmt(totals.mtdSpend) : "—"}</div>
+              <div className="text-[11px] text-gray-600 mt-0.5">
+                {totals ? `${fmtN(totals.mtdShipments)} shipments this month` : "—"}
+              </div>
+              {totals && totals.mtdShipments > 0 && (
+                <div className="text-[11px] text-gray-500 mt-1">
+                  avg {fmt2(totals.mtdSpend / totals.mtdShipments)} / shipment
+                </div>
+              )}
+            </div>
+          </div>
+          {asOf && (
+            <div className="text-[10px] text-gray-600 mt-2">YTD/MTD as of {asOf}</div>
+          )}
+        </div>
+
+        {/* Category breakdown for the selected window */}
+        <div className="px-6 py-5">
+          <div className="text-sm font-semibold text-white mb-1">By category (selected range)</div>
+          <div className="text-xs text-gray-500 mb-3">
+            How shipping cost to {stateName} breaks down by what was shipped.
+          </div>
+          {row && row.byCategory.filter(c => c.shipments > 0).length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="border-b border-gray-800">
+                  <tr>
+                    <th className="px-3 py-2 text-left text-xs text-gray-500 uppercase tracking-wide font-semibold">Category</th>
+                    <th className="px-3 py-2 text-right text-xs text-gray-500 uppercase tracking-wide font-semibold">Shipments</th>
+                    <th className="px-3 py-2 text-right text-xs text-gray-500 uppercase tracking-wide font-semibold">Avg / shipment</th>
+                    <th className="px-3 py-2 text-right text-xs text-gray-500 uppercase tracking-wide font-semibold">vs National</th>
+                    <th className="px-3 py-2 text-right text-xs text-gray-500 uppercase tracking-wide font-semibold">Total</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-800">
+                  {row.byCategory.filter(c => c.shipments > 0).map(c => {
+                    const natCat = national.find(n => n.category === c.category);
+                    const delta = natCat && natCat.avgCost > 0 ? ((c.avgCost - natCat.avgCost) / natCat.avgCost) * 100 : 0;
+                    const deltaColor = delta > 10 ? "text-rose-400" : delta < -10 ? "text-emerald-400" : "text-gray-500";
+                    return (
+                      <tr key={c.category}>
+                        <td className="px-3 py-2 text-gray-300">{c.category}</td>
+                        <td className="px-3 py-2 text-right text-gray-300">{fmtN(c.shipments)}</td>
+                        <td className="px-3 py-2 text-right text-white font-semibold">{fmt2(c.avgCost)}</td>
+                        <td className={`px-3 py-2 text-right ${deltaColor}`}>
+                          {natCat ? `${delta > 0 ? "+" : ""}${delta.toFixed(0)}%` : "—"}
+                        </td>
+                        <td className="px-3 py-2 text-right text-gray-400">{fmt(c.totalCost)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="text-sm text-gray-500 italic py-6 text-center">
+              No shipments to {stateName} in the selected date range.
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -1106,7 +1277,17 @@ export default function ProductsPage() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [explaining, setExplaining] = useState<string | null>(null);
   const [showCategoryAudit, setShowCategoryAudit] = useState(false);
+  const [stateTotals, setStateTotals] = useState<StateTotalsPayload | null>(null);
   const projections = useShippingProjections();
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/shopify/state-totals")
+      .then(r => r.json())
+      .then(d => { if (!cancelled && !d.error) setStateTotals(d); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   // Landed COGS (base + tariff) per SKU — used by the per-product calculator
   // to compute true margin after shipping. Computed once from the static map.
@@ -1371,6 +1552,7 @@ export default function ProductsPage() {
             <StateBreakdownPanel
               rows={stateBreakdown}
               national={categoryNational}
+              stateTotals={stateTotals}
               onReviewCategories={() => setShowCategoryAudit(true)}
             />
           )}
