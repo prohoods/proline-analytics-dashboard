@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { useFinancialData } from "@/lib/use-financial-data";
+import type { RangeKey } from "@/lib/date-ranges";
+import DateRangeDropdown from "@/components/DateRangeDropdown";
 import InfoTooltip from "@/components/InfoTooltip";
 import {
   BarChart,
@@ -46,7 +48,9 @@ const DEAL_ROOM_ITEMS = [
 ];
 
 export default function StrategicPage() {
-  const { q1, sumGroup } = useFinancialData();
+  const [rangeKey, setRangeKey] = useState<RangeKey>("ytd");
+  const { statements, q1, sumGroup, range } = useFinancialData(rangeKey);
+  const hasData = statements.length > 0;
   // EBITDA proxy — cash operating income (very rough, cash basis)
   const revenue = q1.totalRevenue;
   const cogs = sumGroup("COGS");
@@ -54,7 +58,8 @@ export default function StrategicPage() {
   const opex = sumGroup("OpEx — Marketing") + sumGroup("OpEx — Personnel") + sumGroup("OpEx — Facilities & Logistics") + sumGroup("OpEx — G&A");
   const operatingIncome = grossProfit - opex;
   const ebitdaProxy = operatingIncome; // no D&A yet, so op income ≈ EBITDA
-  const annualized = ebitdaProxy * 4;
+  const annualizationFactor = statements.length > 0 ? 12 / statements.length : 0;
+  const annualized = ebitdaProxy * annualizationFactor;
 
   const [multiple, setMultiple] = useState(5.0);
   const [adjustments, setAdjustments] = useState({ ownerComp: 0, oneTime: 0 });
@@ -81,26 +86,35 @@ export default function StrategicPage() {
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
-      <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-emerald-900/40 border border-emerald-800/40 flex items-center justify-center text-xl">🎯</div>
-        <div>
-          <div className="flex items-center">
-            <h1 className="text-2xl font-bold text-white">M&amp;A / Strategic</h1>
-            <InfoTooltip title="What is this page?">
-              <p className="mb-2">M&amp;A = Mergers &amp; Acquisitions. This page estimates what the business could sell for if you ever wanted to exit, and tracks what paperwork a buyer would demand.</p>
-              <p>Hover any <strong>?</strong> to get a plain-English explanation — no finance background needed.</p>
-            </InfoTooltip>
+      <div className="flex items-start justify-between flex-wrap gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-emerald-900/40 border border-emerald-800/40 flex items-center justify-center text-xl">🎯</div>
+          <div>
+            <div className="flex items-center">
+              <h1 className="text-2xl font-bold text-white">M&amp;A / Strategic</h1>
+              <InfoTooltip title="What is this page?">
+                <p className="mb-2">M&amp;A = Mergers &amp; Acquisitions. This page estimates what the business could sell for if you ever wanted to exit, and tracks what paperwork a buyer would demand.</p>
+                <p>Hover any <strong>?</strong> to get a plain-English explanation — no finance background needed.</p>
+              </InfoTooltip>
+            </div>
+            <p className="text-gray-500 text-sm mt-0.5">Valuation tracking, deal-room readiness — baseline {range.label}</p>
           </div>
-          <p className="text-gray-500 text-sm mt-0.5">Valuation tracking, deal-room readiness, and strategic transaction preparation</p>
         </div>
+        <DateRangeDropdown value={rangeKey} onChange={setRangeKey} />
       </div>
+
+      {!hasData && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center text-gray-400">
+          No statements in this period yet. Upload a bank statement on the <a href="/finance/upload" className="text-blue-400 hover:underline">upload page</a>, or pick a different range.
+        </div>
+      )}
 
       {/* Valuation KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard
           label="Annualized EBITDA (Proxy)"
           value={fmt(adjustedEbitda)}
-          sub="Q1 operating income × 4, adjusted"
+          sub={`${range.label} operating income × ${annualizationFactor.toFixed(1)}, adjusted`}
           color="text-emerald-400"
           tooltip={
             <>
@@ -244,7 +258,7 @@ export default function StrategicPage() {
             </InfoTooltip>
           </div>
           <div className="space-y-2 text-sm">
-            <BridgeRow label="Q1 Operating Income × 4 (annualized)" value={annualized} />
+            <BridgeRow label={`${range.label} Operating Income × ${annualizationFactor.toFixed(1)} (annualized)`} value={annualized} />
             <BridgeRow label="+ Owner comp addback" value={adjustments.ownerComp} />
             <BridgeRow label="+ One-time addbacks" value={adjustments.oneTime} />
             <div className="h-px bg-gray-700 my-1" />

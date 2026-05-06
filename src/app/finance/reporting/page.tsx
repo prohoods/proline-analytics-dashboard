@@ -8,7 +8,9 @@ import {
   type PLGroupKey,
 } from "@/lib/financial-data";
 import { useFinancialData } from "@/lib/use-financial-data";
+import type { RangeKey } from "@/lib/date-ranges";
 import CategoryDrillDown from "@/components/CategoryDrillDown";
+import DateRangeDropdown from "@/components/DateRangeDropdown";
 import InfoTooltip from "@/components/InfoTooltip";
 
 function fmt(n: number) {
@@ -19,22 +21,15 @@ function pct(n: number, base: number) {
   return `${((n / base) * 100).toFixed(1)}%`;
 }
 
-type Period = "MTD" | "QTD" | "YTD";
-
 export default function FinancialReportingPage() {
-  const { statements, monthRevenue, sumGroup, sumCategory } = useFinancialData();
-  const [period, setPeriod] = useState<Period>("QTD");
+  const [rangeKey, setRangeKey] = useState<RangeKey>("ytd");
+  const { statements, monthRevenue, sumGroup, sumCategory, range } = useFinancialData(rangeKey);
   const [drillCategory, setDrillCategory] = useState<string | null>(null);
 
-  // MTD = latest month only · QTD = all 3 Q1 months · YTD = same as QTD until more data
-  const activeMonths: MonthData[] =
-    period === "MTD" ? [statements[statements.length - 1]] : statements;
+  const hasData = statements.length > 0;
+  const activeMonths: MonthData[] = statements;
   const activeMonth: MonthData | undefined = activeMonths.length === 1 ? activeMonths[0] : undefined;
-
-  const periodLabel =
-    period === "MTD" ? `${statements[statements.length - 1].shortMonth} ${statements[statements.length - 1].year}`
-    : period === "QTD" ? "Q1 2026"
-    : "2026 YTD";
+  const periodLabel = range.label;
 
   // Compute totals — sum across the active months
   const revenue = activeMonths.reduce((s, m) => s + monthRevenue(m), 0);
@@ -75,7 +70,7 @@ export default function FinancialReportingPage() {
               <h1 className="text-2xl font-bold text-white">Financial Reporting</h1>
               <InfoTooltip title="Financial Reporting">
                 <p className="mb-2">This is the company&apos;s <strong>Profit &amp; Loss statement</strong> — the standard CFO/board view of how the business performed in a period.</p>
-                <p className="mb-2">It&apos;s organized top-down: <strong>Revenue → COGS → Gross Profit → OpEx → Operating Income → Net Income</strong>. Each layer subtracts a category of cost so you can see exactly where money is going. Toggle between MTD (month), QTD (quarter), or YTD (year-to-date).</p>
+                <p className="mb-2">It&apos;s organized top-down: <strong>Revenue → COGS → Gross Profit → OpEx → Operating Income → Net Income</strong>. Each layer subtracts a category of cost so you can see exactly where money is going. Use the date dropdown to change the period.</p>
                 <p>This is <em>cash-basis</em> — built from actual bank movements, not invoices. So &quot;revenue&quot; means cash received, not orders booked.</p>
               </InfoTooltip>
             </div>
@@ -83,23 +78,14 @@ export default function FinancialReportingPage() {
           </div>
         </div>
 
-        {/* Period toggle */}
-        <div className="inline-flex rounded-lg bg-gray-900 border border-gray-800 p-1">
-          {(["MTD", "QTD", "YTD"] as Period[]).map(p => (
-            <button
-              key={p}
-              onClick={() => setPeriod(p)}
-              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                period === p
-                  ? "bg-emerald-600/20 text-emerald-400"
-                  : "text-gray-400 hover:text-white"
-              }`}
-            >
-              {p}
-            </button>
-          ))}
-        </div>
+        <DateRangeDropdown value={rangeKey} onChange={setRangeKey} />
       </div>
+
+      {!hasData && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center text-gray-400">
+          No statements in this period yet. Upload a bank statement on the <a href="/finance/upload" className="text-blue-400 hover:underline">upload page</a>, or pick a different range.
+        </div>
+      )}
 
       {/* Margin summary cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

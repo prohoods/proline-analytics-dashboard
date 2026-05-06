@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import { useFinancialData } from "@/lib/use-financial-data";
+import type { RangeKey } from "@/lib/date-ranges";
 import CategoryDrillDown from "@/components/CategoryDrillDown";
+import DateRangeDropdown from "@/components/DateRangeDropdown";
 import InfoTooltip from "@/components/InfoTooltip";
 
 function fmt(n: number) {
@@ -24,16 +26,18 @@ const KNOWN_ACCOUNTS = [
 ];
 
 export default function CashTreasuryPage() {
-  const { statements, monthRevenue, monthNetExpenses, q1 } = useFinancialData();
+  const [rangeKey, setRangeKey] = useState<RangeKey>("ytd");
+  const { statements, monthRevenue, monthNetExpenses, q1, range } = useFinancialData(rangeKey);
   const [drillCategory, setDrillCategory] = useState<string | null>(null);
 
-  const latest = statements[statements.length - 1];
-  const oldest = statements[0];
+  const hasData = statements.length > 0;
+  const latest = hasData ? statements[statements.length - 1] : null;
+  const oldest = hasData ? statements[0] : null;
   const totalRevenue = q1.totalRevenue;
   const totalExpenses = q1.totalExpenses;
   const netCashFlow = q1.netCashFlow;
-  const avgMonthlyBurn = totalExpenses / statements.length;
-  const runwayMonths = latest.acct115EndBalance / avgMonthlyBurn;
+  const avgMonthlyBurn = hasData ? totalExpenses / statements.length : 0;
+  const runwayMonths = latest && avgMonthlyBurn > 0 ? latest.acct115EndBalance / avgMonthlyBurn : Infinity;
 
   // Combined cash trajectory across both KeyBank accounts
   const trajectory = statements.map(m => ({
@@ -50,23 +54,31 @@ export default function CashTreasuryPage() {
       <CategoryDrillDown category={drillCategory} onClose={() => setDrillCategory(null)} />
 
       {/* Header */}
-      <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-emerald-900/40 border border-emerald-800/40 flex items-center justify-center text-xl">
-          💰
-        </div>
-        <div>
-          <div className="flex items-center">
-            <h1 className="text-2xl font-bold text-white">Cash &amp; Treasury</h1>
-            <InfoTooltip title="Cash &amp; Treasury">
-              <p className="mb-2">This page is the answer to a CFO&apos;s most basic question: <strong>how much cash do we have, and how long will it last?</strong></p>
-              <p className="mb-2"><strong>Current Cash</strong> is the combined balance across known KeyBank accounts. <strong>Net Cash Flow</strong> is revenue minus expenses for the quarter — positive means we&apos;re generating cash, negative means we&apos;re burning it. <strong>Runway</strong> = current cash ÷ average monthly burn — how many months we can keep operating without new revenue.</p>
-              <p>Why it matters: cash is the only thing that can&apos;t be faked. This is the page you check first thing every Monday.</p>
-            </InfoTooltip>
+      <div className="flex items-start justify-between flex-wrap gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-emerald-900/40 border border-emerald-800/40 flex items-center justify-center text-xl">
+            💰
           </div>
-          <p className="text-gray-500 text-sm mt-0.5">Bank balances, cash flow trajectory, and runway — Q1 2026</p>
+          <div>
+            <div className="flex items-center">
+              <h1 className="text-2xl font-bold text-white">Cash &amp; Treasury</h1>
+              <InfoTooltip title="Cash &amp; Treasury">
+                <p className="mb-2">This page is the answer to a CFO&apos;s most basic question: <strong>how much cash do we have, and how long will it last?</strong></p>
+                <p className="mb-2"><strong>Current Cash</strong> is the combined balance across known KeyBank accounts. <strong>Net Cash Flow</strong> is revenue minus expenses for the period — positive means we&apos;re generating cash, negative means we&apos;re burning it. <strong>Runway</strong> = current cash ÷ average monthly burn — how many months we can keep operating without new revenue.</p>
+                <p>Why it matters: cash is the only thing that can&apos;t be faked. This is the page you check first thing every Monday.</p>
+              </InfoTooltip>
+            </div>
+            <p className="text-gray-500 text-sm mt-0.5">Bank balances, cash flow trajectory, and runway — {range.label}</p>
+          </div>
         </div>
+        <DateRangeDropdown value={rangeKey} onChange={setRangeKey} />
       </div>
 
+      {!hasData || !latest || !oldest ? (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center text-gray-400">
+          No statements in this period yet. Upload a bank statement on the <a href="/finance/upload" className="text-blue-400 hover:underline">upload page</a>, or pick a different range.
+        </div>
+      ) : (<>
       {/* KPI cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard
@@ -76,15 +88,15 @@ export default function CashTreasuryPage() {
           color="text-emerald-400"
         />
         <KpiCard
-          label="Q1 Net Cash Flow"
+          label={`${range.label} Net Cash Flow`}
           value={fmt(netCashFlow)}
-          sub={netCashFlow >= 0 ? "Positive — generating cash" : "Burning cash this quarter"}
+          sub={netCashFlow >= 0 ? "Positive — generating cash" : "Burning cash this period"}
           color={netCashFlow >= 0 ? "text-emerald-400" : "text-red-400"}
         />
         <KpiCard
           label="Avg Monthly Burn"
           value={fmt(avgMonthlyBurn)}
-          sub="Revenue − expenses, 3-month average"
+          sub={`Across ${statements.length} ${statements.length === 1 ? "month" : "months"}`}
           color="text-orange-400"
         />
         <KpiCard
@@ -128,7 +140,7 @@ export default function CashTreasuryPage() {
             </tbody>
             <tfoot>
               <tr className="border-t-2 border-gray-700 bg-gray-800/50 font-bold text-white text-sm">
-                <td className="py-3 px-4">Q1 Total</td>
+                <td className="py-3 px-4">{range.label} Total</td>
                 <td className="py-3 px-4 text-right text-gray-400">{fmt(oldest.acct115BeginBalance + oldest.acct2285BeginBalance)}</td>
                 <td className="py-3 px-4 text-right text-green-400">{fmt(totalRevenue)}</td>
                 <td className="py-3 px-4 text-right text-red-400">({fmt(totalExpenses)})</td>
@@ -142,11 +154,11 @@ export default function CashTreasuryPage() {
 
         {/* Cash flow waterfall */}
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 lg:col-span-2">
-          <h2 className="text-sm font-semibold text-white mb-3">Q1 Cash Waterfall</h2>
+          <h2 className="text-sm font-semibold text-white mb-3">{range.label} Cash Waterfall</h2>
           <div className="space-y-3 text-sm">
             <WaterfallRow label="Beginning Balance" value={oldest.acct115BeginBalance + oldest.acct2285BeginBalance} tone="neutral" />
-            <WaterfallRow label="+ Q1 Revenue" value={totalRevenue} tone="positive" />
-            <WaterfallRow label="− Q1 Expenses" value={-totalExpenses} tone="negative" />
+            <WaterfallRow label={`+ ${range.label} Revenue`} value={totalRevenue} tone="positive" />
+            <WaterfallRow label={`− ${range.label} Expenses`} value={-totalExpenses} tone="negative" />
             <div className="h-px bg-gray-800 my-2" />
             <WaterfallRow label="= Ending Balance" value={latest.acct115EndBalance + latest.acct2285EndBalance} tone="bold" />
           </div>
@@ -216,7 +228,7 @@ export default function CashTreasuryPage() {
       {/* Outflow highlights — clickable categories */}
       <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-800">
-          <h2 className="text-sm font-semibold text-white">Top Q1 Outflows (click to see transactions)</h2>
+          <h2 className="text-sm font-semibold text-white">Top Outflows — {range.label} (click to see transactions)</h2>
         </div>
         <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-3">
           {["Factory / Inventory (COGS)", "Digital Advertising", "Payroll", "Unclassified Outflows (115)", "Rent", "Shipping & Freight"].map(cat => {
@@ -230,7 +242,7 @@ export default function CashTreasuryPage() {
               >
                 <div>
                   <div className="text-sm text-white group-hover:underline">{cat}</div>
-                  <div className="text-xs text-gray-500 mt-0.5">{pct.toFixed(1)}% of Q1 spend</div>
+                  <div className="text-xs text-gray-500 mt-0.5">{pct.toFixed(1)}% of {range.label} spend</div>
                 </div>
                 <div className="text-right">
                   <div className="text-white font-semibold">{fmt(total)}</div>
@@ -241,6 +253,7 @@ export default function CashTreasuryPage() {
           })}
         </div>
       </div>
+      </>)}
     </div>
   );
 }

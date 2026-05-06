@@ -4,7 +4,9 @@ import { useState } from "react";
 import Link from "next/link";
 import { CATEGORY_TEXT } from "@/lib/financial-data";
 import { useFinancialData } from "@/lib/use-financial-data";
+import type { RangeKey } from "@/lib/date-ranges";
 import CategoryDrillDown from "@/components/CategoryDrillDown";
+import DateRangeDropdown from "@/components/DateRangeDropdown";
 import InfoTooltip from "@/components/InfoTooltip";
 import {
   LineChart,
@@ -22,13 +24,15 @@ function fmt(n: number) {
 }
 
 export default function OperationalPage() {
-  const { statements, monthRevenue, sumGroup, sumCategory, q1 } = useFinancialData();
+  const [rangeKey, setRangeKey] = useState<RangeKey>("ytd");
+  const { statements, monthRevenue, sumGroup, sumCategory, q1, range } = useFinancialData(rangeKey);
   const [drillCategory, setDrillCategory] = useState<string | null>(null);
 
+  const hasData = statements.length > 0;
   const totalRevenue = q1.totalRevenue;
   const cogs = sumGroup("COGS");
   const grossProfit = totalRevenue - cogs;
-  const grossMargin = (grossProfit / totalRevenue) * 100;
+  const grossMargin = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0;
 
   // Cost ratios — every dollar of revenue, how many cents go to each bucket?
   const ratios = [
@@ -41,11 +45,11 @@ export default function OperationalPage() {
     { label: "Rent", category: "Rent", amount: sumCategory("Rent") },
     { label: "SaaS & Software", category: "SaaS & Software", amount: sumCategory("SaaS & Software") },
   ]
-    .map(r => ({ ...r, pct: (r.amount / totalRevenue) * 100 }))
+    .map(r => ({ ...r, pct: totalRevenue > 0 ? (r.amount / totalRevenue) * 100 : 0 }))
     .sort((a, b) => b.amount - a.amount);
 
   const totalAdSpend = sumCategory("Digital Advertising") + sumCategory("Marketing Services");
-  const cacProxyPct = (totalAdSpend / totalRevenue) * 100; // marketing spend per revenue dollar
+  const cacProxyPct = totalRevenue > 0 ? (totalAdSpend / totalRevenue) * 100 : 0; // marketing spend per revenue dollar
 
   // Monthly series for trend chart
   const series = statements.map(m => {
@@ -66,20 +70,29 @@ export default function OperationalPage() {
       <CategoryDrillDown category={drillCategory} onClose={() => setDrillCategory(null)} />
 
       {/* Header */}
-      <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-emerald-900/40 border border-emerald-800/40 flex items-center justify-center text-xl">⚙️</div>
-        <div>
-          <div className="flex items-center">
-            <h1 className="text-2xl font-bold text-white">Operational Performance</h1>
-            <InfoTooltip title="Operational Performance">
-              <p className="mb-2">This page measures how efficiently the business turns revenue into profit — the core CFO question of &quot;for every $1 we sell, where does it go?&quot;</p>
-              <p className="mb-2"><strong>Gross margin</strong> = revenue minus cost of goods (factory + import + freight). What&apos;s left to cover everything else. <strong>Marketing/Revenue</strong>, <strong>Freight/Revenue</strong>, <strong>Payroll/Revenue</strong> are cost ratios — each shown as a percentage of sales so you can see if any line is creeping up over time.</p>
-              <p>Why it matters: revenue can grow while margin shrinks. These ratios catch that early.</p>
-            </InfoTooltip>
+      <div className="flex items-start justify-between flex-wrap gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-emerald-900/40 border border-emerald-800/40 flex items-center justify-center text-xl">⚙️</div>
+          <div>
+            <div className="flex items-center">
+              <h1 className="text-2xl font-bold text-white">Operational Performance</h1>
+              <InfoTooltip title="Operational Performance">
+                <p className="mb-2">This page measures how efficiently the business turns revenue into profit — the core CFO question of &quot;for every $1 we sell, where does it go?&quot;</p>
+                <p className="mb-2"><strong>Gross margin</strong> = revenue minus cost of goods (factory + import + freight). What&apos;s left to cover everything else. <strong>Marketing/Revenue</strong>, <strong>Freight/Revenue</strong>, <strong>Payroll/Revenue</strong> are cost ratios — each shown as a percentage of sales so you can see if any line is creeping up over time.</p>
+                <p>Why it matters: revenue can grow while margin shrinks. These ratios catch that early.</p>
+              </InfoTooltip>
+            </div>
+            <p className="text-gray-500 text-sm mt-0.5">{range.label} cost ratios and operational KPIs</p>
           </div>
-          <p className="text-gray-500 text-sm mt-0.5">Q1 2026 cost ratios and operational KPIs</p>
         </div>
+        <DateRangeDropdown value={rangeKey} onChange={setRangeKey} />
       </div>
+
+      {!hasData && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center text-gray-400">
+          No statements in this period yet. Upload a bank statement on the <a href="/finance/upload" className="text-blue-400 hover:underline">upload page</a>, or pick a different range.
+        </div>
+      )}
 
       {/* CFO-lens KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

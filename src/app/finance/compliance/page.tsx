@@ -2,8 +2,10 @@
 
 import { useState } from "react";
 import { useFinancialData } from "@/lib/use-financial-data";
+import type { RangeKey } from "@/lib/date-ranges";
 import type { MonthData } from "@/lib/financial-data";
 import CategoryDrillDown from "@/components/CategoryDrillDown";
+import DateRangeDropdown from "@/components/DateRangeDropdown";
 import InfoTooltip from "@/components/InfoTooltip";
 
 function fmt(n: number) {
@@ -33,14 +35,12 @@ const FILINGS: Filing[] = [
 ];
 
 export default function CompliancePage() {
-  const { statements, sumCategory, q1 } = useFinancialData();
+  const [rangeKey, setRangeKey] = useState<RangeKey>("ytd");
+  const { statements, sumCategory, q1, range } = useFinancialData(rangeKey);
   const [drillCategory, setDrillCategory] = useState<string | null>(null);
 
+  const hasData = statements.length > 0;
   const totalAvalara = sumCategory("Taxes & Compliance");
-  const avalaraByMonth = statements.map(m => ({
-    month: `${m.shortMonth} ${m.year}`,
-    amount: sumCategory("Taxes & Compliance", m),
-  }));
 
   const daysUntil = (dateStr: string) => {
     if (dateStr === "—") return null;
@@ -54,25 +54,34 @@ export default function CompliancePage() {
       <CategoryDrillDown category={drillCategory} onClose={() => setDrillCategory(null)} />
 
       {/* Header */}
-      <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-emerald-900/40 border border-emerald-800/40 flex items-center justify-center text-xl">⚖️</div>
-        <div>
-          <div className="flex items-center">
-            <h1 className="text-2xl font-bold text-white">Regulatory &amp; Compliance</h1>
-            <InfoTooltip title="Regulatory &amp; Compliance">
-              <p className="mb-2">This page tracks every tax filing and government obligation the company has — what we owe, what&apos;s been filed, and what&apos;s coming due.</p>
-              <p className="mb-2"><strong>Sales tax</strong> is collected from customers in all 50 states and remitted monthly through Avalara. <strong>Federal &amp; state income tax</strong> (Form 1120, Utah TC-20) are annual. <strong>Payroll taxes</strong> (Form 941, Utah unemployment) are quarterly.</p>
-              <p>Why it matters: missed filings trigger penalties and interest. This is the page a CFO uses to make sure nothing slips.</p>
-            </InfoTooltip>
+      <div className="flex items-start justify-between flex-wrap gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-emerald-900/40 border border-emerald-800/40 flex items-center justify-center text-xl">⚖️</div>
+          <div>
+            <div className="flex items-center">
+              <h1 className="text-2xl font-bold text-white">Regulatory &amp; Compliance</h1>
+              <InfoTooltip title="Regulatory &amp; Compliance">
+                <p className="mb-2">This page tracks every tax filing and government obligation the company has — what we owe, what&apos;s been filed, and what&apos;s coming due.</p>
+                <p className="mb-2"><strong>Sales tax</strong> is collected from customers in all 50 states and remitted monthly through Avalara. <strong>Federal &amp; state income tax</strong> (Form 1120, Utah TC-20) are annual. <strong>Payroll taxes</strong> (Form 941, Utah unemployment) are quarterly.</p>
+                <p>Why it matters: missed filings trigger penalties and interest. This is the page a CFO uses to make sure nothing slips.</p>
+              </InfoTooltip>
+            </div>
+            <p className="text-gray-500 text-sm mt-0.5">Tax filings, sales tax obligations, and compliance calendar — {range.label}</p>
           </div>
-          <p className="text-gray-500 text-sm mt-0.5">Tax filings, sales tax obligations, and compliance calendar</p>
         </div>
+        <DateRangeDropdown value={rangeKey} onChange={setRangeKey} />
       </div>
+
+      {!hasData && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center text-gray-400">
+          No statements in this period yet. Upload a bank statement on the <a href="/finance/upload" className="text-blue-400 hover:underline">upload page</a>, or pick a different range.
+        </div>
+      )}
 
       {/* KPI cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <KpiCard label="Q1 Tax & Compliance Spend" value={fmt(totalAvalara)} sub={`${((totalAvalara / q1.totalRevenue) * 100).toFixed(1)}% of revenue`} color="text-yellow-400" />
-        <KpiCard label="Avg Monthly Sales Tax" value={fmt(totalAvalara / statements.length)} sub="Includes Jan backfiling spike" color="text-yellow-400" />
+        <KpiCard label={`${range.label} Tax & Compliance Spend`} value={fmt(totalAvalara)} sub={q1.totalRevenue > 0 ? `${((totalAvalara / q1.totalRevenue) * 100).toFixed(1)}% of revenue` : "—"} color="text-yellow-400" />
+        <KpiCard label="Avg Monthly Sales Tax" value={fmt(statements.length ? totalAvalara / statements.length : 0)} sub={`Across ${statements.length} ${statements.length === 1 ? "month" : "months"}`} color="text-yellow-400" />
         <KpiCard label="Filings on Schedule" value={`${FILINGS.filter(f => f.status === "filed" || f.status === "upcoming").length}/${FILINGS.length}`} sub="Known filings tracked" color="text-emerald-400" />
         <KpiCard label="Overdue / Unknown" value={`${FILINGS.filter(f => f.status === "overdue" || f.status === "unknown").length}`} sub="Need confirmation" color={FILINGS.some(f => f.status === "overdue") ? "text-red-400" : "text-yellow-400"} />
       </div>
@@ -103,7 +112,8 @@ export default function CompliancePage() {
           <tbody className="divide-y divide-gray-800">
             {statements.map(m => {
               const amt = sumCategory("Taxes & Compliance", m);
-              const revPct = (amt / monthRev(m)) * 100;
+              const rev = monthRev(m);
+              const revPct = rev > 0 ? (amt / rev) * 100 : 0;
               const isJan = m.shortMonth === "Jan";
               return (
                 <tr key={m.month} className="hover:bg-gray-800/30">
@@ -119,7 +129,7 @@ export default function CompliancePage() {
           </tbody>
           <tfoot>
             <tr className="border-t-2 border-gray-700 bg-gray-800/50 font-bold text-white">
-              <td className="py-3 px-4">Q1 Total</td>
+              <td className="py-3 px-4">{range.label} Total</td>
               <td className="py-3 px-4 text-right text-yellow-400">{fmt(totalAvalara)}</td>
               <td className="py-3 px-4 text-right">—</td>
               <td className="py-3 px-4" />
@@ -184,9 +194,9 @@ export default function CompliancePage() {
 
       {/* 1099 tracking */}
       <div className="bg-emerald-900/10 border border-emerald-800/40 rounded-xl p-5">
-        <h2 className="text-sm font-semibold text-emerald-400 mb-2">1099-NEC Preparation — Q1 Known Contractors</h2>
+        <h2 className="text-sm font-semibold text-emerald-400 mb-2">1099-NEC Preparation — {range.label} Known Contractors</h2>
         <p className="text-sm text-gray-300 leading-relaxed">
-          KBBO ACH is now itemized. Q1 contractor payments identified: <span className="text-white font-semibold">Renan Bonin $10,400</span> (website dev). Keep watching non-KBBO 115 outflows — once the bank statement PDFs are parsed, any remaining contractor payments will be auto-surfaced against the $600+ threshold.
+          KBBO ACH is now itemized. {range.label} contractor payments identified: <span className="text-white font-semibold">Renan Bonin $10,400</span> (website dev). Keep watching non-KBBO 115 outflows — once the bank statement PDFs are parsed, any remaining contractor payments will be auto-surfaced against the $600+ threshold.
         </p>
       </div>
 

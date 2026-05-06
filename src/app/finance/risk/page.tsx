@@ -2,8 +2,10 @@
 
 import { useState } from "react";
 import { useFinancialData } from "@/lib/use-financial-data";
+import type { RangeKey } from "@/lib/date-ranges";
 import type { MonthData } from "@/lib/financial-data";
 import CategoryDrillDown from "@/components/CategoryDrillDown";
+import DateRangeDropdown from "@/components/DateRangeDropdown";
 import InfoTooltip from "@/components/InfoTooltip";
 
 function fmt(n: number) {
@@ -58,14 +60,16 @@ function aggregateByVendor(statements: MonthData[]) {
 }
 
 export default function RiskPage() {
-  const { statements, q1 } = useFinancialData();
+  const [rangeKey, setRangeKey] = useState<RangeKey>("ytd");
+  const { statements, q1, range } = useFinancialData(rangeKey);
   const [drillCategory, setDrillCategory] = useState<string | null>(null);
 
+  const hasData = statements.length > 0;
   const vendors = aggregateByVendor(statements).sort((a, b) => b.total - a.total);
   const topVendors = vendors.slice(0, 10);
   const totalSpend = q1.totalExpenses;
-  const top5Share = vendors.slice(0, 5).reduce((s, v) => s + v.total, 0) / totalSpend * 100;
-  const top10Share = vendors.slice(0, 10).reduce((s, v) => s + v.total, 0) / totalSpend * 100;
+  const top5Share = totalSpend > 0 ? vendors.slice(0, 5).reduce((s, v) => s + v.total, 0) / totalSpend * 100 : 0;
+  const top10Share = totalSpend > 0 ? vendors.slice(0, 10).reduce((s, v) => s + v.total, 0) / totalSpend * 100 : 0;
 
   // Supplier concentration — COGS-only vendors
   const suppliers = vendors.filter(v => v.category === "Factory / Inventory (COGS)");
@@ -89,26 +93,35 @@ export default function RiskPage() {
       <CategoryDrillDown category={drillCategory} onClose={() => setDrillCategory(null)} />
 
       {/* Header */}
-      <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-emerald-900/40 border border-emerald-800/40 flex items-center justify-center text-xl">🛡️</div>
-        <div>
-          <div className="flex items-center">
-            <h1 className="text-2xl font-bold text-white">Risk &amp; Controls</h1>
-            <InfoTooltip title="Risk &amp; Controls">
-              <p className="mb-2">This page surfaces where the business is most exposed financially — and whether anything looks unusual.</p>
-              <p className="mb-2"><strong>Concentration risk</strong> = how much of our Q1 spend went to a small number of vendors. If one vendor goes down (factory delay, billing dispute), how much of the business is affected?</p>
-              <p className="mb-2"><strong>Anomaly detection</strong> = transactions that are far above or below their category&apos;s typical range. Useful for catching duplicate payments, fraud, or one-off spikes that need an explanation.</p>
-              <p>Why it matters: knowing where you&apos;re concentrated and what looks off is the foundation of operating discipline.</p>
-            </InfoTooltip>
+      <div className="flex items-start justify-between flex-wrap gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-emerald-900/40 border border-emerald-800/40 flex items-center justify-center text-xl">🛡️</div>
+          <div>
+            <div className="flex items-center">
+              <h1 className="text-2xl font-bold text-white">Risk &amp; Controls</h1>
+              <InfoTooltip title="Risk &amp; Controls">
+                <p className="mb-2">This page surfaces where the business is most exposed financially — and whether anything looks unusual.</p>
+                <p className="mb-2"><strong>Concentration risk</strong> = how much of period spend went to a small number of vendors. If one vendor goes down (factory delay, billing dispute), how much of the business is affected?</p>
+                <p className="mb-2"><strong>Anomaly detection</strong> = transactions that are far above or below their category&apos;s typical range. Useful for catching duplicate payments, fraud, or one-off spikes that need an explanation.</p>
+                <p>Why it matters: knowing where you&apos;re concentrated and what looks off is the foundation of operating discipline.</p>
+              </InfoTooltip>
+            </div>
+            <p className="text-gray-500 text-sm mt-0.5">Concentration risk, anomaly detection, and internal controls — {range.label}</p>
           </div>
-          <p className="text-gray-500 text-sm mt-0.5">Concentration risk, anomaly detection, and internal controls — Q1 2026</p>
         </div>
+        <DateRangeDropdown value={rangeKey} onChange={setRangeKey} />
       </div>
+
+      {!hasData && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center text-gray-400">
+          No statements in this period yet. Upload a bank statement on the <a href="/finance/upload" className="text-blue-400 hover:underline">upload page</a>, or pick a different range.
+        </div>
+      )}
 
       {/* Risk KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <RiskKpi label="Top 5 Vendor Share" value={`${top5Share.toFixed(1)}%`} sub="Of total Q1 spend" severity={top5Share > 60 ? "high" : top5Share > 40 ? "medium" : "low"} />
-        <RiskKpi label="Top 10 Vendor Share" value={`${top10Share.toFixed(1)}%`} sub="Of total Q1 spend" severity={top10Share > 80 ? "high" : top10Share > 60 ? "medium" : "low"} />
+        <RiskKpi label="Top 5 Vendor Share" value={`${top5Share.toFixed(1)}%`} sub="Of total period spend" severity={top5Share > 60 ? "high" : top5Share > 40 ? "medium" : "low"} />
+        <RiskKpi label="Top 10 Vendor Share" value={`${top10Share.toFixed(1)}%`} sub="Of total period spend" severity={top10Share > 80 ? "high" : top10Share > 60 ? "medium" : "low"} />
         <RiskKpi label="Top Supplier Share" value={`${topSupplierShare.toFixed(0)}%`} sub={`${topSupplier?.vendor ?? "—"} of COGS`} severity={topSupplierShare > 60 ? "high" : topSupplierShare > 35 ? "medium" : "low"} />
         <RiskKpi label="Anomalies Detected" value={String(anomalies.length)} sub="Transactions > 2× vendor mean" severity={anomalies.length > 5 ? "medium" : "low"} />
       </div>
@@ -116,7 +129,7 @@ export default function RiskPage() {
       {/* Vendor concentration */}
       <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-800">
-          <h2 className="text-sm font-semibold text-white">Vendor Concentration — Top 10 by Q1 Spend</h2>
+          <h2 className="text-sm font-semibold text-white">Vendor Concentration — Top 10 by {range.label} Spend</h2>
           <p className="text-xs text-gray-500 mt-0.5">High concentration in a single vendor is a business continuity risk</p>
         </div>
         <table className="w-full text-sm">
@@ -125,7 +138,7 @@ export default function RiskPage() {
               <th className="py-2.5 px-4 text-left">#</th>
               <th className="py-2.5 px-4 text-left">Vendor</th>
               <th className="py-2.5 px-4 text-left">Category</th>
-              <th className="py-2.5 px-4 text-right">Q1 Total</th>
+              <th className="py-2.5 px-4 text-right">{range.label} Total</th>
               <th className="py-2.5 px-4 text-right">% of Spend</th>
               <th className="py-2.5 px-4 text-center">Transactions</th>
             </tr>
@@ -168,7 +181,7 @@ export default function RiskPage() {
               <h2 className="text-sm font-semibold text-white mb-1">Supplier Concentration — Single-Source Risk</h2>
               <p className="text-sm text-gray-300 leading-relaxed">
                 <span className="text-white font-semibold">{topSupplier.vendor}</span> accounts for <span className={`font-semibold ${topSupplierShare > 60 ? "text-red-400" : "text-yellow-400"}`}>{topSupplierShare.toFixed(0)}%</span> of
-                your Q1 factory spend ({fmt(topSupplier.total)} of {fmt(totalCogs)} total COGS).
+                your {range.label} factory spend ({fmt(topSupplier.total)} of {fmt(totalCogs)} total COGS).
                 {topSupplierShare > 50 && " This represents a concentration risk — supplier disruption would directly impact inventory availability."}
               </p>
               <div className="mt-3 space-y-2">
@@ -198,7 +211,7 @@ export default function RiskPage() {
           <p className="text-xs text-gray-500 mt-0.5">Vendors whose largest transaction is &gt;2× their average — could be billing errors, duplicate payments, or one-time events</p>
         </div>
         {anomalies.length === 0 ? (
-          <div className="p-8 text-center text-sm text-gray-500">No anomalies detected with current Q1 data.</div>
+          <div className="p-8 text-center text-sm text-gray-500">No anomalies detected with current {range.label} data.</div>
         ) : (
           <table className="w-full text-sm">
             <thead>

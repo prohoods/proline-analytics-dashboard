@@ -1,6 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import { useFinancialData } from "@/lib/use-financial-data";
+import type { RangeKey } from "@/lib/date-ranges";
+import DateRangeDropdown from "@/components/DateRangeDropdown";
 import InfoTooltip from "@/components/InfoTooltip";
 import {
   LineChart,
@@ -24,7 +27,9 @@ function fmtK(n: number) {
 }
 
 export default function BoardPage() {
-  const { statements, monthRevenue, monthNetExpenses, sumGroup, q1 } = useFinancialData();
+  const [rangeKey, setRangeKey] = useState<RangeKey>("ytd");
+  const { statements, monthRevenue, monthNetExpenses, sumGroup, q1, range } = useFinancialData(rangeKey);
+  const hasData = statements.length > 0;
   // Monthly series
   const series = statements.map(m => {
     const revenue = monthRevenue(m);
@@ -50,12 +55,12 @@ export default function BoardPage() {
   const grossMargin = totalRevenue === 0 ? 0 : (totalGrossProfit / totalRevenue) * 100;
   const opIncome = q1.netCashFlow;
   const opMargin = totalRevenue === 0 ? 0 : (opIncome / totalRevenue) * 100;
-  const latest = statements[statements.length - 1];
-  const cashOnHand = latest.acct115EndBalance + latest.acct2285EndBalance;
-  const avgBurn = q1.totalExpenses / statements.length;
-  const runway = cashOnHand / avgBurn;
+  const latest = hasData ? statements[statements.length - 1] : null;
+  const cashOnHand = latest ? latest.acct115EndBalance + latest.acct2285EndBalance : 0;
+  const avgBurn = hasData ? q1.totalExpenses / statements.length : 0;
+  const runway = avgBurn > 0 ? cashOnHand / avgBurn : Infinity;
 
-  const commentary = generateCommentary({
+  const commentary = hasData ? generateCommentary({
     revenue: totalRevenue,
     grossMargin,
     opIncome,
@@ -63,28 +68,38 @@ export default function BoardPage() {
     cashOnHand,
     runway,
     monthlySeries: series,
-  });
+    rangeLabel: range.label,
+  }) : [];
 
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
-      <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-emerald-900/40 border border-emerald-800/40 flex items-center justify-center text-xl">📋</div>
-        <div className="flex-1">
-          <div className="flex items-center">
-            <h1 className="text-2xl font-bold text-white">Board &amp; Executive</h1>
-            <InfoTooltip title="What is this page?" size="md">
-              A one-page summary you&apos;d show to investors, a board of directors, or a partner
-              to answer <em>&quot;how is the business doing?&quot;</em> at a glance. Each tile is a
-              headline number; hover the <span className="text-emerald-400">?</span> on any of
-              them for a plain-language explanation. The charts show how those numbers moved
-              across the quarter, and the auto-commentary below reads the data and flags what&apos;s
-              good or concerning.
-            </InfoTooltip>
+      <div className="flex items-start justify-between flex-wrap gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-emerald-900/40 border border-emerald-800/40 flex items-center justify-center text-xl">📋</div>
+          <div className="flex-1">
+            <div className="flex items-center">
+              <h1 className="text-2xl font-bold text-white">Board &amp; Executive</h1>
+              <InfoTooltip title="What is this page?" size="md">
+                A one-page summary you&apos;d show to investors, a board of directors, or a partner
+                to answer <em>&quot;how is the business doing?&quot;</em> at a glance. Each tile is a
+                headline number; hover the <span className="text-emerald-400">?</span> on any of
+                them for a plain-language explanation. The charts show how those numbers moved
+                across the period, and the auto-commentary below reads the data and flags what&apos;s
+                good or concerning.
+              </InfoTooltip>
+            </div>
+            <p className="text-gray-500 text-sm mt-0.5">{range.label} performance summary for board review</p>
           </div>
-          <p className="text-gray-500 text-sm mt-0.5">Q1 2026 performance summary for board review</p>
         </div>
+        <DateRangeDropdown value={rangeKey} onChange={setRangeKey} />
       </div>
+
+      {!hasData && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center text-gray-400">
+          No statements in this period yet. Upload a bank statement on the <a href="/finance/upload" className="text-blue-400 hover:underline">upload page</a>, or pick a different range.
+        </div>
+      )}
 
       {/* 6 exec KPI tiles */}
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
@@ -134,7 +149,7 @@ export default function BoardPage() {
 
       {/* Revenue vs Expenses chart */}
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-        <h2 className="text-sm font-semibold text-white mb-4">Revenue vs Expenses — Q1 2026</h2>
+        <h2 className="text-sm font-semibold text-white mb-4">Revenue vs Expenses — {range.label}</h2>
         <div className="h-64">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={series}>
@@ -202,6 +217,9 @@ export default function BoardPage() {
           <span className="text-[10px] uppercase tracking-wider font-semibold text-gray-500">Rule-based draft</span>
         </div>
         <div className="space-y-2 text-sm">
+          {commentary.length === 0 && (
+            <div className="text-gray-500 italic text-xs">Upload a statement to generate commentary.</div>
+          )}
           {commentary.map((line, i) => (
             <div key={i} className="flex items-start gap-2">
               <span className={`mt-1.5 w-1.5 h-1.5 rounded-full flex-shrink-0 ${line.tone === "positive" ? "bg-emerald-400" : line.tone === "negative" ? "bg-red-400" : "bg-gray-500"}`} />
@@ -268,18 +286,22 @@ function generateCommentary(m: {
   opMargin: number;
   cashOnHand: number;
   runway: number;
-  monthlySeries: Array<{ revenue: number; opIncome: number; endCash: number }>;
+  monthlySeries: Array<{ revenue: number; opIncome: number; endCash: number; label: string }>;
+  rangeLabel: string;
 }): CommentaryLine[] {
   const lines: CommentaryLine[] = [];
+  const period = m.rangeLabel;
+  const firstLabel = m.monthlySeries[0]?.label ?? "start";
+  const lastLabel = m.monthlySeries[m.monthlySeries.length - 1]?.label ?? "end";
 
   // Revenue direction
   const revTrend = trend(m.monthlySeries.map(s => s.revenue));
   if (revTrend === "up") {
-    lines.push({ text: `Revenue trended up across Q1 from ${fmt(m.monthlySeries[0].revenue)} in Jan to ${fmt(m.monthlySeries[m.monthlySeries.length - 1].revenue)} in Mar — healthy top-line momentum.`, tone: "positive" });
+    lines.push({ text: `Revenue trended up across ${period} from ${fmt(m.monthlySeries[0].revenue)} in ${firstLabel} to ${fmt(m.monthlySeries[m.monthlySeries.length - 1].revenue)} in ${lastLabel} — healthy top-line momentum.`, tone: "positive" });
   } else if (revTrend === "down") {
-    lines.push({ text: `Revenue declined through Q1 from ${fmt(m.monthlySeries[0].revenue)} in Jan to ${fmt(m.monthlySeries[m.monthlySeries.length - 1].revenue)} in Mar — warrants investigation.`, tone: "negative" });
-  } else {
-    lines.push({ text: `Revenue held roughly flat across Q1 at ~${fmt(m.revenue / m.monthlySeries.length)}/month.`, tone: "neutral" });
+    lines.push({ text: `Revenue declined through ${period} from ${fmt(m.monthlySeries[0].revenue)} in ${firstLabel} to ${fmt(m.monthlySeries[m.monthlySeries.length - 1].revenue)} in ${lastLabel} — warrants investigation.`, tone: "negative" });
+  } else if (m.monthlySeries.length > 0) {
+    lines.push({ text: `Revenue held roughly flat across ${period} at ~${fmt(m.revenue / m.monthlySeries.length)}/month.`, tone: "neutral" });
   }
 
   // Margin
@@ -293,9 +315,9 @@ function generateCommentary(m: {
 
   // Operating income
   if (m.opIncome >= 0) {
-    lines.push({ text: `Company was operating-cash-flow positive in Q1 at ${fmt(m.opIncome)} (${m.opMargin.toFixed(1)}% margin).`, tone: "positive" });
+    lines.push({ text: `Company was operating-cash-flow positive in ${period} at ${fmt(m.opIncome)} (${m.opMargin.toFixed(1)}% margin).`, tone: "positive" });
   } else {
-    lines.push({ text: `Company ran an operating deficit of ${fmt(Math.abs(m.opIncome))} in Q1 — expenses exceeded cash revenue.`, tone: "negative" });
+    lines.push({ text: `Company ran an operating deficit of ${fmt(Math.abs(m.opIncome))} in ${period} — expenses exceeded cash revenue.`, tone: "negative" });
   }
 
   // Cash
@@ -310,7 +332,7 @@ function generateCommentary(m: {
   }
 
   // Unclassified outflows disclaimer
-  lines.push({ text: `KBBO ACH now itemized ($559K Q1 — 84% Google Ads). $1.05M in non-KBBO 115 outflows (likely wires/checks) still pending — net income may shift further once bank-statement PDFs are parsed.`, tone: "neutral" });
+  lines.push({ text: `KBBO ACH now itemized (Google Ads-heavy). Non-KBBO 115 outflows (likely wires/checks) still pending — net income may shift once additional bank-statement PDFs are parsed.`, tone: "neutral" });
 
   return lines;
 }

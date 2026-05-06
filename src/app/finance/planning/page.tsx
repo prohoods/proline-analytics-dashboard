@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { useFinancialData } from "@/lib/use-financial-data";
+import type { RangeKey } from "@/lib/date-ranges";
+import DateRangeDropdown from "@/components/DateRangeDropdown";
 import InfoTooltip from "@/components/InfoTooltip";
 import {
   LineChart,
@@ -34,7 +36,9 @@ const DEFAULTS = {
 };
 
 export default function PlanningPage() {
-  const { statements, q1, sumCategory } = useFinancialData();
+  const [rangeKey, setRangeKey] = useState<RangeKey>("ytd");
+  const { statements, q1, sumCategory, range } = useFinancialData(rangeKey);
+  const hasData = statements.length > 0;
   // Assumption knobs
   const [revGrowth, setRevGrowth] = useState(DEFAULTS.revGrowth);       // % monthly growth
   const [cogsPctDelta, setCogsPctDelta] = useState(DEFAULTS.cogsPctDelta); // bps change in COGS as % of revenue
@@ -57,20 +61,21 @@ export default function PlanningPage() {
     setAvgFTECost(DEFAULTS.avgFTECost);
   };
 
-  const avgMonthlyRev = q1.totalRevenue / statements.length;
-  const avgMonthlyCogs = sumCategory("Factory / Inventory (COGS)") / statements.length + sumCategory("Import & Customs") / statements.length;
-  const baselineCogsPct = (avgMonthlyCogs / avgMonthlyRev) * 100;
-  const avgMonthlyMarketing = (sumCategory("Digital Advertising") + sumCategory("Marketing Services")) / statements.length;
+  const monthCount = Math.max(statements.length, 1);
+  const avgMonthlyRev = q1.totalRevenue / monthCount;
+  const avgMonthlyCogs = sumCategory("Factory / Inventory (COGS)") / monthCount + sumCategory("Import & Customs") / monthCount;
+  const baselineCogsPct = avgMonthlyRev > 0 ? (avgMonthlyCogs / avgMonthlyRev) * 100 : 0;
+  const avgMonthlyMarketing = (sumCategory("Digital Advertising") + sumCategory("Marketing Services")) / monthCount;
   const avgMonthlyFixed =
-    sumCategory("Payroll") / statements.length +
-    sumCategory("Rent") / statements.length +
-    sumCategory("SaaS & Software") / statements.length +
-    sumCategory("Shipping & Freight") / statements.length +
-    sumCategory("Operations & Supplies") / statements.length +
-    sumCategory("Taxes & Compliance") / statements.length;
+    sumCategory("Payroll") / monthCount +
+    sumCategory("Rent") / monthCount +
+    sumCategory("SaaS & Software") / monthCount +
+    sumCategory("Shipping & Freight") / monthCount +
+    sumCategory("Operations & Supplies") / monthCount +
+    sumCategory("Taxes & Compliance") / monthCount;
 
-  const latest = statements[statements.length - 1];
-  const startingCash = latest.acct115EndBalance + latest.acct2285EndBalance;
+  const latest = hasData ? statements[statements.length - 1] : null;
+  const startingCash = latest ? latest.acct115EndBalance + latest.acct2285EndBalance : 0;
 
   // Project 13 weeks forward
   const weeks: Array<{ week: string; weekNum: number; cash: number; revenue: number; expenses: number; net: number }> = [];
@@ -105,20 +110,29 @@ export default function PlanningPage() {
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
-      <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-emerald-900/40 border border-emerald-800/40 flex items-center justify-center text-xl">📈</div>
-        <div>
-          <div className="flex items-center">
-            <h1 className="text-2xl font-bold text-white">Planning &amp; Forecasting</h1>
-            <InfoTooltip title="Planning &amp; Forecasting">
-              <p className="mb-2">This is a <strong>13-week cash forecast</strong> — a CFO&apos;s tool to project cash position week by week and stress-test decisions before making them.</p>
-              <p className="mb-2">The model starts from the current bank balance and walks forward, applying Q1 averages for revenue, COGS, marketing, and fixed costs. The sliders let you change the assumptions — &quot;what if revenue grows 10%?&quot; or &quot;what if we hire 2 people?&quot; — and the chart re-projects.</p>
-              <p>Why it matters: this is how you find the lowest cash point in the next quarter <em>before</em> you get there, and decide if you can afford a hire, a marketing push, or an inventory order.</p>
-            </InfoTooltip>
+      <div className="flex items-start justify-between flex-wrap gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-emerald-900/40 border border-emerald-800/40 flex items-center justify-center text-xl">📈</div>
+          <div>
+            <div className="flex items-center">
+              <h1 className="text-2xl font-bold text-white">Planning &amp; Forecasting</h1>
+              <InfoTooltip title="Planning &amp; Forecasting">
+                <p className="mb-2">This is a <strong>13-week cash forecast</strong> — a CFO&apos;s tool to project cash position week by week and stress-test decisions before making them.</p>
+                <p className="mb-2">The model starts from the current bank balance and walks forward, applying period averages for revenue, COGS, marketing, and fixed costs. The sliders let you change the assumptions — &quot;what if revenue grows 10%?&quot; or &quot;what if we hire 2 people?&quot; — and the chart re-projects.</p>
+                <p>Why it matters: this is how you find the lowest cash point in the next quarter <em>before</em> you get there, and decide if you can afford a hire, a marketing push, or an inventory order.</p>
+              </InfoTooltip>
+            </div>
+            <p className="text-gray-500 text-sm mt-0.5">13-week rolling cash forecast — baseline pulled from {range.label}</p>
           </div>
-          <p className="text-gray-500 text-sm mt-0.5">13-week rolling cash forecast — adjust assumptions below to see impact</p>
         </div>
+        <DateRangeDropdown value={rangeKey} onChange={setRangeKey} />
       </div>
+
+      {!hasData && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center text-gray-400">
+          No statements in this period yet. Upload a bank statement on the <a href="/finance/upload" className="text-blue-400 hover:underline">upload page</a>, or pick a different range.
+        </div>
+      )}
 
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -155,7 +169,7 @@ export default function PlanningPage() {
             value={cogsPctDelta}
             onChange={setCogsPctDelta}
             min={-15} max={15} step={0.5} suffix=" pts"
-            hint={`Baseline from Q1 actuals: ${baselineCogsPct.toFixed(1)}%`}
+            hint={`Baseline from ${range.label} actuals: ${baselineCogsPct.toFixed(1)}%`}
           />
           <AssumptionSlider
             label="Marketing spend change"
@@ -234,7 +248,7 @@ export default function PlanningPage() {
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
         <h2 className="text-sm font-semibold text-white mb-3">Methodology</h2>
         <ul className="text-xs text-gray-400 space-y-1.5 list-disc list-inside leading-relaxed">
-          <li>Baseline weekly revenue = Q1 average ÷ {WEEKS_PER_MONTH} weeks/month</li>
+          <li>Baseline weekly revenue = {range.label} average ÷ {WEEKS_PER_MONTH} weeks/month</li>
           <li>Growth compounds monthly — a 5% slider = 5% MoM = ~60% annualized</li>
           <li>COGS, marketing, and fixed costs scale with their own growth logic (COGS scales with revenue; fixed costs don&apos;t)</li>
           <li>New-hire cost ramps linearly — week 1 adds 0 FTE, week 13 adds 3 months × slider</li>

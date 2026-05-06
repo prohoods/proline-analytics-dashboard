@@ -3,7 +3,9 @@
 import { useState } from "react";
 import { CATEGORY_COLORS, CATEGORY_TEXT } from "@/lib/financial-data";
 import { useFinancialData } from "@/lib/use-financial-data";
+import type { RangeKey } from "@/lib/date-ranges";
 import CategoryDrillDown from "@/components/CategoryDrillDown";
+import DateRangeDropdown from "@/components/DateRangeDropdown";
 import InfoTooltip from "@/components/InfoTooltip";
 
 const UNCLASSIFIED_EXPLAINER = (
@@ -49,7 +51,8 @@ const CHART_CATEGORIES = [
 ];
 
 export default function CFOOverview() {
-  const { statements, sumByCategory, totalByCategory, q1, monthRevenue, monthNetExpenses } = useFinancialData();
+  const [rangeKey, setRangeKey] = useState<RangeKey>("ytd");
+  const { statements, sumByCategory, totalByCategory, q1, monthRevenue, monthNetExpenses, range } = useFinancialData(rangeKey);
   const totals = totalByCategory();
   const totalExpenses = q1.totalExpenses;
   const netCashFlow = q1.netCashFlow;
@@ -59,26 +62,35 @@ export default function CFOOverview() {
     <div className="p-6 space-y-6">
       <CategoryDrillDown category={drillCategory} onClose={() => setDrillCategory(null)} />
       {/* Header */}
-      <div>
-        <div className="flex items-center">
-          <h1 className="text-2xl font-bold text-white">Financial Overview</h1>
-          <InfoTooltip title="Financial Overview">
-            <p className="mb-2">This is the <strong>top-level snapshot</strong> of where the company stands financially this quarter — the page a CFO opens first.</p>
-            <p className="mb-2"><strong>Revenue</strong> = cash deposits into the operating account. <strong>Expenses</strong> = every dollar that left either KeyBank account, excluding internal transfers between our own accounts (which aren&apos;t real spend). <strong>Net Cash Flow</strong> tells you whether the business made or burned cash this quarter.</p>
-            <p>Below the KPIs you&apos;ll see month-by-month trends and where the money is going by category. Click any category to drill into the underlying transactions.</p>
-          </InfoTooltip>
+      <div className="flex items-start justify-between flex-wrap gap-4">
+        <div>
+          <div className="flex items-center">
+            <h1 className="text-2xl font-bold text-white">Financial Overview</h1>
+            <InfoTooltip title="Financial Overview">
+              <p className="mb-2">This is the <strong>top-level snapshot</strong> of where the company stands financially for the selected period — the page a CFO opens first.</p>
+              <p className="mb-2"><strong>Revenue</strong> = cash deposits into the operating account. <strong>Expenses</strong> = every dollar that left either KeyBank account, excluding internal transfers between our own accounts (which aren&apos;t real spend). <strong>Net Cash Flow</strong> tells you whether the business made or burned cash in the selected period.</p>
+              <p>Below the KPIs you&apos;ll see month-by-month trends and where the money is going by category. Click any category to drill into the underlying transactions.</p>
+            </InfoTooltip>
+          </div>
+          <p className="text-gray-400 text-sm mt-1">{range.label} — Account …0115 (operating) + Account …2285 (payroll/expense), inter-account transfers excluded</p>
         </div>
-        <p className="text-gray-400 text-sm mt-1">Q1 2026 — Account …0115 (operating) + Account …2285 (payroll/expense), inter-account transfers excluded</p>
+        <DateRangeDropdown value={rangeKey} onChange={setRangeKey} />
       </div>
 
-      {/* Q1 KPI cards */}
+      {statements.length === 0 ? (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center text-gray-400">
+          No statements in this period yet. Upload a bank statement on the <a href="/finance/upload" className="text-blue-400 hover:underline">upload page</a>, or pick a different range.
+        </div>
+      ) : (
+      <>
+      {/* KPI cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <KpiCard label="Q1 Revenue (Cash In)" value={fmt(q1.totalRevenue)} sub="Deposits to acct …0115" color="text-green-400" />
-        <KpiCard label="Q1 Total Expenses" value={fmt(totalExpenses)} sub="Both accounts, ex inter-acct transfers" color="text-red-400" />
+        <KpiCard label="Revenue (Cash In)" value={fmt(q1.totalRevenue)} sub="Deposits to acct …0115" color="text-green-400" />
+        <KpiCard label="Total Expenses" value={fmt(totalExpenses)} sub="Both accounts, ex inter-acct transfers" color="text-red-400" />
         <KpiCard
-          label="Q1 Net Cash Flow"
+          label="Net Cash Flow"
           value={fmt(netCashFlow)}
-          sub={netCashFlow >= 0 ? "Positive — company is cash-flow positive" : "Negative this quarter"}
+          sub={netCashFlow >= 0 ? "Positive — cash-flow positive" : "Negative — burning cash"}
           color={netCashFlow >= 0 ? "text-emerald-400" : "text-red-400"}
         />
         <KpiCard label="Ending Cash Balance" value={fmt(q1.acct115EndBalance)} sub={`Started at ${fmt(q1.acct115BeginBalance)} (acct …0115)`} color="text-white" />
@@ -121,7 +133,7 @@ export default function CFOOverview() {
             </tbody>
             <tfoot>
               <tr className="border-t-2 border-gray-700 bg-gray-800/50 font-bold text-white text-sm">
-                <td className="py-3 px-4">Q1 Total</td>
+                <td className="py-3 px-4">{range.label} Total</td>
                 <td className="py-3 px-4 text-right text-green-400">{fmt(q1.totalRevenue)}</td>
                 <td className="py-3 px-4 text-right text-red-400">({fmt(totalExpenses)})</td>
                 <td className={`py-3 px-4 text-right ${netCashFlow >= 0 ? "text-emerald-400" : "text-red-400"}`}>
@@ -130,17 +142,11 @@ export default function CFOOverview() {
               </tr>
             </tfoot>
           </table>
-          {/* Account 2285 note */}
-          <div className="px-5 py-3 bg-gray-800/30 border-t border-gray-800">
-            <p className="text-xs text-gray-500">
-              Expenses include acct …2285 actuals: Jan <span className="text-gray-300">$78K</span>, Feb <span className="text-gray-300">$63K</span>, Mar <span className="text-gray-300">$66K</span> — payroll/expense card account
-            </p>
-          </div>
         </div>
 
         {/* Category breakdown */}
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-          <h2 className="text-sm font-semibold text-white mb-4">Q1 Spending by Category</h2>
+          <h2 className="text-sm font-semibold text-white mb-4">Spending by Category</h2>
           <div className="space-y-2.5 max-h-96 overflow-y-auto pr-1">
             {CHART_CATEGORIES.map(cat => {
               const amount = totals[cat] ?? 0;
@@ -177,7 +183,7 @@ export default function CFOOverview() {
             })}
           </div>
           <div className="mt-4 pt-3 border-t border-gray-800 flex justify-between text-xs">
-            <span className="text-gray-500">Total Q1 expenses</span>
+            <span className="text-gray-500">Total {range.label} expenses</span>
             <span className="text-white font-semibold">{fmt(totalExpenses)}</span>
           </div>
         </div>
@@ -193,18 +199,16 @@ export default function CFOOverview() {
             <thead>
               <tr className="text-gray-500 text-xs uppercase tracking-wider bg-gray-800/40 border-b border-gray-800">
                 <th className="py-2.5 px-4 text-left">Category</th>
-                <th className="py-2.5 px-4 text-right">January</th>
-                <th className="py-2.5 px-4 text-right">February</th>
-                <th className="py-2.5 px-4 text-right">March</th>
-                <th className="py-2.5 px-4 text-right">Q1 Total</th>
+                {statements.map(m => (
+                  <th key={m.month + m.year} className="py-2.5 px-4 text-right">{m.month}</th>
+                ))}
+                <th className="py-2.5 px-4 text-right">{range.label} Total</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-800">
               {CHART_CATEGORIES.map(cat => {
-                const jan = sumByCategory(statements[0])[cat] ?? 0;
-                const feb = sumByCategory(statements[1])[cat] ?? 0;
-                const mar = sumByCategory(statements[2])[cat] ?? 0;
-                const total = jan + feb + mar;
+                const perMonth = statements.map(m => sumByCategory(m)[cat] ?? 0);
+                const total = perMonth.reduce((s, n) => s + n, 0);
                 if (!total) return null;
                 const isPending = cat === "Unclassified Outflows (115)";
                 return (
@@ -221,9 +225,9 @@ export default function CFOOverview() {
                         </span>
                       )}
                     </td>
-                    <td className="py-2.5 px-4 text-right text-gray-300 text-xs">{jan ? fmt(jan) : "—"}</td>
-                    <td className="py-2.5 px-4 text-right text-gray-300 text-xs">{feb ? fmt(feb) : "—"}</td>
-                    <td className="py-2.5 px-4 text-right text-gray-300 text-xs">{mar ? fmt(mar) : "—"}</td>
+                    {perMonth.map((amt, i) => (
+                      <td key={i} className="py-2.5 px-4 text-right text-gray-300 text-xs">{amt ? fmt(amt) : "—"}</td>
+                    ))}
                     <td className="py-2.5 px-4 text-right text-white font-semibold text-xs">{fmt(total)}</td>
                   </tr>
                 );
@@ -264,6 +268,8 @@ export default function CFOOverview() {
           ))}
         </div>
       </div>
+      </>
+      )}
     </div>
   );
 }
