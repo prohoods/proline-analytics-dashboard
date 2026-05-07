@@ -27,7 +27,7 @@ export async function submitTranscription(args: {
     body: JSON.stringify({
       audio_url: args.audioUrl,
       webhook_url: args.webhookUrl,
-      speech_model: "universal-2",
+      speech_models: ["universal-2"],
       speaker_labels: true,
       punctuate: true,
       format_text: true,
