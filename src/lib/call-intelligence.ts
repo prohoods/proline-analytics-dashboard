@@ -126,6 +126,78 @@ Respond ONLY with a JSON object in this exact shape:
   return parsed;
 }
 
+export interface WeeklyRollup {
+  key_trends: string[];
+  content_ideas: string[];
+  sales_summary: string;
+  support_summary: string;
+}
+
+// Aggregate a week's worth of call summaries into trends, content ideas,
+// and category-level paragraphs. Mirrors the prompt previously used in n8n.
+export async function generateWeeklyRollup(args: {
+  salesSummaries: string[];
+  supportSummaries: string[];
+}): Promise<WeeklyRollup> {
+  if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY not set");
+
+  const sales = args.salesSummaries.length
+    ? args.salesSummaries.map((s, i) => `${i + 1}. ${s}`).join("\n")
+    : "(no sales calls this period)";
+  const support = args.supportSummaries.length
+    ? args.supportSummaries.map((s, i) => `${i + 1}. ${s}`).join("\n")
+    : "(no support calls this period)";
+
+  const prompt = `You analyze a week of customer phone calls for Proline Range Hoods (DTC ecommerce, premium kitchen range hoods).
+
+SALES CALL SUMMARIES (${args.salesSummaries.length}):
+${sales}
+
+SUPPORT CALL SUMMARIES (${args.supportSummaries.length}):
+${support}
+
+Produce a weekly rollup. Respond ONLY with a JSON object in this exact shape:
+{
+  "key_trends": ["4-6 bullet strings — what's recurring across calls (sales + support combined)"],
+  "content_ideas": ["4-6 bullet strings — blog posts, FAQs, videos, ads ideas suggested by what customers ask about"],
+  "sales_summary": "One paragraph (4-6 sentences) summarizing all sales calls together — what customers wanted, common questions, buying patterns",
+  "support_summary": "One paragraph (4-6 sentences) summarizing all support calls together — recurring issues, product problems, resolution patterns"
+}`;
+
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${OPENAI_API_KEY}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "gpt-4o-mini",
+      response_format: { type: "json_object" },
+      temperature: 0.3,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are an analyst. Always respond with valid JSON only — no markdown, no commentary.",
+        },
+        { role: "user", content: prompt },
+      ],
+    }),
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`OpenAI ${res.status}: ${text}`);
+  const data = JSON.parse(text);
+  const content = data?.choices?.[0]?.message?.content;
+  if (!content) throw new Error("OpenAI returned no content");
+
+  const parsed = JSON.parse(content) as WeeklyRollup;
+  if (!Array.isArray(parsed.key_trends)) parsed.key_trends = [];
+  if (!Array.isArray(parsed.content_ideas)) parsed.content_ideas = [];
+  parsed.sales_summary = parsed.sales_summary ?? "";
+  parsed.support_summary = parsed.support_summary ?? "";
+  return parsed;
+}
+
 // Pull a recording URL out of a CallRail post_call payload. CallRail sometimes
 // sends "recording", "recording_player", or nested under custom fields — read
 // defensively.

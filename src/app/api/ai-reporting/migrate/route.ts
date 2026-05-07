@@ -5,13 +5,17 @@ import { getSql } from "@/lib/db";
 
 export async function POST() {
   try {
-    const file = path.join(
-      process.cwd(),
-      "src/lib/migrations/004_call_intelligence.sql"
-    );
-    const ddl = await readFile(file, "utf-8");
     const sql = getSql();
-    await sql.unsafe(ddl);
+    for (const name of [
+      "004_call_intelligence.sql",
+      "005_ai_weekly_rollups.sql",
+    ]) {
+      const ddl = await readFile(
+        path.join(process.cwd(), "src/lib/migrations", name),
+        "utf-8"
+      );
+      await sql.unsafe(ddl);
+    }
     const [{ total }] = await sql<{ total: number }[]>`
       select count(*)::int as total from callrail_calls
     `;

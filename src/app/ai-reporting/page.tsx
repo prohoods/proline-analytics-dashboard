@@ -1,29 +1,34 @@
 import Link from "next/link";
 import { getSql } from "@/lib/db";
+import CallVolumeChart from "@/components/CallVolumeChart";
+import CallsTable, { type CallRow } from "@/components/CallsTable";
+import WeeklyRollupPanel, {
+  type WeeklyRollupData,
+} from "@/components/WeeklyRollupPanel";
 
 export const dynamic = "force-dynamic";
-
-interface CallRow {
-  id: string;
-  phone_e164: string;
-  call_started_at: Date;
-  duration_seconds: number | null;
-  transcription_status: string | null;
-  category: string | null;
-  summary: string | null;
-  sentiment: string | null;
-  key_points: string[] | null;
-  follow_up_needed: boolean | null;
-  error_message: string | null;
-}
 
 interface CategoryRow {
   category: string | null;
   count: number;
 }
 
+interface DailyRow {
+  date: string;
+  category: string | null;
+  count: number;
+}
+
 const FILTERS = ["all", "sales", "support", "other"] as const;
 type Filter = (typeof FILTERS)[number];
+
+function mondayOfThisWeek(): string {
+  const d = new Date();
+  const day = d.getUTCDay();
+  const diff = (day + 6) % 7;
+  d.setUTCDate(d.getUTCDate() - diff);
+  return d.toISOString().slice(0, 10);
+}
 
 async function loadData(filter: Filter) {
   const sql = getSql();
@@ -33,11 +38,13 @@ async function loadData(filter: Filter) {
         ? sql`call_started_at >= now() - interval '30 days'`
         : sql`call_started_at >= now() - interval '30 days' and category = ${filter}`;
 
-    const [rows, byCategory, last24, followUps] = await Promise.all([
-      sql<CallRow[]>`
+    const [rows, byCategory, last24, followUps, daily, rollupRows] = await Promise.all([
+      sql<
+        (Omit<CallRow, "call_started_at"> & { call_started_at: Date })[]
+      >`
         select id, phone_e164, call_started_at, duration_seconds,
                transcription_status, category, summary, sentiment,
-               key_points, follow_up_needed, error_message
+               follow_up_needed, error_message
         from callrail_calls
         where ${where}
         order by call_started_at desc
@@ -58,12 +65,68 @@ async function loadData(filter: Filter) {
         where call_started_at >= now() - interval '30 days'
           and follow_up_needed = true
       `,
+      sql<DailyRow[]>`
+        select to_char(date_trunc('day', call_started_at), 'YYYY-MM-DD') as date,
+               category, count(*)::int as count
+        from callrail_calls
+        where call_started_at >= now() - interval '30 days'
+        group by 1, 2
+        order by 1
+      `,
+      sql<
+        (Omit<WeeklyRollupData, "week_start" | "generated_at"> & {
+          week_start: Date;
+          generated_at: Date;
+        })[]
+      >`
+        select week_start, generated_at, total_calls, sales_count, support_count,
+               key_trends, content_ideas, sales_summary, support_summary
+        from ai_weekly_rollups
+        where week_start = ${mondayOfThisWeek()}::date
+        limit 1
+      `,
     ]);
+
+    const callRows: CallRow[] = rows.map((r) => ({
+      ...r,
+      call_started_at: r.call_started_at.toISOString(),
+    }));
+
+    const dailyMap = new Map<
+      string,
+      { date: string; sales: number; support: number; other: number }
+    >();
+    for (const d of daily) {
+      const cur =
+        dailyMap.get(d.date) ?? { date: d.date, sales: 0, support: 0, other: 0 };
+      const cat = d.category === "sales" || d.category === "support" ? d.category : "other";
+      cur[cat] += d.count;
+      dailyMap.set(d.date, cur);
+    }
+    // Fill 30 days so chart isn't gappy.
+    const dailySeries: { date: string; sales: number; support: number; other: number }[] = [];
+    for (let i = 29; i >= 0; i--) {
+      const dt = new Date();
+      dt.setUTCDate(dt.getUTCDate() - i);
+      const key = dt.toISOString().slice(0, 10);
+      dailySeries.push(dailyMap.get(key) ?? { date: key, sales: 0, support: 0, other: 0 });
+    }
+
+    const rollup: WeeklyRollupData | null = rollupRows[0]
+      ? {
+          ...rollupRows[0],
+          week_start: rollupRows[0].week_start.toISOString().slice(0, 10),
+          generated_at: rollupRows[0].generated_at.toISOString(),
+        }
+      : null;
+
     return {
-      rows,
+      rows: callRows,
       byCategory,
       last24h: last24[0]?.count ?? 0,
       followUps: followUps[0]?.count ?? 0,
+      dailySeries,
+      rollup,
       error: null as string | null,
     };
   } catch (e) {
@@ -72,25 +135,11 @@ async function loadData(filter: Filter) {
       byCategory: [] as CategoryRow[],
       last24h: 0,
       followUps: 0,
+      dailySeries: [] as { date: string; sales: number; support: number; other: number }[],
+      rollup: null as WeeklyRollupData | null,
       error: e instanceof Error ? e.message : String(e),
     };
   }
-}
-
-function fmtDate(d: Date) {
-  return new Date(d).toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
-function fmtDuration(s: number | null) {
-  if (s == null) return "—";
-  const m = Math.floor(s / 60);
-  const r = s % 60;
-  return `${m}:${r.toString().padStart(2, "0")}`;
 }
 
 export default async function AIReportingPage({
@@ -103,11 +152,18 @@ export default async function AIReportingPage({
     ? (sp.filter as Filter)
     : "all";
 
-  const { rows, byCategory, last24h, followUps, error } = await loadData(filter);
+  const { rows, byCategory, last24h, followUps, dailySeries, rollup, error } =
+    await loadData(filter);
 
   const total30d = byCategory.reduce((s, r) => s + r.count, 0);
   const sales = byCategory.find((r) => r.category === "sales")?.count ?? 0;
   const support = byCategory.find((r) => r.category === "support")?.count ?? 0;
+  const other = byCategory.find((r) => r.category === "other")?.count ?? 0;
+  const classified = sales + support + other;
+
+  const salesPct = classified > 0 ? Math.round((sales / classified) * 100) : 0;
+  const supportPct = classified > 0 ? Math.round((support / classified) * 100) : 0;
+  const otherPct = classified > 0 ? 100 - salesPct - supportPct : 0;
 
   return (
     <div className="p-6 max-w-[1400px] mx-auto">
@@ -132,7 +188,7 @@ export default async function AIReportingPage({
         </div>
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
         <Stat label="Last 24h" value={last24h.toString()} />
         <Stat label="Sales (30d)" value={sales.toString()} accent="text-blue-400" />
         <Stat label="Support (30d)" value={support.toString()} accent="text-amber-400" />
@@ -142,6 +198,37 @@ export default async function AIReportingPage({
           accent={followUps > 0 ? "text-rose-400" : "text-gray-400"}
         />
       </div>
+
+      {/* Mix bar */}
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 mb-6">
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-xs uppercase tracking-wider text-gray-500">Call mix · 30d</div>
+          <div className="text-xs text-gray-500">{classified} classified · {total30d - classified} pending</div>
+        </div>
+        {classified === 0 ? (
+          <div className="text-xs text-gray-600 italic">No classified calls yet.</div>
+        ) : (
+          <>
+            <div className="h-2.5 rounded-full overflow-hidden bg-gray-800 flex">
+              <div className="h-full bg-blue-500" style={{ width: `${salesPct}%` }} />
+              <div className="h-full bg-amber-500" style={{ width: `${supportPct}%` }} />
+              <div className="h-full bg-gray-600" style={{ width: `${otherPct}%` }} />
+            </div>
+            <div className="flex items-center gap-4 mt-2 text-xs text-gray-400">
+              <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-blue-500" /> Sales {salesPct}%</span>
+              <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-500" /> Support {supportPct}%</span>
+              <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-gray-600" /> Other {otherPct}%</span>
+              <span className="ml-auto text-gray-500">Δ {sales - support >= 0 ? "+" : ""}{sales - support} sales vs support</span>
+            </div>
+          </>
+        )}
+      </div>
+
+      <div className="mb-6">
+        <CallVolumeChart data={dailySeries} />
+      </div>
+
+      <WeeklyRollupPanel rollup={rollup} />
 
       <div className="flex items-center gap-2 mb-4">
         {FILTERS.map((f) => {
@@ -167,66 +254,7 @@ export default async function AIReportingPage({
         })}
       </div>
 
-      <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-800 flex items-center justify-between">
-          <div className="text-sm text-white font-medium">Recent calls</div>
-          <div className="text-xs text-gray-500">most recent 200 (last 30 days)</div>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1100px] text-sm">
-            <thead className="text-gray-500 text-xs uppercase tracking-wider">
-              <tr className="border-b border-gray-800">
-                <th className="text-left px-4 py-2">Time</th>
-                <th className="text-left px-4 py-2">From</th>
-                <th className="text-right px-4 py-2">Duration</th>
-                <th className="text-left px-4 py-2">Category</th>
-                <th className="text-left px-4 py-2">Sentiment</th>
-                <th className="text-left px-4 py-2">Summary</th>
-                <th className="text-left px-4 py-2">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.length === 0 && !error && (
-                <tr>
-                  <td colSpan={7} className="text-center py-12 text-gray-500 text-sm">
-                    No calls yet. CallRail webhook activity will appear here.
-                  </td>
-                </tr>
-              )}
-              {rows.map((r) => (
-                <tr key={r.id} className="border-b border-gray-800/60 hover:bg-gray-800/30 align-top">
-                  <td className="px-4 py-3 text-gray-300 whitespace-nowrap">{fmtDate(r.call_started_at)}</td>
-                  <td className="px-4 py-3 text-gray-300 font-mono text-xs">{r.phone_e164}</td>
-                  <td className="px-4 py-3 text-right text-gray-300 whitespace-nowrap">
-                    {fmtDuration(r.duration_seconds)}
-                  </td>
-                  <td className="px-4 py-3">
-                    <CategoryBadge category={r.category} />
-                  </td>
-                  <td className="px-4 py-3">
-                    <SentimentBadge sentiment={r.sentiment} />
-                  </td>
-                  <td className="px-4 py-3 text-gray-300 max-w-[480px]">
-                    {r.summary ? (
-                      <div>
-                        <div className="leading-snug">{r.summary}</div>
-                        {r.follow_up_needed && (
-                          <div className="mt-1 text-xs text-rose-400">⚠ Follow-up needed</div>
-                        )}
-                      </div>
-                    ) : (
-                      <span className="text-gray-600 text-xs italic">—</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    <StatusBadge status={r.transcription_status} error={r.error_message} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <CallsTable rows={rows} />
     </div>
   );
 }
@@ -237,53 +265,5 @@ function Stat({ label, value, accent = "text-white" }: { label: string; value: s
       <div className="text-xs uppercase tracking-wider text-gray-500">{label}</div>
       <div className={`mt-1 text-2xl font-semibold ${accent}`}>{value}</div>
     </div>
-  );
-}
-
-function CategoryBadge({ category }: { category: string | null }) {
-  if (!category) return <span className="text-gray-600 text-xs">—</span>;
-  const styles: Record<string, string> = {
-    sales: "bg-blue-900/40 text-blue-300 border-blue-700/50",
-    support: "bg-amber-900/40 text-amber-300 border-amber-700/50",
-    other: "bg-gray-800 text-gray-400 border-gray-700",
-  };
-  return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs border capitalize ${styles[category] ?? styles.other}`}>
-      {category}
-    </span>
-  );
-}
-
-function SentimentBadge({ sentiment }: { sentiment: string | null }) {
-  if (!sentiment) return <span className="text-gray-600 text-xs">—</span>;
-  const styles: Record<string, string> = {
-    positive: "bg-emerald-900/40 text-emerald-300 border-emerald-700/50",
-    neutral: "bg-gray-800 text-gray-400 border-gray-700",
-    negative: "bg-rose-900/40 text-rose-300 border-rose-700/50",
-  };
-  return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs border capitalize ${styles[sentiment] ?? styles.neutral}`}>
-      {sentiment}
-    </span>
-  );
-}
-
-function StatusBadge({ status, error }: { status: string | null; error: string | null }) {
-  if (!status) return <span className="text-gray-600 text-xs">—</span>;
-  const styles: Record<string, string> = {
-    classified: "bg-emerald-900/40 text-emerald-300 border-emerald-700/50",
-    transcribed: "bg-blue-900/40 text-blue-300 border-blue-700/50",
-    transcribing: "bg-gray-800 text-gray-400 border-gray-700",
-    pending: "bg-gray-800 text-gray-500 border-gray-700",
-    no_recording: "bg-gray-800 text-gray-500 border-gray-700",
-    error: "bg-red-900/40 text-red-300 border-red-700/50",
-  };
-  return (
-    <span
-      className={`inline-flex items-center px-2 py-0.5 rounded text-xs border ${styles[status] ?? styles.pending}`}
-      title={error ?? ""}
-    >
-      {status}
-    </span>
   );
 }
