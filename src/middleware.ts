@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
+import { auth } from "@/auth";
 
-export function middleware(request: NextRequest) {
-  const auth = request.cookies.get("auth");
+export default auth((request) => {
   const cfoAuth = request.cookies.get("cfo-auth");
   const { pathname } = request.nextUrl;
+  const isSignedIn = !!request.auth;
 
   // Allow public routes through (including portal at /)
   if (
@@ -30,7 +31,7 @@ export function middleware(request: NextRequest) {
 
   // Legacy CFO dashboard routes
   if (pathname.startsWith("/dashboard/cfo") || pathname.startsWith("/api/cfo")) {
-    if (!auth || auth.value !== "true") {
+    if (!isSignedIn) {
       return NextResponse.redirect(new URL(`/login?next=${pathname}`, request.url));
     }
     if (!cfoAuth || cfoAuth.value !== "true") {
@@ -39,13 +40,13 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // All other dashboard routes require general auth only
-  if (!auth || auth.value !== "true") {
+  // All other dashboard routes require Google sign-in only
+  if (!isSignedIn) {
     return NextResponse.redirect(new URL(`/login?next=${pathname}`, request.url));
   }
 
   return NextResponse.next();
-}
+});
 
 export const config = {
   matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],

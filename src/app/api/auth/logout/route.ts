@@ -1,8 +1,9 @@
-import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
+import { signOut } from "@/auth";
 
 export async function POST() {
-  const cookieStore = await cookies();
-  cookieStore.delete("auth");
-  return NextResponse.json({ ok: true });
+  await signOut({ redirect: false });
+  return new Response(JSON.stringify({ ok: true }), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
 }
