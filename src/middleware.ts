@@ -19,7 +19,9 @@ export default auth((request) => {
     pathname.startsWith("/api/shopify/debug-refunds") ||
     pathname.startsWith("/api/google-ads/debug") ||
     pathname.startsWith("/api/webhooks") ||
-    pathname.startsWith("/api/conversions")
+    pathname.startsWith("/api/conversions") ||
+    pathname.startsWith("/api/ai-reporting") ||
+    pathname.startsWith("/api/cron")
   ) {
     return NextResponse.next();
   }

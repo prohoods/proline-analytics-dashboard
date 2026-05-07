@@ -83,6 +83,12 @@ const navSections: NavSection[] = [
       { href: "/dashboard/fulfillment", label: "Order Fulfillment", icon: "🚚" },
     ],
   },
+  {
+    label: "AI Reporting", icon: "🤖",
+    items: [
+      { href: "/dashboard/ai-reporting", label: "Calls", icon: "📞" },
+    ],
+  },
 ];
 
 // All paths that belong to each section (for auto-open logic)
