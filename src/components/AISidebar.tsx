@@ -12,36 +12,14 @@ interface NavGroup {
 
 const navGroups: NavGroup[] = [
   {
-    label: "Overview",
+    label: "Reports",
     items: [
-      { href: "/finance/overview",        label: "Financial Overview",     icon: "🏦" },
-      { href: "/finance/upload",          label: "Upload Statements",      icon: "📤" },
-    ],
-  },
-  {
-    label: "CFO Reporting",
-    items: [
-      { href: "/finance/cash-treasury",   label: "Cash & Treasury",        icon: "💰" },
-      { href: "/finance/reporting",       label: "Financial Reporting",    icon: "📊" },
-      { href: "/finance/board",           label: "Board & Executive",      icon: "📋" },
-      { href: "/finance/planning",        label: "Planning & Forecasting", icon: "📈" },
-      { href: "/finance/operational",     label: "Operational Performance",icon: "⚙️" },
-      { href: "/finance/compliance",      label: "Regulatory & Compliance",icon: "⚖️" },
-      { href: "/finance/risk",            label: "Risk & Controls",        icon: "🛡️" },
-      { href: "/finance/strategic",       label: "M&A / Strategic",        icon: "🎯" },
-    ],
-  },
-  {
-    label: "Detailed Ledgers",
-    items: [
-      { href: "/finance/expenses",        label: "Expenses",               icon: "💳" },
-      { href: "/finance/payroll",         label: "Payroll & Benefits",     icon: "👥" },
-      { href: "/finance/reconciliation",  label: "Reconciliation",         icon: "🔗" },
+      { href: "/ai-reporting",       label: "Calls",  icon: "📞" },
     ],
   },
 ];
 
-export default function FinanceSidebar() {
+export default function AISidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { theme, toggle: toggleTheme } = useTheme();
@@ -53,26 +31,24 @@ export default function FinanceSidebar() {
 
   return (
     <div className="flex flex-col h-full w-64 bg-gray-900 border-r border-gray-800 flex-shrink-0">
-      {/* Logo */}
       <div className="px-6 py-5 border-b border-gray-800">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-emerald-700 flex items-center justify-center flex-shrink-0">
+          <div className="w-8 h-8 rounded-lg bg-violet-600 flex items-center justify-center flex-shrink-0">
             <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8V4H8m8 0h4v4M4 8V4h4m0 16H4v-4m12 4h4v-4M9 12h.01M15 12h.01M9 16c.85.63 1.885 1 3 1s2.15-.37 3-1" />
             </svg>
           </div>
           <div>
-            <div className="text-white font-semibold text-sm leading-tight">Finance Hub</div>
-            <div className="text-gray-500 text-xs">DZV Distributing LLC</div>
+            <div className="text-white font-semibold text-sm leading-tight">AI Reporting</div>
+            <div className="text-gray-500 text-xs">Calls · Email · Support</div>
           </div>
         </div>
       </div>
 
-      {/* Nav */}
       <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-4">
         {navGroups.map(group => (
           <div key={group.label}>
-            <div className="px-3 mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-600">
+            <div className="px-3 mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-violet-500">
               {group.label}
             </div>
             <div className="space-y-0.5">
@@ -84,7 +60,7 @@ export default function FinanceSidebar() {
                     href={item.href}
                     className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
                       isActive
-                        ? "bg-emerald-600/20 text-emerald-400 font-medium"
+                        ? "bg-violet-600/20 text-violet-300 font-medium"
                         : "text-gray-400 hover:text-gray-100 hover:bg-gray-800"
                     }`}
                   >
@@ -98,7 +74,6 @@ export default function FinanceSidebar() {
         ))}
       </nav>
 
-      {/* Settings dropdown */}
       <SettingsDropdown>
         <Link
           href="/dashboard"
@@ -110,13 +85,13 @@ export default function FinanceSidebar() {
           Switch to Analytics
         </Link>
         <Link
-          href="/ai-reporting"
+          href="/finance"
           className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-gray-400 hover:text-gray-100 hover:bg-gray-800 transition-colors"
         >
-          <svg className="w-4 h-4 text-violet-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8V4H8m8 0h4v4M4 8V4h4m0 16H4v-4m12 4h4v-4M9 12h.01M15 12h.01M9 16c.85.63 1.885 1 3 1s2.15-.37 3-1" />
+          <svg className="w-4 h-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
           </svg>
-          Switch to AI Reporting
+          Switch to Finance Hub
         </Link>
         <button
           onClick={toggleTheme}

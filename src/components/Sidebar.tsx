@@ -83,12 +83,6 @@ const navSections: NavSection[] = [
       { href: "/dashboard/fulfillment", label: "Order Fulfillment", icon: "🚚" },
     ],
   },
-  {
-    label: "AI Reporting", icon: "🤖",
-    items: [
-      { href: "/dashboard/ai-reporting", label: "Calls", icon: "📞" },
-    ],
-  },
 ];
 
 // All paths that belong to each section (for auto-open logic)
@@ -274,6 +268,15 @@ export default function Sidebar() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
           </svg>
           Switch to Finance Hub
+        </Link>
+        <Link
+          href="/ai-reporting"
+          className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-gray-400 hover:text-gray-100 hover:bg-gray-800 transition-colors"
+        >
+          <svg className="w-4 h-4 text-violet-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8V4H8m8 0h4v4M4 8V4h4m0 16H4v-4m12 4h4v-4M9 12h.01M15 12h.01M9 16c.85.63 1.885 1 3 1s2.15-.37 3-1" />
+          </svg>
+          Switch to AI Reporting
         </Link>
         <button
           onClick={toggleTheme}

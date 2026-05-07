@@ -18,8 +18,8 @@ export default function Portal() {
 
       <p className="text-gray-400 text-sm mb-8">Select a dashboard to continue</p>
 
-      {/* Two cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 w-full max-w-2xl">
+      {/* Three cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 w-full max-w-4xl">
 
         {/* Analytics */}
         <Link
@@ -60,6 +60,29 @@ export default function Portal() {
           </div>
           <div className="flex items-center gap-1.5 text-emerald-400 text-sm font-medium mt-auto">
             Enter Finance Hub
+            <svg className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </div>
+        </Link>
+
+        {/* AI Reporting */}
+        <Link
+          href="/ai-reporting"
+          prefetch={false}
+          className="group bg-gray-900 border border-gray-800 hover:border-violet-700/60 rounded-2xl p-8 transition-all hover:bg-gray-900/80 flex flex-col gap-5"
+        >
+          <div className="w-12 h-12 rounded-xl bg-violet-600/20 border border-violet-700/40 flex items-center justify-center group-hover:bg-violet-600/30 transition-colors">
+            <svg className="w-6 h-6 text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M12 8V4H8m8 0h4v4M4 8V4h4m0 16H4v-4m12 4h4v-4M9 12h.01M15 12h.01M9 16c.85.63 1.885 1 3 1s2.15-.37 3-1" />
+            </svg>
+          </div>
+          <div>
+            <h2 className="text-white font-semibold text-lg mb-1.5">AI Reporting</h2>
+            <p className="text-gray-500 text-sm leading-relaxed">Call transcripts, sales vs support classification, sentiment, and AI-generated summaries.</p>
+          </div>
+          <div className="flex items-center gap-1.5 text-violet-400 text-sm font-medium mt-auto">
+            Enter AI Reporting
             <svg className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
             </svg>

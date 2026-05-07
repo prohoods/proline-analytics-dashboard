@@ -112,7 +112,7 @@ export default async function AIReportingPage({
   return (
     <div className="p-6 max-w-[1400px] mx-auto">
       <div className="mb-6">
-        <h1 className="text-2xl font-semibold text-white">AI Reporting · Calls</h1>
+        <h1 className="text-2xl font-semibold text-white">Calls</h1>
         <p className="text-sm text-gray-400 mt-1">
           CallRail calls transcribed by AssemblyAI and classified by OpenAI.
           Sales vs support, sentiment, and AI-generated summaries.
@@ -153,10 +153,10 @@ export default async function AIReportingPage({
           return (
             <Link
               key={f}
-              href={f === "all" ? "/dashboard/ai-reporting" : `/dashboard/ai-reporting?filter=${f}`}
+              href={f === "all" ? "/ai-reporting" : `/ai-reporting?filter=${f}`}
               className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${
                 isActive
-                  ? "bg-blue-600/20 border-blue-700/60 text-blue-300"
+                  ? "bg-violet-600/20 border-violet-700/60 text-violet-300"
                   : "bg-gray-900 border-gray-800 text-gray-400 hover:text-gray-100 hover:border-gray-700"
               }`}
             >
