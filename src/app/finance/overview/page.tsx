@@ -60,7 +60,7 @@ export default function CFOOverview() {
 
   return (
     <div className="p-6 space-y-6">
-      <CategoryDrillDown category={drillCategory} onClose={() => setDrillCategory(null)} />
+      <CategoryDrillDown category={drillCategory} statements={statements} rangeLabel={range.label} onClose={() => setDrillCategory(null)} />
       {/* Header */}
       <div className="flex items-start justify-between flex-wrap gap-4">
         <div>

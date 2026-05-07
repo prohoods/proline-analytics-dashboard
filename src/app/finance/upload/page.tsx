@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import Link from "next/link";
 
 interface UploadedFile {
@@ -15,7 +15,23 @@ interface UploadedFile {
   uncategorized?: number;
   totalDebits?: number;
   totalCredits?: number;
-  persisted?: "blob" | "memory";
+  persisted?: "db" | "memory";
+}
+
+interface SavedStatement {
+  id: string;
+  fileName: string;
+  uploadedAt: string;
+  account?: string;
+  periodStart?: string;
+  periodEnd?: string;
+  beginBalance?: number;
+  endBalance?: number;
+  totalCredits?: number;
+  totalDebits?: number;
+  transactionCount: number;
+  uncategorized?: number;
+  warnings?: string[];
 }
 
 interface ExpectedStatement {
@@ -46,7 +62,32 @@ function formatBytes(bytes: number): string {
 export default function UploadPage() {
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
+  const [saved, setSaved] = useState<SavedStatement[]>([]);
+  const [savedLoading, setSavedLoading] = useState(true);
+  const [savedError, setSavedError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const refreshSaved = useCallback(async () => {
+    try {
+      setSavedError(null);
+      const res = await fetch("/api/finance/statements", { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setSaved(data.statements ?? []);
+    } catch (err: unknown) {
+      setSavedError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSavedLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { refreshSaved(); }, [refreshSaved]);
+
+  const handleDelete = useCallback(async (id: string) => {
+    if (!confirm("Remove this saved statement? It will stop affecting the dashboard.")) return;
+    const res = await fetch(`/api/finance/statements/${id}`, { method: "DELETE" });
+    if (res.ok) refreshSaved();
+  }, [refreshSaved]);
 
   const handleFiles = useCallback(async (incoming: FileList | File[]) => {
     const arr = Array.from(incoming).filter(f => f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf") || f.name.toLowerCase().endsWith(".csv"));
@@ -82,7 +123,8 @@ export default function UploadPage() {
         setFiles(prev => prev.map(p => p.name === f.name ? { ...p, status: "error", error: msg } : p));
       }
     }
-  }, []);
+    refreshSaved();
+  }, [refreshSaved]);
 
   return (
     <div className="p-6 space-y-6 max-w-5xl">
@@ -173,10 +215,16 @@ export default function UploadPage() {
                         Parsing
                       </span>
                     )}
-                    {f.status === "parsed" && (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-900/40 text-emerald-400 border border-emerald-800/40" title={`persisted: ${f.persisted}`}>
+                    {f.status === "parsed" && f.persisted === "db" && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-900/40 text-emerald-400 border border-emerald-800/40">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                        Parsed · {f.persisted === "blob" ? "saved" : "local"}
+                        Saved
+                      </span>
+                    )}
+                    {f.status === "parsed" && f.persisted !== "db" && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-yellow-900/40 text-yellow-400 border border-yellow-800/40" title="DB save failed — only in process memory and will disappear on the next deploy">
+                        <span className="w-1.5 h-1.5 rounded-full bg-yellow-400" />
+                        Memory only
                       </span>
                     )}
                     {f.status === "error" && (
@@ -200,11 +248,80 @@ export default function UploadPage() {
           <div className="px-5 py-3 bg-gray-800/30 border-t border-gray-800 text-xs text-gray-500">
             Parsed on upload. Click <span className="text-emerald-400">Open</span> to review transactions and category assignments.
             {files.some(f => f.persisted === "memory") && (
-              <> Memory-only storage means data will be lost on redeploy — add <span className="font-mono text-gray-400">BLOB_READ_WRITE_TOKEN</span> to enable durable persistence.</>
+              <span className="block mt-1 text-yellow-400">⚠ DB save failed for one or more files — they live only in this process and will disappear on the next deploy. Check that <span className="font-mono">DATABASE_URL</span> is configured.</span>
             )}
           </div>
         </div>
       )}
+
+      {/* Saved statements — what's actually in the database */}
+      <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+        <div className="px-5 py-3 border-b border-gray-800 flex items-center justify-between">
+          <div>
+            <h2 className="text-sm font-semibold text-white">Currently feeding the dashboard</h2>
+            <p className="text-[11px] text-gray-500 mt-0.5">Live from the database. Anything listed here is flowing into Financial Overview, Operational, Expenses, etc.</p>
+          </div>
+          <button
+            onClick={refreshSaved}
+            className="text-xs text-emerald-400 hover:text-emerald-300 px-2 py-1 rounded border border-emerald-800/40 hover:border-emerald-700"
+          >
+            Refresh
+          </button>
+        </div>
+        {savedLoading ? (
+          <div className="px-5 py-6 text-center text-xs text-gray-500">Loading…</div>
+        ) : savedError ? (
+          <div className="px-5 py-6 text-center text-xs text-red-400">Could not load saved statements: {savedError}</div>
+        ) : saved.length === 0 ? (
+          <div className="px-5 py-6 text-center text-xs text-gray-500">No statements saved yet. Drop a PDF above to get started.</div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-gray-500 text-xs uppercase tracking-wider bg-gray-800/40 border-b border-gray-800">
+                <th className="py-2.5 px-4 text-left">Account</th>
+                <th className="py-2.5 px-4 text-left">Period</th>
+                <th className="py-2.5 px-4 text-right">Txns</th>
+                <th className="py-2.5 px-4 text-right">Debits</th>
+                <th className="py-2.5 px-4 text-right">Credits</th>
+                <th className="py-2.5 px-4 text-left">Uploaded</th>
+                <th className="py-2.5 px-4 text-right"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-800">
+              {saved.map(s => (
+                <tr key={s.id}>
+                  <td className="py-3 px-4 text-xs text-white font-mono">
+                    {s.account ? `…${s.account}` : <span className="text-gray-600">unknown</span>}
+                    <div className="text-[10px] text-gray-500 mt-0.5 truncate max-w-[220px]">{s.fileName}</div>
+                  </td>
+                  <td className="py-3 px-4 text-xs text-gray-300 font-mono">
+                    {s.periodStart && s.periodEnd ? `${s.periodStart} → ${s.periodEnd}` : <span className="text-gray-600">—</span>}
+                  </td>
+                  <td className="py-3 px-4 text-right text-xs font-mono text-white">
+                    {s.transactionCount}
+                    {typeof s.uncategorized === "number" && s.uncategorized > 0 && (
+                      <div className="text-[10px] text-yellow-400 mt-0.5">{s.uncategorized} uncat.</div>
+                    )}
+                  </td>
+                  <td className="py-3 px-4 text-right text-xs font-mono text-gray-300">
+                    {typeof s.totalDebits === "number" ? s.totalDebits.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }) : "—"}
+                  </td>
+                  <td className="py-3 px-4 text-right text-xs font-mono text-gray-300">
+                    {typeof s.totalCredits === "number" ? s.totalCredits.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }) : "—"}
+                  </td>
+                  <td className="py-3 px-4 text-xs text-gray-400">
+                    {new Date(s.uploadedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                  </td>
+                  <td className="py-3 px-4 text-right text-xs">
+                    <Link href={`/finance/upload/${s.id}`} className="text-emerald-400 hover:underline mr-3">Open</Link>
+                    <button onClick={() => handleDelete(s.id)} className="text-red-400 hover:underline">Remove</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
 
       {/* Expected statements checklist */}
       <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">

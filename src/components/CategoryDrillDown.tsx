@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { statements, CATEGORY_TEXT, type ExpenseLineItem, type MonthData } from "@/lib/financial-data";
+import { CATEGORY_TEXT, type ExpenseLineItem, type MonthData } from "@/lib/financial-data";
 
 function fmt(n: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(n);
@@ -13,9 +13,8 @@ export interface DrillDownTransaction extends ExpenseLineItem {
   year: number;
 }
 
-/** Collect all transactions across statements for a given category (optionally filtered by month). */
-export function getTransactionsForCategory(category: string, month?: MonthData): DrillDownTransaction[] {
-  const months = month ? [month] : statements;
+/** Collect all transactions in `months` for a given category. */
+export function getTransactionsForCategory(category: string, months: MonthData[]): DrillDownTransaction[] {
   const rows: DrillDownTransaction[] = [];
   for (const m of months) {
     for (const e of m.expenses) {
@@ -29,11 +28,16 @@ export function getTransactionsForCategory(category: string, month?: MonthData):
 
 interface Props {
   category: string | null;
+  /** Months in scope for the drilldown — typically the filtered statements from useFinancialData. */
+  statements: MonthData[];
+  /** Optional single-month focus; when provided overrides `statements`. */
   month?: MonthData;
+  /** Label shown in the popup header (e.g. "Year to Date", "Apr 2026"). */
+  rangeLabel?: string;
   onClose: () => void;
 }
 
-export default function CategoryDrillDown({ category, month, onClose }: Props) {
+export default function CategoryDrillDown({ category, statements, month, rangeLabel, onClose }: Props) {
   useEffect(() => {
     if (!category) return;
     function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
@@ -43,7 +47,8 @@ export default function CategoryDrillDown({ category, month, onClose }: Props) {
 
   if (!category) return null;
 
-  const transactions = getTransactionsForCategory(category, month);
+  const monthsForDrill = month ? [month] : statements;
+  const transactions = getTransactionsForCategory(category, monthsForDrill);
   const total = transactions.reduce((s, t) => s + t.amount, 0);
   const confirmedTotal = transactions.filter(t => !t.pending).reduce((s, t) => s + t.amount, 0);
   const pendingTotal = transactions.filter(t => t.pending).reduce((s, t) => s + t.amount, 0);
@@ -57,7 +62,7 @@ export default function CategoryDrillDown({ category, month, onClose }: Props) {
         {/* Header */}
         <div className="px-6 py-4 border-b border-gray-800 flex items-start justify-between">
           <div>
-            <div className={`text-xs uppercase tracking-wide ${textColor}`}>{month ? `${month.shortMonth} ${month.year}` : "Q1 2026"}</div>
+            <div className={`text-xs uppercase tracking-wide ${textColor}`}>{month ? `${month.shortMonth} ${month.year}` : (rangeLabel ?? "Selected period")}</div>
             <h2 className="text-lg font-semibold text-white mt-0.5">{category}</h2>
             <div className="text-xs text-gray-500 mt-1">
               {transactions.length} transaction{transactions.length === 1 ? "" : "s"} · Total {fmt(total)}
