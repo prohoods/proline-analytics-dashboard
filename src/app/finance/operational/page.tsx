@@ -88,18 +88,18 @@ export default function OperationalPage() {
         <DateRangeDropdown value={rangeKey} onChange={setRangeKey} />
       </div>
 
-      {!hasData && (
+      {!hasData ? (
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center text-gray-400">
           No statements in this period yet. Upload a bank statement on the <a href="/finance/upload" className="text-blue-400 hover:underline">upload page</a>, or pick a different range.
         </div>
-      )}
-
+      ) : (
+      <>
       {/* CFO-lens KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <KpiCard label="Gross Margin" value={`${grossMargin.toFixed(1)}%`} sub={`${fmt(grossProfit)} on ${fmt(totalRevenue)} revenue`} color={grossMargin >= 40 ? "text-emerald-400" : "text-yellow-400"} />
-        <KpiCard label="Marketing / Revenue" value={`${cacProxyPct.toFixed(1)}%`} sub={`${fmt(totalAdSpend)} ads + marketing services`} color={cacProxyPct <= 10 ? "text-emerald-400" : cacProxyPct <= 20 ? "text-yellow-400" : "text-red-400"} />
-        <KpiCard label="Freight / Revenue" value={`${((sumCategory("Shipping & Freight") / totalRevenue) * 100).toFixed(1)}%`} sub={`${fmt(sumCategory("Shipping & Freight"))} outbound shipping`} color="text-cyan-400" />
-        <KpiCard label="Payroll / Revenue" value={`${((sumCategory("Payroll") / totalRevenue) * 100).toFixed(1)}%`} sub={`${fmt(sumCategory("Payroll"))} via CBIZ`} color="text-purple-400" />
+        <KpiCard label="Gross Margin" value={totalRevenue > 0 ? `${grossMargin.toFixed(1)}%` : "—"} sub={`${fmt(grossProfit)} on ${fmt(totalRevenue)} revenue`} color={grossMargin >= 40 ? "text-emerald-400" : "text-yellow-400"} />
+        <KpiCard label="Marketing / Revenue" value={totalRevenue > 0 ? `${cacProxyPct.toFixed(1)}%` : "—"} sub={`${fmt(totalAdSpend)} ads + marketing services`} color={cacProxyPct <= 10 ? "text-emerald-400" : cacProxyPct <= 20 ? "text-yellow-400" : "text-red-400"} />
+        <KpiCard label="Freight / Revenue" value={totalRevenue > 0 ? `${((sumCategory("Shipping & Freight") / totalRevenue) * 100).toFixed(1)}%` : "—"} sub={`${fmt(sumCategory("Shipping & Freight"))} outbound shipping`} color="text-cyan-400" />
+        <KpiCard label="Payroll / Revenue" value={totalRevenue > 0 ? `${((sumCategory("Payroll") / totalRevenue) * 100).toFixed(1)}%` : "—"} sub={`${fmt(sumCategory("Payroll"))} via CBIZ`} color="text-purple-400" />
       </div>
 
       {/* Cost ratio bars */}
@@ -193,6 +193,8 @@ export default function OperationalPage() {
           <li>Return rate with dollar impact</li>
         </ul>
       </div>
+      </>
+      )}
     </div>
   );
 }
