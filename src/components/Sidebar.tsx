@@ -29,7 +29,8 @@ const navSections: NavSection[] = [
   {
     label: "Advertising", icon: "📣",
     items: [
-      { href: "/dashboard/ad-spend", label: "All Ad Spend", icon: "💰" },
+      { href: "/dashboard/ad-spend",    label: "All Ad Spend",        icon: "💰" },
+      { href: "/dashboard/conversions", label: "Offline Conversions", icon: "📡" },
       {
         href: "/dashboard/google-ads", label: "Google Ads", icon: "🔵",
         children: [
