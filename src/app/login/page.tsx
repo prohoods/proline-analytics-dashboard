@@ -6,7 +6,7 @@ import { Suspense } from "react";
 
 function LoginInner() {
   const params = useSearchParams();
-  const callbackUrl = params.get("next") || "/dashboard";
+  const callbackUrl = params.get("next") || "/";
   const showError = !!params.get("error");
 
   return (
