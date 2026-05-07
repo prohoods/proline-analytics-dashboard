@@ -28,7 +28,7 @@ export default async function FinanceLayout({ children }: { children: React.Reac
   return (
     <div className="flex h-screen overflow-hidden bg-gray-950">
       <FinanceSidebar />
-      <main className="flex-1 overflow-y-auto">
+      <main className="flex-1 min-w-0 overflow-y-auto">
         {children}
       </main>
     </div>

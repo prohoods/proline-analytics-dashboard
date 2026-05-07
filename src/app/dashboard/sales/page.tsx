@@ -1475,8 +1475,8 @@ export default function SalesPage() {
               </button>
             </div>
           </div>
-          <div>
-            <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[1200px] text-sm">
               <thead className="sticky top-[60px] z-10 text-gray-500 text-xs uppercase tracking-wider shadow-md shadow-black/40">
                 <tr className="border-b border-gray-800">
                   <th className="py-3 px-3 text-left bg-gray-800">{view === "monthly" ? "Month" : "Date"}</th>
