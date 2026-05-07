@@ -16,7 +16,9 @@ export function middleware(request: NextRequest) {
     pathname.startsWith("/api/shipping") ||
     pathname.startsWith("/api/debug") ||
     pathname.startsWith("/api/shopify/debug-refunds") ||
-    pathname.startsWith("/api/google-ads/debug")
+    pathname.startsWith("/api/google-ads/debug") ||
+    pathname.startsWith("/api/webhooks") ||
+    pathname.startsWith("/api/conversions")
   ) {
     return NextResponse.next();
   }

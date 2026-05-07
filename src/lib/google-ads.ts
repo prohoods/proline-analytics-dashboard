@@ -7,10 +7,12 @@ const CLIENT_ID = process.env.GOOGLE_ADS_CLIENT_ID ?? "";
 const CLIENT_SECRET = process.env.GOOGLE_ADS_CLIENT_SECRET ?? "";
 const REFRESH_TOKEN = process.env.GOOGLE_ADS_REFRESH_TOKEN ?? "";
 
-const API_VERSION = "v20";
+export const API_VERSION = "v20";
+export const GOOGLE_ADS_CUSTOMER_ID = CUSTOMER_ID;
+export const GOOGLE_ADS_DEVELOPER_TOKEN = DEVELOPER_TOKEN;
 
 // Get a fresh access token using the refresh token
-async function getAccessToken(): Promise<string> {
+export async function getAccessToken(): Promise<string> {
   const res = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },

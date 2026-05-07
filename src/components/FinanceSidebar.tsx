@@ -37,6 +37,7 @@ const navGroups: NavGroup[] = [
       { href: "/finance/expenses",        label: "Expenses",               icon: "💳" },
       { href: "/finance/payroll",         label: "Payroll & Benefits",     icon: "👥" },
       { href: "/finance/reconciliation",  label: "Reconciliation",         icon: "🔗" },
+      { href: "/finance/conversions",     label: "Ad Conversions",         icon: "📡" },
     ],
   },
 ];
