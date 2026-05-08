@@ -32,6 +32,20 @@ function toIsoString(v: Date | string): string {
   if (v instanceof Date) return v.toISOString();
   return new Date(String(v)).toISOString();
 }
+// jsonb arrays can come back as already-parsed arrays OR as JSON strings,
+// depending on driver path. Normalize so .map() never crashes the client.
+function toStringArray(v: unknown): string[] {
+  if (Array.isArray(v)) return v.map((x) => String(x));
+  if (typeof v === "string") {
+    try {
+      const p = JSON.parse(v);
+      return Array.isArray(p) ? p.map((x) => String(x)) : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
 
 function mondayOfThisWeek(): string {
   const d = new Date();
@@ -128,6 +142,8 @@ async function loadData(filter: Filter) {
           ...rollupRows[0],
           week_start: toIsoDate(rollupRows[0].week_start),
           generated_at: toIsoString(rollupRows[0].generated_at),
+          key_trends: toStringArray(rollupRows[0].key_trends),
+          content_ideas: toStringArray(rollupRows[0].content_ideas),
         }
       : null;
 
