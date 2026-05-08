@@ -55,7 +55,7 @@ function mondayOfThisWeek(): string {
   return d.toISOString().slice(0, 10);
 }
 
-async function loadData(filter: Filter) {
+async function loadData(filter: Filter, weekStart: string) {
   const sql = getSql();
   try {
     const where =
@@ -63,7 +63,7 @@ async function loadData(filter: Filter) {
         ? sql`call_started_at >= now() - interval '30 days'`
         : sql`call_started_at >= now() - interval '30 days' and category = ${filter}`;
 
-    const [rows, byCategory, last24, followUps, daily, rollupRows] = await Promise.all([
+    const [rows, byCategory, last24, followUps, daily, rollupRows, weekRows] = await Promise.all([
       sql<
         (Omit<CallRow, "call_started_at"> & { call_started_at: Date })[]
       >`
@@ -107,8 +107,13 @@ async function loadData(filter: Filter) {
         select week_start, generated_at, total_calls, sales_count, support_count,
                key_trends, content_ideas, sales_summary, support_summary
         from ai_weekly_rollups
-        where week_start = ${mondayOfThisWeek()}::date
+        where week_start = ${weekStart}::date
         limit 1
+      `,
+      sql<{ week_start: Date | string }[]>`
+        select week_start from ai_weekly_rollups
+        order by week_start desc
+        limit 24
       `,
     ]);
 
@@ -147,6 +152,8 @@ async function loadData(filter: Filter) {
         }
       : null;
 
+    const availableWeeks = weekRows.map((r) => toIsoDate(r.week_start));
+
     return {
       rows: callRows,
       byCategory,
@@ -154,6 +161,7 @@ async function loadData(filter: Filter) {
       followUps: followUps[0]?.count ?? 0,
       dailySeries,
       rollup,
+      availableWeeks,
       error: null as string | null,
     };
   } catch (e) {
@@ -164,6 +172,7 @@ async function loadData(filter: Filter) {
       followUps: 0,
       dailySeries: [] as { date: string; sales: number; support: number; other: number }[],
       rollup: null as WeeklyRollupData | null,
+      availableWeeks: [] as string[],
       error: e instanceof Error ? e.message : String(e),
     };
   }
@@ -172,15 +181,20 @@ async function loadData(filter: Filter) {
 export default async function AIReportingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ filter?: string }>;
+  searchParams: Promise<{ filter?: string; week?: string }>;
 }) {
   const sp = await searchParams;
   const filter = (FILTERS as readonly string[]).includes(sp.filter ?? "")
     ? (sp.filter as Filter)
     : "all";
 
-  const { rows, byCategory, last24h, followUps, dailySeries, rollup, error } =
-    await loadData(filter);
+  const thisWeekStart = mondayOfThisWeek();
+  const weekStart = /^\d{4}-\d{2}-\d{2}$/.test(sp.week ?? "")
+    ? (sp.week as string)
+    : thisWeekStart;
+
+  const { rows, byCategory, last24h, followUps, dailySeries, rollup, availableWeeks, error } =
+    await loadData(filter, weekStart);
 
   const total30d = byCategory.reduce((s, r) => s + r.count, 0);
   const sales = byCategory.find((r) => r.category === "sales")?.count ?? 0;
@@ -255,7 +269,13 @@ export default async function AIReportingPage({
         <CallVolumeChart data={dailySeries} />
       </div>
 
-      <WeeklyRollupPanel rollup={rollup} />
+      <WeeklyRollupPanel
+        rollup={rollup}
+        weekStart={weekStart}
+        thisWeekStart={thisWeekStart}
+        availableWeeks={availableWeeks}
+        filterParam={filter === "all" ? null : filter}
+      />
 
       <div className="flex items-center gap-2 mb-4">
         {FILTERS.map((f) => {
@@ -264,10 +284,15 @@ export default async function AIReportingPage({
             f === "all"
               ? total30d
               : byCategory.find((r) => r.category === f)?.count ?? 0;
+          const params = new URLSearchParams();
+          if (f !== "all") params.set("filter", f);
+          if (weekStart !== thisWeekStart) params.set("week", weekStart);
+          const qs = params.toString();
+          const href = qs ? `/ai-reporting?${qs}` : "/ai-reporting";
           return (
             <Link
               key={f}
-              href={f === "all" ? "/ai-reporting" : `/ai-reporting?filter=${f}`}
+              href={href}
               className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${
                 isActive
                   ? "bg-violet-600/20 border-violet-700/60 text-violet-300"
