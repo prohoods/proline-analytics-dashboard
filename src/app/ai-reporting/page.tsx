@@ -22,6 +22,17 @@ interface DailyRow {
 const FILTERS = ["all", "sales", "support", "other"] as const;
 type Filter = (typeof FILTERS)[number];
 
+// postgres.js returns DATE as string and TIMESTAMPTZ as Date, but be defensive
+// in case driver/column behavior shifts — calling .toISOString() on a string crashes.
+function toIsoDate(v: Date | string): string {
+  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  return String(v).slice(0, 10);
+}
+function toIsoString(v: Date | string): string {
+  if (v instanceof Date) return v.toISOString();
+  return new Date(String(v)).toISOString();
+}
+
 function mondayOfThisWeek(): string {
   const d = new Date();
   const day = d.getUTCDay();
@@ -75,8 +86,8 @@ async function loadData(filter: Filter) {
       `,
       sql<
         (Omit<WeeklyRollupData, "week_start" | "generated_at"> & {
-          week_start: Date;
-          generated_at: Date;
+          week_start: Date | string;
+          generated_at: Date | string;
         })[]
       >`
         select week_start, generated_at, total_calls, sales_count, support_count,
@@ -115,8 +126,8 @@ async function loadData(filter: Filter) {
     const rollup: WeeklyRollupData | null = rollupRows[0]
       ? {
           ...rollupRows[0],
-          week_start: rollupRows[0].week_start.toISOString().slice(0, 10),
-          generated_at: rollupRows[0].generated_at.toISOString(),
+          week_start: toIsoDate(rollupRows[0].week_start),
+          generated_at: toIsoString(rollupRows[0].generated_at),
         }
       : null;
 
