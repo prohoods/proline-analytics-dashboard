@@ -70,11 +70,7 @@ async function fetchPage(
     "recording",
     "source",
     "gclid",
-    "gbraid",
-    "wbraid",
-    "ga_client_id",
     "duration",
-    "end_time",
     "customer_phone_number",
   ].join(",");
   const url = new URL(`https://api.callrail.com/v3/a/${accountId}/calls.json`);
