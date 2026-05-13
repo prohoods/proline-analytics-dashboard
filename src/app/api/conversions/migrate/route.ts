@@ -9,6 +9,7 @@ export async function POST() {
     for (const name of [
       "003_conversion_uploads.sql",
       "006_shopify_orders.sql",
+      "007_google_ads_clicks.sql",
     ]) {
       const ddl = await readFile(
         path.join(process.cwd(), "src/lib/migrations", name),
@@ -25,7 +26,10 @@ export async function POST() {
     const [{ orders }] = await sql<{ orders: number }[]>`
       select count(*)::int as orders from shopify_orders
     `;
-    return NextResponse.json({ ok: true, uploads, calls, orders });
+    const [{ clicks }] = await sql<{ clicks: number }[]>`
+      select count(*)::int as clicks from google_ads_clicks
+    `;
+    return NextResponse.json({ ok: true, uploads, calls, orders, clicks });
   } catch (e) {
     return NextResponse.json(
       { ok: false, error: e instanceof Error ? e.message : String(e) },
