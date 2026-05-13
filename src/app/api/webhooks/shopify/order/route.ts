@@ -26,11 +26,98 @@ interface ShopifyOrder {
   total_price?: string;
   subtotal_price?: string;
   currency?: string;
+  email?: string | null;
+  landing_site?: string | null;
+  referring_site?: string | null;
   note_attributes?: NoteAttribute[];
-  customer?: { phone?: string | null } | null;
+  customer?: {
+    id?: number | null;
+    phone?: string | null;
+    orders_count?: number | null;
+  } | null;
   billing_address?: { phone?: string | null } | null;
   shipping_address?: { phone?: string | null } | null;
   phone?: string | null;
+}
+
+const ATTR_FIELDS = [
+  "gclid",
+  "gbraid",
+  "wbraid",
+  "fbclid",
+  "msclkid",
+  "ttclid",
+  "utm_source",
+  "utm_medium",
+  "utm_campaign",
+  "utm_term",
+  "utm_content",
+  "landing_page",
+  "referrer",
+] as const;
+
+type AttrField = (typeof ATTR_FIELDS)[number];
+
+function extractAttrs(
+  order: ShopifyOrder
+): Record<AttrField, string | null> {
+  const out = {} as Record<AttrField, string | null>;
+  for (const f of ATTR_FIELDS) out[f] = pickAttr(order.note_attributes, f);
+  return out;
+}
+
+async function persistShopifyOrder(
+  order: ShopifyOrder,
+  attrs: Record<AttrField, string | null>,
+  phone: string | null
+): Promise<void> {
+  const sql = getSql();
+  const ordersCount = order.customer?.orders_count ?? null;
+  const isNew = ordersCount == null ? null : ordersCount <= 1;
+  const total = parseFloat(order.total_price ?? order.subtotal_price ?? "0") || null;
+  const orderedAt = new Date(order.processed_at || order.created_at).toISOString();
+
+  await sql`
+    insert into shopify_orders (
+      id, order_number, email, phone_e164, shopify_customer_id,
+      customer_orders_count, is_new_customer, ordered_at, total, currency,
+      gclid, gbraid, wbraid, fbclid, msclkid, ttclid,
+      utm_source, utm_medium, utm_campaign, utm_term, utm_content,
+      landing_page, referrer, note_attributes
+    ) values (
+      ${order.id}, ${order.name ?? null}, ${order.email ?? null}, ${phone},
+      ${order.customer?.id ?? null}, ${ordersCount}, ${isNew},
+      ${orderedAt}, ${total}, ${order.currency ?? "USD"},
+      ${attrs.gclid}, ${attrs.gbraid}, ${attrs.wbraid},
+      ${attrs.fbclid}, ${attrs.msclkid}, ${attrs.ttclid},
+      ${attrs.utm_source}, ${attrs.utm_medium}, ${attrs.utm_campaign},
+      ${attrs.utm_term}, ${attrs.utm_content},
+      ${attrs.landing_page ?? order.landing_site ?? null},
+      ${attrs.referrer ?? order.referring_site ?? null},
+      ${sql.json((order.note_attributes ?? []) as never)}
+    )
+    on conflict (id) do update set
+      email = excluded.email,
+      phone_e164 = coalesce(excluded.phone_e164, shopify_orders.phone_e164),
+      shopify_customer_id = coalesce(excluded.shopify_customer_id, shopify_orders.shopify_customer_id),
+      customer_orders_count = coalesce(excluded.customer_orders_count, shopify_orders.customer_orders_count),
+      is_new_customer = coalesce(excluded.is_new_customer, shopify_orders.is_new_customer),
+      total = coalesce(excluded.total, shopify_orders.total),
+      gclid = coalesce(excluded.gclid, shopify_orders.gclid),
+      gbraid = coalesce(excluded.gbraid, shopify_orders.gbraid),
+      wbraid = coalesce(excluded.wbraid, shopify_orders.wbraid),
+      fbclid = coalesce(excluded.fbclid, shopify_orders.fbclid),
+      msclkid = coalesce(excluded.msclkid, shopify_orders.msclkid),
+      ttclid = coalesce(excluded.ttclid, shopify_orders.ttclid),
+      utm_source = coalesce(excluded.utm_source, shopify_orders.utm_source),
+      utm_medium = coalesce(excluded.utm_medium, shopify_orders.utm_medium),
+      utm_campaign = coalesce(excluded.utm_campaign, shopify_orders.utm_campaign),
+      utm_term = coalesce(excluded.utm_term, shopify_orders.utm_term),
+      utm_content = coalesce(excluded.utm_content, shopify_orders.utm_content),
+      landing_page = coalesce(excluded.landing_page, shopify_orders.landing_page),
+      referrer = coalesce(excluded.referrer, shopify_orders.referrer),
+      note_attributes = excluded.note_attributes
+  `;
 }
 
 function verifyHmac(rawBody: string, headerHmac: string | null): boolean {
@@ -94,9 +181,19 @@ export async function POST(req: NextRequest) {
   const value = parseFloat(order.total_price ?? order.subtotal_price ?? "0") || 1;
   const currency = order.currency ?? "USD";
 
-  const gclid = pickAttr(order.note_attributes, "gclid");
-  const gbraid = pickAttr(order.note_attributes, "gbraid");
-  const wbraid = pickAttr(order.note_attributes, "wbraid");
+  const attrs = extractAttrs(order);
+  const gclid = attrs.gclid;
+  const gbraid = attrs.gbraid;
+  const wbraid = attrs.wbraid;
+  const phoneForOrder = normalizePhoneE164(pickPhone(order));
+
+  // Persist before any conversion upload so we have an audit row no matter what.
+  try {
+    await persistShopifyOrder(order, attrs, phoneForOrder);
+  } catch (e) {
+    // Never block the conversion upload on persistence failure — just log.
+    console.error("shopify_orders persist failed", e);
+  }
 
   // Path 1 / 2: direct click attribution from the order itself.
   if (gclid || gbraid || wbraid) {
@@ -120,7 +217,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Path 3: phone-call attribution. Match by customer phone against callrail_calls.
-  const phone = normalizePhoneE164(pickPhone(order));
+  const phone = phoneForOrder;
   if (!phone) {
     return NextResponse.json({ ok: true, path: "skipped", reason: "no gclid and no phone" });
   }
