@@ -257,6 +257,7 @@ export async function POST(req: NextRequest) {
       and call_started_at >= ${new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString()}
       and call_started_at <= ${conversionAt.toISOString()}
       and gclid is not null
+      and btrim(gclid) <> ''
     order by call_started_at desc
     limit 1
   `;

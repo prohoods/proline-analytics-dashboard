@@ -50,6 +50,16 @@ function dedupeKey(input: { source: string; sourceId: string; conversionAction: 
   return `${input.source}-${input.sourceId}-${input.conversionAction}`;
 }
 
+// Treat empty / whitespace-only click identifiers as missing. Upstream sources
+// (CallRail, Shopify note_attributes) sometimes send "" instead of omitting
+// the field — we shouldn't pass those to Google, which rejects them with an
+// opaque "required field was not present" error.
+function normalizeClickId(v: string | null | undefined): string | null {
+  if (v == null) return null;
+  const trimmed = String(v).trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 // Google Ads expects YYYY-MM-DD HH:MM:SS+TZ (e.g. "2026-05-07 14:23:01-04:00").
 function formatConversionDateTime(d: Date): string {
   const tzMin = -d.getTimezoneOffset();
@@ -162,6 +172,10 @@ export async function uploadClickConversion(
   const conversionActionId = CONVERSION_ACTION_IDS[input.conversionAction];
   const currency = input.currency ?? "USD";
   const value = input.value ?? 1;
+  // Normalize once; downstream code can rely on null-or-non-empty.
+  const gclid = normalizeClickId(input.gclid);
+  const gbraid = normalizeClickId(input.gbraid);
+  const wbraid = normalizeClickId(input.wbraid);
   const key = dedupeKey({
     source: input.source,
     sourceId: input.sourceId,
@@ -192,7 +206,7 @@ export async function uploadClickConversion(
       dedupe_key, attempt
     ) values (
       ${input.source}, ${input.sourceId}, ${input.conversionAction}, ${conversionActionId},
-      ${input.gclid ?? null}, ${input.gbraid ?? null}, ${input.wbraid ?? null},
+      ${gclid}, ${gbraid}, ${wbraid},
       ${value}, ${currency}, ${input.conversionAt.toISOString()}, 'pending',
       ${key}, 1
     )
@@ -200,27 +214,27 @@ export async function uploadClickConversion(
   `;
   const uploadId = logRow.id;
 
-  if (!input.gclid && !input.gbraid && !input.wbraid) {
+  if (!gclid && !gbraid && !wbraid) {
     const msg = "missing gclid/gbraid/wbraid — cannot attribute click";
     await sql`
       update conversion_uploads
-      set status = 'error', error_message = ${msg}
+      set status = 'skipped', error_message = ${msg}
       where id = ${uploadId}
     `;
-    return { status: "error", error: msg, uploadId };
+    return { status: "skipped", reason: msg, uploadId };
   }
 
   // phone_call_sale and offline_purchase actions only accept gclid; reject
   // upfront if we only have gbraid/wbraid, since Google will 400 anyway.
   const gclidOnlyActions: ConversionActionKey[] = ["phone_call_sale", "offline_purchase"];
-  if (gclidOnlyActions.includes(input.conversionAction) && !input.gclid) {
+  if (gclidOnlyActions.includes(input.conversionAction) && !gclid) {
     const msg = `${input.conversionAction} requires gclid (have gbraid/wbraid only)`;
     await sql`
       update conversion_uploads
-      set status = 'error', error_message = ${msg}
+      set status = 'skipped', error_message = ${msg}
       where id = ${uploadId}
     `;
-    return { status: "error", error: msg, uploadId };
+    return { status: "skipped", reason: msg, uploadId };
   }
 
   return executeUpload({
@@ -228,9 +242,9 @@ export async function uploadClickConversion(
     source: input.source,
     sourceId: input.sourceId,
     conversionAction: input.conversionAction,
-    gclid: input.gclid ?? null,
-    gbraid: input.gbraid ?? null,
-    wbraid: input.wbraid ?? null,
+    gclid,
+    gbraid,
+    wbraid,
     conversionAt: input.conversionAt,
     value,
     currency,

@@ -16,6 +16,15 @@ import {
 
 const CALLRAIL_WEBHOOK_SECRET = process.env.CALLRAIL_WEBHOOK_SECRET ?? "";
 
+// CallRail sometimes sends "" for missing click IDs. Coerce to null so the
+// downstream `gclid is not null` filter behaves correctly, and so we don't
+// try to upload empty strings to Google Ads.
+function blankToNull(v: unknown): string | null {
+  if (v == null) return null;
+  const s = String(v).trim();
+  return s.length > 0 ? s : null;
+}
+
 // CallRail webhook payload (post_call). Field set varies by account; we read
 // the keys we need defensively.
 interface CallRailPayload {
@@ -104,13 +113,17 @@ export async function POST(req: NextRequest) {
   // email at the call stage, so phone is the only key — that's fine; if a
   // Shopify order later arrives with the same phone + an email, the resolver
   // backfills the email onto the existing identity.
+  const gclid = blankToNull(payload.gclid);
+  const gbraid = blankToNull(payload.gbraid);
+  const wbraid = blankToNull(payload.wbraid);
+
   const identityId = await resolveCustomerIdentity({
     phone_e164: phone,
     channel: "callrail",
     seen_at: startedAt,
-    gclid: payload.gclid ?? null,
-    gbraid: payload.gbraid ?? null,
-    wbraid: payload.wbraid ?? null,
+    gclid,
+    gbraid,
+    wbraid,
     utm_source: payload.utm_source ?? payload.source ?? null,
   });
 
@@ -122,7 +135,7 @@ export async function POST(req: NextRequest) {
     ) values (
       ${id}, ${phone}, ${startedAt.toISOString()},
       ${endedAt ? endedAt.toISOString() : null}, ${duration ?? null},
-      ${payload.gclid ?? null}, ${payload.gbraid ?? null}, ${payload.wbraid ?? null},
+      ${gclid}, ${gbraid}, ${wbraid},
       ${payload.source ?? payload.utm_source ?? null}, ${sql.json(payload as never)},
       ${recordingUrl},
       ${identityId}

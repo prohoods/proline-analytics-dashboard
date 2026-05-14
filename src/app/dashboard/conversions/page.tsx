@@ -89,7 +89,12 @@ export default async function ConversionsPage() {
   const total = summary.reduce((s, r) => s + r.count, 0);
   const success = summary.find((r) => r.status === "success")?.count ?? 0;
   const errors = summary.find((r) => r.status === "error")?.count ?? 0;
-  const successRate = total > 0 ? (success / total) * 100 : 0;
+  const skipped = summary.find((r) => r.status === "skipped")?.count ?? 0;
+  // Success rate is measured against rows we actually tried to upload —
+  // skipped rows (missing click id, etc.) never reached Google so they
+  // shouldn't drag the denominator down.
+  const attempted = success + errors;
+  const successRate = attempted > 0 ? (success / attempted) * 100 : 0;
 
   return (
     <div className="p-6 max-w-[1400px] mx-auto">
@@ -113,13 +118,18 @@ export default async function ConversionsPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
         <Stat label="Last 24h" value={last24h.toString()} />
         <Stat label="Last 30d (total)" value={total.toString()} />
         <Stat label="Last 30d (success)" value={success.toString()} accent="text-emerald-400" />
         <Stat
+          label="Last 30d (skipped)"
+          value={skipped.toString()}
+          accent="text-gray-400"
+        />
+        <Stat
           label="Success rate (30d)"
-          value={total > 0 ? `${successRate.toFixed(1)}%` : "—"}
+          value={attempted > 0 ? `${successRate.toFixed(1)}%` : "—"}
           accent={errors > 0 ? "text-amber-400" : "text-emerald-400"}
         />
       </div>
