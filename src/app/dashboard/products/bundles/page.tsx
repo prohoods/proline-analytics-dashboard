@@ -440,16 +440,17 @@ function WeeklyChart({ rows }: { rows: WeekRow[] }) {
           <span className="w-2.5 h-2.5 rounded-sm bg-sky-500/80" /> Implicit
         </span>
       </div>
-      <div className="flex items-end gap-1.5 h-32">
+      <div className="flex items-end gap-2 h-40">
         {rows.map((w) => {
-          const totalH = Math.max(2, (w.totalUnits / maxUnits) * 100);
+          const totalH = Math.max(4, (w.totalUnits / maxUnits) * 100);
           const skudFrac = w.totalUnits > 0 ? w.skudUnits / w.totalUnits : 0;
           return (
             <div
               key={w.weekStart}
-              className="flex-1 group relative flex flex-col justify-end min-w-[20px]"
+              className="flex-1 group relative flex flex-col items-center justify-end h-full min-w-[24px]"
               title={`Week of ${w.weekStart} — ${w.totalUnits} units (SKU'd ${w.skudUnits} / implicit ${w.implicitUnits}), ${fmtC(w.revenue)}`}
             >
+              <div className="text-[10px] text-gray-400 mb-1 tabular-nums">{w.totalUnits}</div>
               <div className="w-full rounded-t overflow-hidden flex flex-col" style={{ height: `${totalH}%` }}>
                 <div className="bg-emerald-500/80" style={{ height: `${skudFrac * 100}%` }} />
                 <div className="bg-sky-500/80 flex-1" />
@@ -460,6 +461,13 @@ function WeeklyChart({ rows }: { rows: WeekRow[] }) {
             </div>
           );
         })}
+      </div>
+      <div className="flex gap-2 mt-1.5 text-[10px] text-gray-500">
+        {rows.map((w) => (
+          <div key={w.weekStart} className="flex-1 text-center min-w-[24px] whitespace-nowrap">
+            {fmtDate(w.weekStart)}
+          </div>
+        ))}
       </div>
       <div className="overflow-x-auto mt-4 border-t border-gray-800">
         <table className="w-full text-sm">

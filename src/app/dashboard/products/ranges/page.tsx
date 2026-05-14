@@ -402,18 +402,19 @@ function weekStartFromDate(isoDate: string): string {
 function WeeklyChart({ rows }: { rows: WeekRow[] }) {
   const maxUnits = Math.max(1, ...rows.map((r) => r.units));
   return (
-    <div className="px-5 pt-4 pb-2">
-      <div className="flex items-end gap-1.5 h-32">
+    <div className="px-5 pt-5 pb-3">
+      <div className="flex items-end gap-2 h-40">
         {rows.map((w) => {
-          const h = Math.max(2, (w.units / maxUnits) * 100);
+          const h = Math.max(4, (w.units / maxUnits) * 100);
           return (
             <div
               key={w.weekStart}
-              className="flex-1 group relative flex flex-col justify-end min-w-[20px]"
+              className="flex-1 group relative flex flex-col items-center justify-end h-full min-w-[24px]"
               title={`Week of ${w.weekStart} — ${w.units} units, ${w.orderCount} orders, ${fmtC(w.revenue)}`}
             >
+              <div className="text-[10px] text-gray-400 mb-1 tabular-nums">{w.units}</div>
               <div
-                className="w-full bg-blue-600/70 group-hover:bg-blue-500 rounded-t transition-colors"
+                className="w-full bg-blue-500/80 group-hover:bg-blue-400 rounded-t transition-colors"
                 style={{ height: `${h}%` }}
               />
               <div className="absolute -top-7 left-1/2 -translate-x-1/2 px-1.5 py-0.5 text-[10px] bg-gray-950 text-gray-200 rounded border border-gray-800 opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-10">
@@ -422,6 +423,13 @@ function WeeklyChart({ rows }: { rows: WeekRow[] }) {
             </div>
           );
         })}
+      </div>
+      <div className="flex gap-2 mt-1.5 text-[10px] text-gray-500">
+        {rows.map((w) => (
+          <div key={w.weekStart} className="flex-1 text-center min-w-[24px] whitespace-nowrap">
+            {fmtDate(w.weekStart)}
+          </div>
+        ))}
       </div>
       <div className="overflow-x-auto mt-4 border-t border-gray-800">
         <table className="w-full text-sm">
