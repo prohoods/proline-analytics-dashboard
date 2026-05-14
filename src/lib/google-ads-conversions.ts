@@ -98,7 +98,7 @@ export async function executeUpload(params: {
     if (params.wbraid) conversion.wbraid = params.wbraid;
 
     const res = await fetch(
-      `https://googleads.googleapis.com/${API_VERSION}/customers/${GOOGLE_ADS_CUSTOMER_ID}/googleAds:uploadClickConversions`,
+      `https://googleads.googleapis.com/${API_VERSION}/customers/${GOOGLE_ADS_CUSTOMER_ID}:uploadClickConversions`,
       {
         method: "POST",
         headers: {
