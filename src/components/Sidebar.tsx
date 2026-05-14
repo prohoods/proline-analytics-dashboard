@@ -39,6 +39,7 @@ const navSections: NavSection[] = [
           { href: "/dashboard/search",     label: "Search Campaigns",  icon: "🔍" },
           { href: "/dashboard/demand-gen", label: "Demand Gen",        icon: "📣" },
           { href: "/dashboard/gclid",      label: "GCLID Attribution", icon: "🔗" },
+          { href: "/dashboard/attribution", label: "Capture Rate",     icon: "🎯" },
           { href: "/dashboard/google-mer", label: "Google MER",        icon: "📊" },
         ],
       },
