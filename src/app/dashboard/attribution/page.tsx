@@ -4,10 +4,13 @@
 // Definitions:
 //   captured           = order has a GCLID in note_attributes
 //   verified           = captured AND gclid exists in google_ads_clicks
-//   capture rate       = verified / orders-from-google (proxy: utm_source includes google)
-//   click-match rate   = verified / captured  (sanity check on our capture quality)
+//   match quality      = verified / captured  (sanity check on capture)
+//   click_view rows    = total click records pulled from Google Ads API
 
 import { getSql } from "@/lib/db";
+import { getRange, RangeKey } from "@/lib/date-ranges";
+import UrlRangeDropdown from "@/components/UrlRangeDropdown";
+import Tooltip from "@/components/Tooltip";
 
 export const dynamic = "force-dynamic";
 
@@ -53,7 +56,7 @@ interface FirstTouchBreakdownRow {
   identities: number;
 }
 
-async function loadIdentityData() {
+async function loadIdentityData(start: string, end: string) {
   const sql = getSql();
   try {
     const [identityTotals, firstTouchBreakdown] = await Promise.all([
@@ -74,7 +77,8 @@ async function loadIdentityData() {
           count(*) filter (where ci.first_channel = 'callrail')::int as first_touch_callrail
         from shopify_orders so
         left join customer_identities ci on ci.id = so.customer_identity_id
-        where so.ordered_at >= now() - interval '30 days'
+        where so.ordered_at >= ${start}::date
+          and so.ordered_at < (${end}::date + interval '1 day')
       `,
       sql<FirstTouchBreakdownRow[]>`
         select
@@ -84,7 +88,8 @@ async function loadIdentityData() {
           count(distinct ci.id)::int as identities
         from shopify_orders so
         join customer_identities ci on ci.id = so.customer_identity_id
-        where so.ordered_at >= now() - interval '30 days'
+        where so.ordered_at >= ${start}::date
+          and so.ordered_at < (${end}::date + interval '1 day')
         group by ci.first_channel
         order by orders desc
       `,
@@ -113,7 +118,7 @@ async function loadIdentityData() {
   }
 }
 
-async function loadData() {
+async function loadData(start: string, end: string) {
   const sql = getSql();
   try {
     const [daily, recent, campaigns, totals, clickTotal] = await Promise.all([
@@ -128,7 +133,8 @@ async function loadData() {
           )::int as verified,
           count(*) filter (where lower(coalesce(utm_source, '')) like '%google%')::int as google_source
         from shopify_orders
-        where ordered_at >= now() - interval '30 days'
+        where ordered_at >= ${start}::date
+          and ordered_at < (${end}::date + interval '1 day')
         group by 1
         order by 1 desc
       `,
@@ -147,6 +153,8 @@ async function loadData() {
           (so.gclid is not null and gac.gclid is not null) as click_matched
         from shopify_orders so
         left join google_ads_clicks gac on gac.gclid = so.gclid
+        where so.ordered_at >= ${start}::date
+          and so.ordered_at < (${end}::date + interval '1 day')
         order by so.ordered_at desc
         limit 100
       `,
@@ -157,7 +165,8 @@ async function loadData() {
           sum(so.total)::text as total_value
         from shopify_orders so
         join google_ads_clicks gac on gac.gclid = so.gclid
-        where so.ordered_at >= now() - interval '30 days'
+        where so.ordered_at >= ${start}::date
+          and so.ordered_at < (${end}::date + interval '1 day')
         group by gac.campaign_name
         order by orders desc
         limit 20
@@ -181,7 +190,8 @@ async function loadData() {
           count(*) filter (where lower(coalesce(utm_source, '')) like '%google%')::int as google_source,
           count(*) filter (where is_new_customer is true)::int as new_customers
         from shopify_orders
-        where ordered_at >= now() - interval '30 days'
+        where ordered_at >= ${start}::date
+          and ordered_at < (${end}::date + interval '1 day')
       `,
       sql<{ total: number }[]>`select count(*)::int as total from google_ads_clicks`,
     ]);
@@ -236,27 +246,72 @@ function fmtDate(d: Date) {
   });
 }
 
-export default async function AttributionPage() {
+export default async function AttributionPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ range?: string }>;
+}) {
+  const params = await searchParams;
+  const rangeKey: RangeKey = (params.range as RangeKey) || "30d";
+  const range = getRange(rangeKey);
+
   const [
     { daily, recent, campaigns, totals, clickTotal, error },
     { identityTotals, firstTouchBreakdown, identityError },
-  ] = await Promise.all([loadData(), loadIdentityData()]);
-  // "Match quality" = how many of the GCLIDs we captured actually correspond
-  // to real Google clicks. This is the trustworthy metric.
-  // (utm_source=google is too unreliable as a denominator — Performance Max,
-  // Shopping, etc rarely set it, so verified/utm-google often exceeds 100%.)
+  ] = await Promise.all([
+    loadData(range.start, range.end),
+    loadIdentityData(range.start, range.end),
+  ]);
+
   const matchQuality = pct(totals.verified, totals.with_gclid);
   const gclidShare = pct(totals.with_gclid, totals.orders);
 
   return (
     <div className="p-6 max-w-[1400px] mx-auto">
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold text-white">GCLID Capture & Attribution</h1>
-        <p className="text-sm text-gray-400 mt-1">
-          Joins <code className="text-gray-300">shopify_orders</code> against{" "}
-          <code className="text-gray-300">google_ads_clicks</code> to measure how many
-          paid clicks convert to orders with the GCLID intact.
-        </p>
+      {/* Header */}
+      <div className="mb-6 flex items-start justify-between flex-wrap gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold text-white">
+            GCLID Capture & Attribution
+          </h1>
+          <p className="text-sm text-gray-400 mt-1 max-w-2xl">
+            Every Google Ads click gets stamped with a unique{" "}
+            <code className="text-gray-300">GCLID</code>. When that click turns
+            into a Shopify order, we save the GCLID on the order so Google can
+            credit the right campaign. This page measures how reliably that
+            handoff is working.
+          </p>
+        </div>
+        <UrlRangeDropdown value={rangeKey} />
+      </div>
+
+      {/* Pipeline narrative */}
+      <div className="mb-6 p-4 rounded-xl border border-gray-800 bg-gray-900/60">
+        <div className="text-xs uppercase tracking-wider text-gray-500 mb-2">
+          The attribution pipeline
+        </div>
+        <ol className="text-sm text-gray-300 space-y-1.5 list-decimal list-inside">
+          <li>
+            User clicks a Google Ad → lands on site with{" "}
+            <code className="text-gray-400">?gclid=…</code> in the URL
+          </li>
+          <li>
+            Storefront script saves the GCLID to a cookie + Shopify cart
+            attribute
+          </li>
+          <li>
+            Order is placed → GCLID is written into{" "}
+            <code className="text-gray-400">note_attributes</code> on the order
+          </li>
+          <li>
+            We pull the order in via webhook and join it against Google&apos;s
+            click_view export to confirm the click is real
+          </li>
+          <li>
+            Verified orders are uploaded back to Google Ads as offline
+            conversions
+          </li>
+        </ol>
       </div>
 
       {error && (
@@ -265,24 +320,33 @@ export default async function AttributionPage() {
           <div className="mt-1 text-red-300">{error}</div>
           <div className="mt-2 text-xs text-red-300">
             Make sure migrations 006 and 007 are applied:{" "}
-            <code className="px-1.5 py-0.5 rounded bg-black/40">POST /api/conversions/migrate</code>
+            <code className="px-1.5 py-0.5 rounded bg-black/40">
+              POST /api/conversions/migrate
+            </code>
           </div>
         </div>
       )}
 
+      {/* KPI tiles */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
-        <Stat label="Orders (30d)" value={totals.orders.toString()} />
+        <Stat
+          label={`Orders (${range.label})`}
+          value={totals.orders.toString()}
+          tooltip="Total Shopify orders placed in the selected window. Every other tile is measured against this number."
+        />
         <Stat
           label="With GCLID"
           value={totals.with_gclid.toString()}
           sub={gclidShare}
           accent="text-blue-300"
+          tooltip="Orders that arrived with a GCLID attached. These are orders we believe came from a Google Ads click. The % shows what share of all orders carry one."
         />
         <Stat
           label="Verified vs click_view"
           value={totals.verified.toString()}
           sub={`${totals.verified} / ${totals.with_gclid}`}
           accent="text-emerald-400"
+          tooltip="Of the orders with a GCLID, how many of those GCLIDs match an actual Google Ads click record. A non-match means the GCLID is stale, fabricated, or from outside our ad account."
         />
         <Stat
           label="Match quality"
@@ -293,29 +357,39 @@ export default async function AttributionPage() {
               ? "text-emerald-400"
               : "text-amber-400"
           }
+          tooltip="Health metric for the GCLID pipeline. >90% green means almost every GCLID we capture is a real Google click. Lower = either storefront capture is breaking, or non-Google traffic is being tagged."
         />
         <Stat
           label="From Google (utm)"
           value={totals.google_source.toString()}
-          sub={`unreliable proxy`}
+          sub="unreliable proxy"
+          tooltip="Orders where utm_source contains 'google'. Performance Max and Shopping campaigns often skip setting utm_source, so this number undercounts paid traffic — use GCLID capture as the source of truth."
         />
       </div>
 
       <div className="mb-6 text-xs text-gray-500">
         <span className="mr-4">
-          <span className="text-gray-400">click_view rows in DB:</span> {clickTotal.toLocaleString()}
+          <span className="text-gray-400">click_view rows in DB:</span>{" "}
+          {clickTotal.toLocaleString()}
         </span>
         <span>
-          <span className="text-gray-400">new customers (30d):</span> {totals.new_customers}
+          <span className="text-gray-400">new customers ({range.label}):</span>{" "}
+          {totals.new_customers}
         </span>
       </div>
 
-      <Section title="Cross-channel new vs returning (last 30d)">
+      <Section
+        title="Cross-channel new vs returning"
+        subtitle={range.label}
+        tooltip="Identity-resolved across Shopify + CallRail. A customer who called us months ago and now buys online is 'returning' here even though Shopify shows them as a new buyer."
+      >
         <div className="p-4">
           <p className="text-xs text-gray-500 mb-4">
-            Identity-resolved across Shopify + CallRail. &quot;New&quot; means the order
-            created the customer&apos;s first touch anywhere in our system —
-            replaces Shopify&apos;s order-count-only heuristic.
+            &quot;New&quot; means this order created the customer&apos;s first
+            touch anywhere in our system. &quot;Returning&quot; means we&apos;d
+            seen them before — on a prior order, a CallRail phone call, or
+            both. This replaces Shopify&apos;s built-in heuristic, which only
+            counts order history.
           </p>
           {identityError && (
             <div className="mb-4 p-3 rounded-lg border border-amber-700 bg-amber-900/20 text-amber-200 text-xs">
@@ -338,19 +412,23 @@ export default async function AttributionPage() {
               label="New (cross-channel)"
               value={identityTotals.cross_new.toString()}
               accent="text-emerald-300"
+              tooltip="Orders from a customer we'd never seen before — not on Shopify, not on CallRail."
             />
             <Stat
               label="Returning (cross-channel)"
               value={identityTotals.cross_returning.toString()}
               accent="text-blue-300"
+              tooltip="Orders from a customer we recognized via prior Shopify activity or a previous phone call into CallRail."
             />
             <Stat
               label="First touch: Shopify"
               value={identityTotals.first_touch_shopify.toString()}
+              tooltip="Of orders in this window, how many came from customers whose very first interaction was a Shopify order."
             />
             <Stat
               label="First touch: CallRail"
               value={identityTotals.first_touch_callrail.toString()}
+              tooltip="Of orders in this window, how many came from customers who first called us (CallRail) before ever ordering online."
             />
           </div>
           <table className="w-full text-sm">
@@ -391,7 +469,11 @@ export default async function AttributionPage() {
         </div>
       </Section>
 
-      <Section title="Daily breakdown (last 30d)">
+      <Section
+        title="Daily breakdown"
+        subtitle={range.label}
+        tooltip="Day-by-day capture rate. A sudden drop in GCLID captured (blue column) is the earliest signal that storefront tracking is broken."
+      >
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="text-gray-500 text-xs uppercase tracking-wider">
@@ -408,7 +490,7 @@ export default async function AttributionPage() {
               {daily.length === 0 && !error && (
                 <tr>
                   <td colSpan={6} className="text-center py-12 text-gray-500 text-sm">
-                    No orders yet. Rows will populate as webhooks fire.
+                    No orders in this window.
                   </td>
                 </tr>
               )}
@@ -429,7 +511,11 @@ export default async function AttributionPage() {
         </div>
       </Section>
 
-      <Section title="Top campaigns (orders matched via GCLID, 30d)">
+      <Section
+        title="Top campaigns (orders matched via GCLID)"
+        subtitle={range.label}
+        tooltip="Campaign attribution comes from Google's click_view table — the campaign that owned the click when the GCLID was minted. Only orders with a verified GCLID appear here."
+      >
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="text-gray-500 text-xs uppercase tracking-wider">
@@ -443,12 +529,15 @@ export default async function AttributionPage() {
               {campaigns.length === 0 && !error && (
                 <tr>
                   <td colSpan={3} className="text-center py-12 text-gray-500 text-sm">
-                    No matched orders yet.
+                    No matched orders in this window.
                   </td>
                 </tr>
               )}
               {campaigns.map((c, i) => (
-                <tr key={`${c.campaign_name}-${i}`} className="border-b border-gray-800/60 hover:bg-gray-800/30">
+                <tr
+                  key={`${c.campaign_name}-${i}`}
+                  className="border-b border-gray-800/60 hover:bg-gray-800/30"
+                >
                   <td className="px-4 py-2 text-gray-200">{c.campaign_name ?? "—"}</td>
                   <td className="px-4 py-2 text-right text-gray-200">{c.orders}</td>
                   <td className="px-4 py-2 text-right text-gray-200">
@@ -461,7 +550,11 @@ export default async function AttributionPage() {
         </div>
       </Section>
 
-      <Section title="Recent orders">
+      <Section
+        title="Recent orders"
+        subtitle={`Latest 100 in ${range.label}`}
+        tooltip="Order-level detail. 'verified' means the GCLID matches a real Google click; 'no match' means we captured something but couldn't tie it to a real ad click."
+      >
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1100px] text-sm">
             <thead className="text-gray-500 text-xs uppercase tracking-wider">
@@ -479,15 +572,19 @@ export default async function AttributionPage() {
               {recent.length === 0 && !error && (
                 <tr>
                   <td colSpan={7} className="text-center py-12 text-gray-500 text-sm">
-                    No orders yet.
+                    No orders in this window.
                   </td>
                 </tr>
               )}
               {recent.map((r) => (
                 <tr key={r.id} className="border-b border-gray-800/60 hover:bg-gray-800/30">
-                  <td className="px-4 py-2 text-gray-300 whitespace-nowrap">{fmtDate(r.ordered_at)}</td>
+                  <td className="px-4 py-2 text-gray-300 whitespace-nowrap">
+                    {fmtDate(r.ordered_at)}
+                  </td>
                   <td className="px-4 py-2 text-gray-200">{r.order_number ?? r.id}</td>
-                  <td className="px-4 py-2 text-right text-gray-200">{fmtMoney(r.total, r.currency)}</td>
+                  <td className="px-4 py-2 text-right text-gray-200">
+                    {fmtMoney(r.total, r.currency)}
+                  </td>
                   <td className="px-4 py-2 text-gray-400 text-xs">
                     {r.utm_source ? (
                       <span>
@@ -499,7 +596,9 @@ export default async function AttributionPage() {
                     )}
                   </td>
                   <td className="px-4 py-2 font-mono text-xs text-gray-400">
-                    {r.gclid ? (r.gclid.length > 18 ? `${r.gclid.slice(0, 18)}…` : r.gclid) : (
+                    {r.gclid ? (
+                      r.gclid.length > 18 ? `${r.gclid.slice(0, 18)}…` : r.gclid
+                    ) : (
                       <span className="text-gray-600">—</span>
                     )}
                   </td>
@@ -517,7 +616,11 @@ export default async function AttributionPage() {
                     )}
                   </td>
                   <td className="px-4 py-2 text-xs text-gray-400">
-                    {r.is_new_customer === null ? "—" : r.is_new_customer ? "new" : "returning"}
+                    {r.is_new_customer === null
+                      ? "—"
+                      : r.is_new_customer
+                      ? "new"
+                      : "returning"}
                   </td>
                 </tr>
               ))}
@@ -534,25 +637,46 @@ function Stat({
   value,
   sub,
   accent = "text-white",
+  tooltip,
 }: {
   label: string;
   value: string;
   sub?: string;
   accent?: string;
+  tooltip?: string;
 }) {
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-      <div className="text-xs uppercase tracking-wider text-gray-500">{label}</div>
+      <div className="flex items-center gap-1.5 text-xs uppercase tracking-wider text-gray-500">
+        <span>{label}</span>
+        {tooltip && <Tooltip text={tooltip} />}
+      </div>
       <div className={`mt-1 text-2xl font-semibold ${accent}`}>{value}</div>
       {sub && <div className="mt-1 text-xs text-gray-500">{sub}</div>}
     </div>
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  title,
+  subtitle,
+  tooltip,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  tooltip?: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden mb-6">
-      <div className="px-4 py-3 border-b border-gray-800 text-sm text-white font-medium">{title}</div>
+      <div className="px-4 py-3 border-b border-gray-800 flex items-center gap-2">
+        <span className="text-sm text-white font-medium">{title}</span>
+        {tooltip && <Tooltip text={tooltip} />}
+        {subtitle && (
+          <span className="ml-auto text-xs text-gray-500">{subtitle}</span>
+        )}
+      </div>
       {children}
     </div>
   );
