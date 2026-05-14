@@ -23,14 +23,14 @@ const navSections: NavSection[] = [
   {
     label: "Performance", icon: "🎯",
     items: [
-      { href: "/dashboard/scorecard", label: "Scorecard", icon: "🎯" },
+      { href: "/dashboard/scorecard",  label: "Scorecard",  icon: "🎯" },
+      { href: "/dashboard/google-mer", label: "Google MER", icon: "📊" },
     ],
   },
   {
     label: "Advertising", icon: "📣",
     items: [
       { href: "/dashboard/ad-spend",    label: "All Ad Spend",        icon: "💰" },
-      { href: "/dashboard/conversions", label: "Offline Conversions", icon: "📡" },
       {
         href: "/dashboard/google-ads", label: "Google Ads", icon: "🔵",
         children: [
@@ -38,9 +38,6 @@ const navSections: NavSection[] = [
           { href: "/dashboard/shopping",   label: "Shopping",          icon: "🛒" },
           { href: "/dashboard/search",     label: "Search Campaigns",  icon: "🔍" },
           { href: "/dashboard/demand-gen", label: "Demand Gen",        icon: "📣" },
-          { href: "/dashboard/gclid",      label: "GCLID Attribution", icon: "🔗" },
-          { href: "/dashboard/attribution", label: "Capture Rate",     icon: "🎯" },
-          { href: "/dashboard/google-mer", label: "Google MER",        icon: "📊" },
         ],
       },
       { href: "/dashboard/bing",        label: "Bing / Microsoft", icon: "🪟" },
@@ -49,6 +46,14 @@ const navSections: NavSection[] = [
       { href: "/dashboard/pinterest",   label: "Pinterest",        icon: "📌" },
       { href: "/dashboard/amazon-ads",  label: "Amazon Ads",       icon: "🟠" },
       { href: "/dashboard/tiktok",      label: "TikTok",           icon: "🎵" },
+    ],
+  },
+  {
+    label: "Attribution & Pipeline", icon: "🔗",
+    items: [
+      { href: "/dashboard/conversions", label: "Offline Conversions", icon: "📡" },
+      { href: "/dashboard/gclid",       label: "GCLID Attribution",   icon: "🔗" },
+      { href: "/dashboard/attribution", label: "Capture Rate",        icon: "🎯" },
     ],
   },
   {
@@ -121,7 +126,7 @@ export default function Sidebar() {
 
   // Item-level expandable groups (Google Ads sub-pages, Customers, Email)
   const defaultOpenGroups = useMemo(() => ({
-    "/dashboard/google-ads": ["/dashboard/pmax","/dashboard/shopping","/dashboard/search","/dashboard/demand-gen","/dashboard/gclid","/dashboard/google-mer"].some(p => pathname.startsWith(p)),
+    "/dashboard/google-ads": ["/dashboard/pmax","/dashboard/shopping","/dashboard/search","/dashboard/demand-gen"].some(p => pathname.startsWith(p)),
     "/dashboard/email":      pathname.startsWith("/dashboard/email"),
   }), []); // eslint-disable-line react-hooks/exhaustive-deps
 
