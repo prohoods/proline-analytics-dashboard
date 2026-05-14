@@ -1,5 +1,6 @@
 // Cron entry that calls the retry endpoint. Wired up in vercel.json.
-// Runs at :15 past every hour.
+// Runs once a day (13:15 UTC) — Hobby plan caps crons at one run per day.
+// On Pro this could fire more often; the retry job is idempotent.
 //
 // Vercel auto-authenticates cron requests via the `CRON_SECRET` env var;
 // the middleware allowlists /api/cron/* so this fires without user auth.

@@ -6,7 +6,7 @@
     },
     {
       "path": "/api/cron/retry-conversions",
-      "schedule": "15 * * * *"
+      "schedule": "15 13 * * *"
     }
   ]
 }
