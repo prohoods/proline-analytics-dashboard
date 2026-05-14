@@ -50,7 +50,7 @@ async function fetchClicksForDay(
   `;
 
   do {
-    const body: Record<string, unknown> = { query, pageSize: 10000 };
+    const body: Record<string, unknown> = { query };
     if (pageToken) body.pageToken = pageToken;
     const res = await fetch(
       `https://googleads.googleapis.com/${API_VERSION}/customers/${GOOGLE_ADS_CUSTOMER_ID}/googleAds:search`,
