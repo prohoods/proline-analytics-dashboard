@@ -20,28 +20,46 @@ let cachedSAKey: ServiceAccountKey | null = null;
 
 export function getServiceAccountKey(): ServiceAccountKey {
   if (cachedSAKey) return cachedSAKey;
+
+  // Preferred: full JSON blob in one env var.
   const raw = process.env.GA_SERVICE_ACCOUNT_JSON;
-  if (!raw) {
-    throw new Error(
-      "GA_SERVICE_ACCOUNT_JSON env var not set — paste the full service account JSON"
-    );
+  if (raw) {
+    let parsed: ServiceAccountKey;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (e) {
+      throw new Error(
+        "GA_SERVICE_ACCOUNT_JSON is not valid JSON: " +
+          (e instanceof Error ? e.message : String(e))
+      );
+    }
+    if (!parsed.client_email || !parsed.private_key) {
+      throw new Error("Service account JSON missing client_email or private_key");
+    }
+    parsed.private_key = parsed.private_key.replace(/\\n/g, "\n");
+    cachedSAKey = parsed;
+    return parsed;
   }
-  let parsed: ServiceAccountKey;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (e) {
-    throw new Error(
-      "GA_SERVICE_ACCOUNT_JSON is not valid JSON: " +
-        (e instanceof Error ? e.message : String(e))
-    );
+
+  // Fallback: split env vars used by the existing google-sheets integration.
+  // Lets us reuse the same service account without duplicating the JSON blob.
+  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+  let privateKey = process.env.GOOGLE_PRIVATE_KEY ?? "";
+  if (email && privateKey) {
+    if (privateKey.includes("\\n")) {
+      privateKey = privateKey.replace(/\\n/g, "\n");
+    }
+    if (privateKey.startsWith('"') && privateKey.endsWith('"')) {
+      privateKey = privateKey.slice(1, -1);
+    }
+    cachedSAKey = { client_email: email, private_key: privateKey };
+    return cachedSAKey;
   }
-  if (!parsed.client_email || !parsed.private_key) {
-    throw new Error("Service account JSON missing client_email or private_key");
-  }
-  // Vercel sometimes stores newlines as literal "\n" — normalize.
-  parsed.private_key = parsed.private_key.replace(/\\n/g, "\n");
-  cachedSAKey = parsed;
-  return parsed;
+
+  throw new Error(
+    "No service account credentials found. Set GA_SERVICE_ACCOUNT_JSON, or " +
+      "GOOGLE_SERVICE_ACCOUNT_EMAIL + GOOGLE_PRIVATE_KEY."
+  );
 }
 
 function base64url(buf: Buffer | string): string {
