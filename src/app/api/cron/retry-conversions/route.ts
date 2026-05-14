@@ -1,4 +1,5 @@
 // Cron entry that calls the retry endpoint. Wired up in vercel.json.
+// Runs at :15 past every hour.
 //
 // Vercel auto-authenticates cron requests via the `CRON_SECRET` env var;
 // the middleware allowlists /api/cron/* so this fires without user auth.
