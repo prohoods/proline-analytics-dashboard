@@ -2,6 +2,7 @@
 
 // Ranges product analytics — PLSR + PLST SKUs (full ranges and rangetops).
 // Excludes 2pc- prefixed bundle SKUs (those live on the bundles page).
+// Draft orders are filtered out upstream in the API.
 
 import { useEffect, useMemo, useState } from "react";
 import DateRangeDropdown from "@/components/DateRangeDropdown";
@@ -19,13 +20,7 @@ interface RangeProduct {
   refundedUnits: number;
   refundedRevenue: number;
   netRevenue: number;
-  refundRate: number;
   avgPrice: number;
-  costPerUnit: number | null;
-  landedCostPerUnit: number | null;
-  totalCOGS: number | null;
-  grossProfit: number | null;
-  grossMarginPct: number | null;
   firstSold: string | null;
   lastSold: string | null;
 }
@@ -43,6 +38,14 @@ interface SaleRow {
   channel: string;
 }
 
+interface WeekRow {
+  weekStart: string;
+  orderCount: number;
+  units: number;
+  revenue: number;
+  topSkus: { sku: string; units: number }[];
+}
+
 interface Summary {
   productCount: number;
   unitsSold: number;
@@ -50,10 +53,6 @@ interface Summary {
   grossRevenue: number;
   refundedRevenue: number;
   netRevenue: number;
-  totalCOGS: number;
-  grossProfit: number;
-  coveredProducts: number;
-  tariffRate: number;
 }
 
 const fmtC = (n: number) =>
@@ -63,14 +62,17 @@ const fmtC = (n: number) =>
     maximumFractionDigits: 0,
   }).format(n);
 
-const fmtPct = (n: number | null) =>
-  n == null ? "—" : `${n.toFixed(1)}%`;
+const fmtDate = (iso: string) => {
+  const d = new Date(iso + "T00:00:00");
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+};
 
 export default function RangesPage() {
   const [rangeKey, setRangeKey] = useState<RangeKey>("ytd");
   const [products, setProducts] = useState<RangeProduct[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [sales, setSales] = useState<SaleRow[]>([]);
+  const [weekly, setWeekly] = useState<WeekRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<"all" | "PLSR" | "PLST">("all");
@@ -88,6 +90,7 @@ export default function RangesPage() {
         setProducts(d.products ?? []);
         setSummary(d.summary ?? null);
         setSales(d.sales ?? []);
+        setWeekly(d.weekly ?? []);
       })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false));
@@ -103,23 +106,44 @@ export default function RangesPage() {
     return sales.filter((s) => s.sku.toUpperCase().startsWith(filter));
   }, [sales, filter]);
 
+  // Weekly is computed on the server across ALL ranges; for filter==PLSR/PLST,
+  // we rebuild from the filtered sales list so the chart matches the pill.
+  const filteredWeekly = useMemo<WeekRow[]>(() => {
+    if (filter === "all") return weekly;
+    const map: Record<string, WeekRow> = {};
+    for (const s of filteredSales) {
+      const wk = weekStartFromDate(s.date);
+      if (!map[wk]) map[wk] = { weekStart: wk, orderCount: 0, units: 0, revenue: 0, topSkus: [] };
+      map[wk].units += s.quantity;
+      map[wk].revenue += s.lineRevenue;
+    }
+    // Approximate order counts from distinct order names per week
+    const ordersByWeek: Record<string, Set<string>> = {};
+    for (const s of filteredSales) {
+      const wk = weekStartFromDate(s.date);
+      if (!ordersByWeek[wk]) ordersByWeek[wk] = new Set();
+      ordersByWeek[wk].add(s.orderName);
+    }
+    for (const wk of Object.keys(map)) map[wk].orderCount = ordersByWeek[wk]?.size ?? 0;
+    return Object.values(map).sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+  }, [filter, weekly, filteredSales]);
+
   const visibleSales = showAllSales ? filteredSales : filteredSales.slice(0, 50);
 
   const filteredSummary = useMemo(() => {
     return {
       unitsSold: filtered.reduce((s, p) => s + p.unitsSold, 0),
       netUnits: filtered.reduce((s, p) => s + p.netUnits, 0),
+      orderCount: filtered.reduce((s, p) => s + p.orderCount, 0),
       grossRevenue: filtered.reduce((s, p) => s + p.grossRevenue, 0),
       netRevenue: filtered.reduce((s, p) => s + p.netRevenue, 0),
       refundedRevenue: filtered.reduce((s, p) => s + p.refundedRevenue, 0),
-      totalCOGS: filtered.reduce((s, p) => s + (p.totalCOGS ?? 0), 0),
-      grossProfit: filtered.reduce((s, p) => s + (p.grossProfit ?? 0), 0),
     };
   }, [filtered]);
 
-  const overallMarginPct =
-    filteredSummary.netRevenue > 0
-      ? (filteredSummary.grossProfit / filteredSummary.netRevenue) * 100
+  const aov =
+    filteredSummary.orderCount > 0
+      ? filteredSummary.netRevenue / filteredSummary.orderCount
       : 0;
 
   function handleExport() {
@@ -134,35 +158,38 @@ export default function RangesPage() {
         GrossRevenue: p.grossRevenue.toFixed(2),
         NetRevenue: p.netRevenue.toFixed(2),
         AvgPrice: p.avgPrice.toFixed(2),
-        CostPerUnit: p.landedCostPerUnit?.toFixed(2) ?? "",
-        TotalCOGS: p.totalCOGS?.toFixed(2) ?? "",
-        GrossProfit: p.grossProfit?.toFixed(2) ?? "",
-        MarginPct: p.grossMarginPct?.toFixed(1) ?? "",
+        FirstSold: p.firstSold ?? "",
+        LastSold: p.lastSold ?? "",
       })),
       `ranges-${start}-${end}.csv`
     );
   }
 
+  function exportWeekly() {
+    exportToCSV(
+      filteredWeekly.map((w) => ({
+        WeekStart: w.weekStart,
+        Orders: w.orderCount,
+        Units: w.units,
+        Revenue: w.revenue.toFixed(2),
+      })),
+      `ranges-weekly-${start}-${end}.csv`
+    );
+  }
+
   return (
     <div className="p-6 space-y-6">
+      {/* Header */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-semibold text-white">Ranges</h1>
           <p className="text-sm text-gray-400 mt-1">
-            PLSR (ranges) and PLST (rangetops). Bundle SKUs (
-            <span className="font-mono text-gray-300">2pc-</span>) are tracked
-            separately under Bundles.
+            PLSR (ranges) and PLST (rangetops) sold via Shopify. Bundle SKUs (
+            <span className="font-mono text-gray-300">2pc-</span>) live under
+            Bundles. Draft orders excluded.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <DateRangeDropdown value={rangeKey} onChange={setRangeKey} />
-          <button
-            onClick={handleExport}
-            className="px-3 py-2 text-sm rounded-lg bg-gray-800 text-gray-200 hover:bg-gray-700"
-          >
-            Export CSV
-          </button>
-        </div>
+        <DateRangeDropdown value={rangeKey} onChange={setRangeKey} />
       </div>
 
       {/* Family filter pill bar */}
@@ -197,32 +224,53 @@ export default function RangesPage() {
         <KPISkeleton count={5} />
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-          <KPI label="Units Sold" value={filteredSummary.unitsSold.toLocaleString()} sub={`${filteredSummary.netUnits.toLocaleString()} net`} />
+          <KPI label="Units Sold" value={filteredSummary.unitsSold.toLocaleString()} sub={`${filteredSummary.netUnits.toLocaleString()} net of refunds`} />
+          <KPI label="Orders" value={filteredSummary.orderCount.toLocaleString()} sub={`${filtered.length} active SKUs`} />
           <KPI label="Net Revenue" value={fmtC(filteredSummary.netRevenue)} sub={`${fmtC(filteredSummary.grossRevenue)} gross`} />
+          <KPI label="Avg Order Value" value={fmtC(aov)} sub="Net revenue ÷ orders" />
           <KPI label="Refunds" value={fmtC(filteredSummary.refundedRevenue)} sub={filteredSummary.grossRevenue > 0 ? `${((filteredSummary.refundedRevenue / filteredSummary.grossRevenue) * 100).toFixed(1)}% of gross` : "—"} />
-          <KPI label="Gross Profit" value={fmtC(filteredSummary.grossProfit)} sub={`${fmtC(filteredSummary.totalCOGS)} COGS (landed)`} />
-          <KPI label="GP Margin" value={fmtPct(overallMarginPct)} sub={`${summary.coveredProducts}/${summary.productCount} SKUs costed`} />
         </div>
       )}
 
+      {/* Weekly report */}
+      <Section
+        title="Weekly report"
+        subtitle="Units and orders by ISO week (Monday-start). Hover bars for revenue."
+        action={
+          <button
+            onClick={exportWeekly}
+            className="px-3 py-1.5 text-xs rounded-lg bg-gray-800 text-gray-200 hover:bg-gray-700"
+          >
+            Export
+          </button>
+        }
+      >
+        {loading ? (
+          <TableSkeleton rows={5} />
+        ) : filteredWeekly.length === 0 ? (
+          <Empty msg="No range sales in this window." />
+        ) : (
+          <WeeklyChart rows={filteredWeekly} />
+        )}
+      </Section>
+
       {/* Per-SKU table */}
-      <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-        <div className="px-5 py-3 border-b border-gray-800 flex items-center justify-between">
-          <div>
-            <h2 className="text-sm font-semibold text-white">By SKU</h2>
-            <p className="text-xs text-gray-500">
-              Sorted by gross revenue. COGS includes landed cost (supplier +{" "}
-              {summary ? (summary.tariffRate * 100).toFixed(0) : "—"}% tariff).
-            </p>
-          </div>
-          <div className="text-xs text-gray-500">{filtered.length} SKUs</div>
-        </div>
+      <Section
+        title="By SKU"
+        subtitle="Sorted by gross revenue."
+        action={
+          <button
+            onClick={handleExport}
+            className="px-3 py-1.5 text-xs rounded-lg bg-gray-800 text-gray-200 hover:bg-gray-700"
+          >
+            Export
+          </button>
+        }
+      >
         {loading ? (
           <TableSkeleton rows={6} />
         ) : filtered.length === 0 ? (
-          <div className="px-5 py-10 text-center text-sm text-gray-500">
-            No range sales in this window.
-          </div>
+          <Empty msg="No range sales in this window." />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -236,9 +284,6 @@ export default function RangesPage() {
                   <th className="text-right px-4 py-2.5 font-medium">Net Units</th>
                   <th className="text-right px-4 py-2.5 font-medium">Avg Price</th>
                   <th className="text-right px-4 py-2.5 font-medium">Net Revenue</th>
-                  <th className="text-right px-4 py-2.5 font-medium">Cost / Unit</th>
-                  <th className="text-right px-4 py-2.5 font-medium">Gross Profit</th>
-                  <th className="text-right px-4 py-2.5 font-medium">Margin</th>
                   <th className="text-right px-4 py-2.5 font-medium">Last Sold</th>
                 </tr>
               </thead>
@@ -253,15 +298,6 @@ export default function RangesPage() {
                     <td className="px-4 py-2.5 text-right text-gray-200">{p.netUnits}</td>
                     <td className="px-4 py-2.5 text-right text-gray-300">{fmtC(p.avgPrice)}</td>
                     <td className="px-4 py-2.5 text-right text-gray-100 font-medium">{fmtC(p.netRevenue)}</td>
-                    <td className="px-4 py-2.5 text-right text-gray-400">
-                      {p.landedCostPerUnit != null ? fmtC(p.landedCostPerUnit) : <span className="text-amber-500">no cogs</span>}
-                    </td>
-                    <td className="px-4 py-2.5 text-right text-gray-100 font-medium">
-                      {p.grossProfit != null ? fmtC(p.grossProfit) : "—"}
-                    </td>
-                    <td className={`px-4 py-2.5 text-right font-medium ${marginColor(p.grossMarginPct)}`}>
-                      {fmtPct(p.grossMarginPct)}
-                    </td>
                     <td className="px-4 py-2.5 text-right text-gray-400 text-xs whitespace-nowrap">
                       {p.lastSold ?? "—"}
                       {p.firstSold && p.firstSold !== p.lastSold && (
@@ -273,33 +309,26 @@ export default function RangesPage() {
               </tbody>
               <tfoot className="bg-gray-950/50 text-gray-200 text-sm font-medium">
                 <tr>
-                  <td colSpan={3} className="px-4 py-2.5 text-right uppercase text-xs tracking-wider text-gray-500">Totals</td>
+                  <td colSpan={2} className="px-4 py-2.5 text-right uppercase text-xs tracking-wider text-gray-500">Totals</td>
+                  <td className="px-4 py-2.5 text-right">{filteredSummary.orderCount}</td>
                   <td className="px-4 py-2.5 text-right">{filteredSummary.unitsSold}</td>
-                  <td className="px-4 py-2.5 text-right text-gray-400">—</td>
+                  <td className="px-4 py-2.5"></td>
                   <td className="px-4 py-2.5 text-right">{filteredSummary.netUnits}</td>
                   <td className="px-4 py-2.5"></td>
                   <td className="px-4 py-2.5 text-right">{fmtC(filteredSummary.netRevenue)}</td>
-                  <td className="px-4 py-2.5"></td>
-                  <td className="px-4 py-2.5 text-right">{fmtC(filteredSummary.grossProfit)}</td>
-                  <td className={`px-4 py-2.5 text-right ${marginColor(overallMarginPct)}`}>{fmtPct(overallMarginPct)}</td>
                   <td className="px-4 py-2.5"></td>
                 </tr>
               </tfoot>
             </table>
           </div>
         )}
-      </div>
+      </Section>
 
-      {/* Recent sales detail */}
-      <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-        <div className="px-5 py-3 border-b border-gray-800 flex items-center justify-between">
-          <div>
-            <h2 className="text-sm font-semibold text-white">Sales detail</h2>
-            <p className="text-xs text-gray-500">
-              Every range line item sold in this window — date, order, customer, channel, state.
-              Sorted newest first.
-            </p>
-          </div>
+      {/* Sales detail */}
+      <Section
+        title="Sales detail"
+        subtitle="Every range line item — date, order, customer, channel, state. Sorted newest first."
+        action={
           <div className="text-xs text-gray-500">
             {filteredSales.length.toLocaleString()} sales
             {filteredSales.length > 50 && (
@@ -311,13 +340,12 @@ export default function RangesPage() {
               </button>
             )}
           </div>
-        </div>
+        }
+      >
         {loading ? (
           <TableSkeleton rows={6} />
         ) : visibleSales.length === 0 ? (
-          <div className="px-5 py-10 text-center text-sm text-gray-500">
-            No range sales in this window.
-          </div>
+          <Empty msg="No range sales in this window." />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -356,6 +384,74 @@ export default function RangesPage() {
             </table>
           </div>
         )}
+      </Section>
+    </div>
+  );
+}
+
+// Recompute week-of (Monday-start) for client-side filtering. Mirrors the
+// server-side weekStart() in /api/shopify/products/ranges/route.ts.
+function weekStartFromDate(isoDate: string): string {
+  const d = new Date(isoDate + "T00:00:00Z");
+  const day = d.getUTCDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setUTCDate(d.getUTCDate() + diff);
+  return d.toISOString().substring(0, 10);
+}
+
+function WeeklyChart({ rows }: { rows: WeekRow[] }) {
+  const maxUnits = Math.max(1, ...rows.map((r) => r.units));
+  return (
+    <div className="px-5 pt-4 pb-2">
+      <div className="flex items-end gap-1.5 h-32">
+        {rows.map((w) => {
+          const h = Math.max(2, (w.units / maxUnits) * 100);
+          return (
+            <div
+              key={w.weekStart}
+              className="flex-1 group relative flex flex-col justify-end min-w-[20px]"
+              title={`Week of ${w.weekStart} — ${w.units} units, ${w.orderCount} orders, ${fmtC(w.revenue)}`}
+            >
+              <div
+                className="w-full bg-blue-600/70 group-hover:bg-blue-500 rounded-t transition-colors"
+                style={{ height: `${h}%` }}
+              />
+              <div className="absolute -top-7 left-1/2 -translate-x-1/2 px-1.5 py-0.5 text-[10px] bg-gray-950 text-gray-200 rounded border border-gray-800 opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-10">
+                {w.units}u · {fmtC(w.revenue)}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="overflow-x-auto mt-4 border-t border-gray-800">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-950/50 text-gray-400 text-xs uppercase tracking-wider">
+            <tr>
+              <th className="text-left px-4 py-2 font-medium">Week of</th>
+              <th className="text-right px-4 py-2 font-medium">Orders</th>
+              <th className="text-right px-4 py-2 font-medium">Units</th>
+              <th className="text-right px-4 py-2 font-medium">Revenue</th>
+              <th className="text-left px-4 py-2 font-medium">Top SKUs</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-800">
+            {[...rows].reverse().map((w) => (
+              <tr key={w.weekStart} className="hover:bg-gray-800/40">
+                <td className="px-4 py-2 text-gray-200 whitespace-nowrap">
+                  {fmtDate(w.weekStart)} <span className="text-gray-500 text-xs">{w.weekStart}</span>
+                </td>
+                <td className="px-4 py-2 text-right text-gray-300">{w.orderCount}</td>
+                <td className="px-4 py-2 text-right text-gray-100 font-medium">{w.units}</td>
+                <td className="px-4 py-2 text-right text-gray-200">{fmtC(w.revenue)}</td>
+                <td className="px-4 py-2 text-xs text-gray-400">
+                  {w.topSkus.length === 0
+                    ? "—"
+                    : w.topSkus.map((s) => `${s.sku} (${s.units})`).join(", ")}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );
@@ -370,13 +466,6 @@ function channelPill(channel: string): string {
   }
 }
 
-function marginColor(pct: number | null): string {
-  if (pct == null) return "text-gray-500";
-  if (pct >= 30) return "text-green-400";
-  if (pct >= 15) return "text-yellow-400";
-  return "text-red-400";
-}
-
 function KPI({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
@@ -385,4 +474,33 @@ function KPI({ label, value, sub }: { label: string; value: string; sub?: string
       {sub && <div className="text-xs text-gray-500 mt-1">{sub}</div>}
     </div>
   );
+}
+
+function Section({
+  title,
+  subtitle,
+  action,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+      <div className="px-5 py-3 border-b border-gray-800 flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold text-white">{title}</h2>
+          {subtitle && <p className="text-xs text-gray-500 mt-0.5">{subtitle}</p>}
+        </div>
+        {action}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function Empty({ msg }: { msg: string }) {
+  return <div className="px-5 py-10 text-center text-sm text-gray-500">{msg}</div>;
 }

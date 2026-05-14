@@ -54,6 +54,13 @@ export async function GET(request: NextRequest) {
     }
     const salesDetail: SaleRow[] = [];
 
+    // Draft orders (orders created manually in the Shopify admin that haven't
+    // converted to a real sale, or were created for quoting only) shouldn't
+    // count toward product analytics.
+    function isDraftOrder(order: typeof orders[number]): boolean {
+      return order.source_name === "shopify_draft_order";
+    }
+
     function orderChannel(order: typeof orders[number]): string {
       const tags = (order.tags ?? "").toLowerCase();
       if (tags.includes("prolinepro b2b")) return "b2b";
@@ -61,14 +68,33 @@ export async function GET(request: NextRequest) {
       return order.source_name === "web" || !order.source_name ? "dtc" : order.source_name;
     }
 
+    // Weekly aggregation. Week is keyed by Monday-of-week (YYYY-MM-DD).
+    function weekStart(isoDate: string): string {
+      const d = new Date(isoDate + "T00:00:00Z");
+      const day = d.getUTCDay(); // 0=Sun..6=Sat
+      const diff = day === 0 ? -6 : 1 - day; // shift back to Monday
+      d.setUTCDate(d.getUTCDate() + diff);
+      return d.toISOString().substring(0, 10);
+    }
+
+    const weekly: Record<string, {
+      weekStart: string;
+      orderNames: Set<string>;
+      units: number;
+      revenue: number;
+      perSku: Map<string, number>; // sku → units
+    }> = {};
+
     const orderInWindow = (order: typeof orders[number]) => {
       const d = order.created_at.substring(0, 10);
       return d >= start && d <= end;
     };
 
     for (const order of orders) {
+      if (isDraftOrder(order)) continue; // skip draft orders entirely
       if (orderInWindow(order)) {
         const orderDate = order.created_at.substring(0, 10);
+        const wk = weekStart(orderDate);
         const customerName = order.customer
           ? `${order.customer.first_name ?? ""} ${order.customer.last_name ?? ""}`.trim() || (order.customer.email ?? "")
           : "";
@@ -98,6 +124,14 @@ export async function GET(request: NextRequest) {
           skuMap[key].grossRevenue += lineRevenue;
           if (!skuMap[key].firstSold || orderDate < skuMap[key].firstSold!) skuMap[key].firstSold = orderDate;
           if (!skuMap[key].lastSold || orderDate > skuMap[key].lastSold!) skuMap[key].lastSold = orderDate;
+
+          if (!weekly[wk]) {
+            weekly[wk] = { weekStart: wk, orderNames: new Set(), units: 0, revenue: 0, perSku: new Map() };
+          }
+          weekly[wk].orderNames.add(order.name);
+          weekly[wk].units += item.quantity;
+          weekly[wk].revenue += lineRevenue;
+          weekly[wk].perSku.set(item.sku, (weekly[wk].perSku.get(item.sku) ?? 0) + item.quantity);
 
           salesDetail.push({
             date: orderDate,
@@ -173,6 +207,19 @@ export async function GET(request: NextRequest) {
 
     salesDetail.sort((a, b) => b.date.localeCompare(a.date) || b.orderName.localeCompare(a.orderName));
 
+    const weeklyRows = Object.values(weekly)
+      .map((w) => ({
+        weekStart: w.weekStart,
+        orderCount: w.orderNames.size,
+        units: w.units,
+        revenue: w.revenue,
+        topSkus: Array.from(w.perSku.entries())
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 3)
+          .map(([sku, units]) => ({ sku, units })),
+      }))
+      .sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+
     const summary = {
       productCount: products.length,
       unitsSold: products.reduce((s, p) => s + p.unitsSold, 0),
@@ -186,7 +233,7 @@ export async function GET(request: NextRequest) {
       tariffRate: TARIFF_RATE,
     };
 
-    return NextResponse.json({ products, summary, sales: salesDetail }, {
+    return NextResponse.json({ products, summary, sales: salesDetail, weekly: weeklyRows }, {
       headers: { "Cache-Control": "public, s-maxage=900, stale-while-revalidate=60" },
     });
   } catch (err: unknown) {

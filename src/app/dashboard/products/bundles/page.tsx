@@ -2,7 +2,7 @@
 
 // Bundle analytics — covers both Shopify-SKU'd bundles ("2pc-...") and
 // implicit bundles (a range and a hood checked out in the same order
-// without the bundle SKU).
+// without the bundle SKU). Draft orders are filtered out upstream.
 
 import { useEffect, useMemo, useState } from "react";
 import DateRangeDropdown from "@/components/DateRangeDropdown";
@@ -23,12 +23,6 @@ interface SkudBundle {
   refundedRevenue: number;
   netRevenue: number;
   avgPrice: number;
-  rangeCost: number | null;
-  hoodCost: number | null;
-  landedCostPerUnit: number | null;
-  totalCOGS: number | null;
-  grossProfit: number | null;
-  grossMarginPct: number | null;
   firstSold: string | null;
   lastSold: string | null;
 }
@@ -56,11 +50,20 @@ interface ImplicitBundle {
   grossRevenue: number;
 }
 
+interface WeekRow {
+  weekStart: string;
+  skudOrders: number;
+  implicitOrders: number;
+  skudUnits: number;
+  implicitUnits: number;
+  totalUnits: number;
+  revenue: number;
+}
+
 interface Summary {
-  skudBundles: { productCount: number; orders: number; unitsSold: number; netRevenue: number; grossProfit: number };
+  skudBundles: { productCount: number; orders: number; unitsSold: number; netRevenue: number };
   implicitBundles: { comboCount: number; orders: number; grossRevenue: number };
   attachRate: { ordersWithRange: number; ordersWithRangeAndHood: number; rate: number };
-  tariffRate: number;
 }
 
 const fmtC = (n: number) =>
@@ -73,12 +76,18 @@ const fmtC = (n: number) =>
 const fmtPct = (n: number | null) =>
   n == null ? "—" : `${n.toFixed(1)}%`;
 
+const fmtDate = (iso: string) => {
+  const d = new Date(iso + "T00:00:00");
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+};
+
 export default function BundlesPage() {
   const [rangeKey, setRangeKey] = useState<RangeKey>("ytd");
   const [skuBundles, setSkuBundles] = useState<SkudBundle[]>([]);
   const [implicitBundles, setImplicitBundles] = useState<ImplicitBundle[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [sales, setSales] = useState<BundleSale[]>([]);
+  const [weekly, setWeekly] = useState<WeekRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [salesFilter, setSalesFilter] = useState<"all" | "skud" | "implicit">("all");
@@ -97,6 +106,7 @@ export default function BundlesPage() {
         setImplicitBundles(d.implicitBundles ?? []);
         setSummary(d.summary ?? null);
         setSales(d.sales ?? []);
+        setWeekly(d.weekly ?? []);
       })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false));
@@ -117,8 +127,8 @@ export default function BundlesPage() {
         Orders: b.orderCount,
         Units: b.unitsSold,
         NetRevenue: b.netRevenue.toFixed(2),
-        GrossProfit: b.grossProfit?.toFixed(2) ?? "",
-        MarginPct: b.grossMarginPct?.toFixed(1) ?? "",
+        FirstSold: b.firstSold ?? "",
+        LastSold: b.lastSold ?? "",
       })),
       `bundles-skud-${start}-${end}.csv`
     );
@@ -136,19 +146,33 @@ export default function BundlesPage() {
       `bundles-implicit-${start}-${end}.csv`
     );
   }
+  function exportWeekly() {
+    exportToCSV(
+      weekly.map((w) => ({
+        WeekStart: w.weekStart,
+        SkudOrders: w.skudOrders,
+        ImplicitOrders: w.implicitOrders,
+        SkudUnits: w.skudUnits,
+        ImplicitUnits: w.implicitUnits,
+        TotalUnits: w.totalUnits,
+        Revenue: w.revenue.toFixed(2),
+      })),
+      `bundles-weekly-${start}-${end}.csv`
+    );
+  }
 
   return (
     <div className="p-6 space-y-6">
+      {/* Header */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-semibold text-white">Bundles</h1>
           <p className="text-sm text-gray-400 mt-1 max-w-3xl">
-            Two flavors of bundle: SKU'd bundles (the new{" "}
-            <span className="font-mono text-gray-300">2pc-</span> prefixed
-            Shopify products, e.g.{" "}
-            <span className="font-mono text-gray-300">2pc-PLSR48GE.PLJW121.48</span>
-            ), and implicit bundles — orders where a customer checked out with
-            a range (PLSR / PLST) and a hood as separate line items.
+            SKU'd bundles (<span className="font-mono text-gray-300">2pc-</span>{" "}
+            prefixed products, e.g.{" "}
+            <span className="font-mono text-gray-300">2pc-PLSR48GE.PLJW121.48</span>)
+            plus implicit bundles — orders where a range (PLSR/PLST) and a hood
+            were bought together as separate line items. Draft orders excluded.
           </p>
         </div>
         <DateRangeDropdown value={rangeKey} onChange={setRangeKey} />
@@ -183,15 +207,37 @@ export default function BundlesPage() {
           <KPI
             label="Bundle revenue"
             value={fmtC(summary.skudBundles.netRevenue + summary.implicitBundles.grossRevenue)}
-            sub={`${fmtC(summary.skudBundles.grossProfit)} GP on SKU'd bundles`}
+            sub="SKU'd net + implicit combined"
           />
         </div>
       )}
 
+      {/* Weekly report */}
+      <Section
+        title="Weekly report"
+        subtitle="Bundle orders and units by ISO week (Monday-start). Stacked: SKU'd vs implicit."
+        action={
+          <button
+            onClick={exportWeekly}
+            className="px-3 py-1.5 text-xs rounded-lg bg-gray-800 text-gray-200 hover:bg-gray-700"
+          >
+            Export
+          </button>
+        }
+      >
+        {loading ? (
+          <TableSkeleton rows={5} />
+        ) : weekly.length === 0 ? (
+          <Empty msg="No bundle activity in this window." />
+        ) : (
+          <WeeklyChart rows={weekly} />
+        )}
+      </Section>
+
       {/* SKU'd bundles */}
       <Section
         title="SKU'd bundles (2pc-)"
-        subtitle="One row per bundle product. COGS = range cost + hood cost + tariff."
+        subtitle="One row per bundle product. Sorted by gross revenue."
         action={
           <button
             onClick={exportSkud}
@@ -217,9 +263,6 @@ export default function BundlesPage() {
                   <th className="text-right px-4 py-2.5 font-medium">Units</th>
                   <th className="text-right px-4 py-2.5 font-medium">Avg Price</th>
                   <th className="text-right px-4 py-2.5 font-medium">Net Revenue</th>
-                  <th className="text-right px-4 py-2.5 font-medium">Cost / Unit</th>
-                  <th className="text-right px-4 py-2.5 font-medium">Gross Profit</th>
-                  <th className="text-right px-4 py-2.5 font-medium">Margin</th>
                   <th className="text-right px-4 py-2.5 font-medium">Last Sold</th>
                 </tr>
               </thead>
@@ -233,15 +276,6 @@ export default function BundlesPage() {
                     <td className="px-4 py-2.5 text-right text-gray-200">{b.unitsSold}</td>
                     <td className="px-4 py-2.5 text-right text-gray-300">{fmtC(b.avgPrice)}</td>
                     <td className="px-4 py-2.5 text-right text-gray-100 font-medium">{fmtC(b.netRevenue)}</td>
-                    <td className="px-4 py-2.5 text-right text-gray-400">
-                      {b.landedCostPerUnit != null ? fmtC(b.landedCostPerUnit) : <span className="text-amber-500">no cogs</span>}
-                    </td>
-                    <td className="px-4 py-2.5 text-right text-gray-100 font-medium">
-                      {b.grossProfit != null ? fmtC(b.grossProfit) : "—"}
-                    </td>
-                    <td className={`px-4 py-2.5 text-right font-medium ${marginColor(b.grossMarginPct)}`}>
-                      {fmtPct(b.grossMarginPct)}
-                    </td>
                     <td className="px-4 py-2.5 text-right text-gray-400 text-xs whitespace-nowrap">
                       {b.lastSold ?? "—"}
                       {b.firstSold && b.firstSold !== b.lastSold && (
@@ -393,6 +427,70 @@ export default function BundlesPage() {
   );
 }
 
+function WeeklyChart({ rows }: { rows: WeekRow[] }) {
+  const maxUnits = Math.max(1, ...rows.map((r) => r.totalUnits));
+  return (
+    <div className="px-5 pt-4 pb-2">
+      {/* Legend */}
+      <div className="flex items-center gap-3 mb-2 text-[11px] text-gray-400">
+        <span className="flex items-center gap-1.5">
+          <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500/80" /> SKU'd
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="w-2.5 h-2.5 rounded-sm bg-sky-500/80" /> Implicit
+        </span>
+      </div>
+      <div className="flex items-end gap-1.5 h-32">
+        {rows.map((w) => {
+          const totalH = Math.max(2, (w.totalUnits / maxUnits) * 100);
+          const skudFrac = w.totalUnits > 0 ? w.skudUnits / w.totalUnits : 0;
+          return (
+            <div
+              key={w.weekStart}
+              className="flex-1 group relative flex flex-col justify-end min-w-[20px]"
+              title={`Week of ${w.weekStart} — ${w.totalUnits} units (SKU'd ${w.skudUnits} / implicit ${w.implicitUnits}), ${fmtC(w.revenue)}`}
+            >
+              <div className="w-full rounded-t overflow-hidden flex flex-col" style={{ height: `${totalH}%` }}>
+                <div className="bg-emerald-500/80" style={{ height: `${skudFrac * 100}%` }} />
+                <div className="bg-sky-500/80 flex-1" />
+              </div>
+              <div className="absolute -top-7 left-1/2 -translate-x-1/2 px-1.5 py-0.5 text-[10px] bg-gray-950 text-gray-200 rounded border border-gray-800 opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-10">
+                {w.totalUnits}u · {fmtC(w.revenue)}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="overflow-x-auto mt-4 border-t border-gray-800">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-950/50 text-gray-400 text-xs uppercase tracking-wider">
+            <tr>
+              <th className="text-left px-4 py-2 font-medium">Week of</th>
+              <th className="text-right px-4 py-2 font-medium">SKU'd Orders</th>
+              <th className="text-right px-4 py-2 font-medium">Implicit Orders</th>
+              <th className="text-right px-4 py-2 font-medium">Total Units</th>
+              <th className="text-right px-4 py-2 font-medium">Revenue</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-800">
+            {[...rows].reverse().map((w) => (
+              <tr key={w.weekStart} className="hover:bg-gray-800/40">
+                <td className="px-4 py-2 text-gray-200 whitespace-nowrap">
+                  {fmtDate(w.weekStart)} <span className="text-gray-500 text-xs">{w.weekStart}</span>
+                </td>
+                <td className="px-4 py-2 text-right text-emerald-300">{w.skudOrders}</td>
+                <td className="px-4 py-2 text-right text-sky-300">{w.implicitOrders}</td>
+                <td className="px-4 py-2 text-right text-gray-100 font-medium">{w.totalUnits}</td>
+                <td className="px-4 py-2 text-right text-gray-200">{fmtC(w.revenue)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function channelPill(channel: string): string {
   switch (channel) {
     case "b2b":   return "bg-purple-900/40 text-purple-300";
@@ -400,13 +498,6 @@ function channelPill(channel: string): string {
     case "dtc":   return "bg-blue-900/40 text-blue-300";
     default:      return "bg-gray-800 text-gray-400";
   }
-}
-
-function marginColor(pct: number | null): string {
-  if (pct == null) return "text-gray-500";
-  if (pct >= 30) return "text-green-400";
-  if (pct >= 15) return "text-yellow-400";
-  return "text-red-400";
 }
 
 function KPI({ label, value, sub }: { label: string; value: string; sub?: string }) {

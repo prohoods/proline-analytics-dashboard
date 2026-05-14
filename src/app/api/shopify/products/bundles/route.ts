@@ -55,11 +55,21 @@ export async function GET(request: NextRequest) {
 
     const { orders } = await getOrdersWithRefundsInWindow(start, end);
 
+    function isDraftOrder(order: typeof orders[number]): boolean {
+      return order.source_name === "shopify_draft_order";
+    }
     function orderChannel(order: typeof orders[number]): string {
       const tags = (order.tags ?? "").toLowerCase();
       if (tags.includes("prolinepro b2b")) return "b2b";
       if (tags.includes("[]")) return "phone";
       return order.source_name === "web" || !order.source_name ? "dtc" : order.source_name;
+    }
+    function weekStart(isoDate: string): string {
+      const d = new Date(isoDate + "T00:00:00Z");
+      const day = d.getUTCDay();
+      const diff = day === 0 ? -6 : 1 - day;
+      d.setUTCDate(d.getUTCDate() + diff);
+      return d.toISOString().substring(0, 10);
     }
     function customerName(order: typeof orders[number]): string {
       if (!order.customer) return "";
@@ -99,6 +109,15 @@ export async function GET(request: NextRequest) {
     }
     const bundleSales: BundleSale[] = [];
 
+    const weekly: Record<string, {
+      weekStart: string;
+      skudOrders: Set<string>;
+      implicitOrders: Set<string>;
+      skudUnits: number;
+      implicitUnits: number;
+      revenue: number;
+    }> = {};
+
     // --- Implicit bundles (one entry per range+hood combo) --------------------
     type ComboKey = string; // `${range}|${hood}`
     const comboMap: Record<ComboKey, {
@@ -122,8 +141,10 @@ export async function GET(request: NextRequest) {
     };
 
     for (const order of orders) {
+      if (isDraftOrder(order)) continue;
       if (orderInWindow(order)) {
         const orderDate = order.created_at.substring(0, 10);
+        const wk = weekStart(orderDate);
         const cust = customerName(order);
         const state = order.shipping_address?.province_code ?? "";
         const channel = orderChannel(order);
@@ -178,6 +199,10 @@ export async function GET(request: NextRequest) {
             state,
             channel,
           });
+          if (!weekly[wk]) weekly[wk] = { weekStart: wk, skudOrders: new Set(), implicitOrders: new Set(), skudUnits: 0, implicitUnits: 0, revenue: 0 };
+          weekly[wk].skudOrders.add(order.name);
+          weekly[wk].skudUnits += li.quantity;
+          weekly[wk].revenue += lineRevenue;
         }
 
         // Implicit bundles: enumerate range × hood pairs within the same order.
@@ -216,6 +241,10 @@ export async function GET(request: NextRequest) {
                 state,
                 channel,
               });
+              if (!weekly[wk]) weekly[wk] = { weekStart: wk, skudOrders: new Set(), implicitOrders: new Set(), skudUnits: 0, implicitUnits: 0, revenue: 0 };
+              weekly[wk].implicitOrders.add(order.name);
+              weekly[wk].implicitUnits += pairCount;
+              weekly[wk].revenue += pairRevenue;
             }
           }
         }
@@ -292,6 +321,18 @@ export async function GET(request: NextRequest) {
 
     bundleSales.sort((a, b) => b.date.localeCompare(a.date) || b.orderName.localeCompare(a.orderName));
 
+    const weeklyRows = Object.values(weekly)
+      .map((w) => ({
+        weekStart: w.weekStart,
+        skudOrders: w.skudOrders.size,
+        implicitOrders: w.implicitOrders.size,
+        skudUnits: w.skudUnits,
+        implicitUnits: w.implicitUnits,
+        totalUnits: w.skudUnits + w.implicitUnits,
+        revenue: w.revenue,
+      }))
+      .sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+
     const implicitBundles = Object.values(comboMap).map((c) => ({
       rangeSku: c.rangeSku,
       hoodSku: c.hoodSku,
@@ -322,7 +363,7 @@ export async function GET(request: NextRequest) {
       tariffRate: TARIFF_RATE,
     };
 
-    return NextResponse.json({ skuBundles, implicitBundles, summary, sales: bundleSales }, {
+    return NextResponse.json({ skuBundles, implicitBundles, summary, sales: bundleSales, weekly: weeklyRows }, {
       headers: { "Cache-Control": "public, s-maxage=900, stale-while-revalidate=60" },
     });
   } catch (err: unknown) {
