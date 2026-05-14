@@ -75,6 +75,7 @@ export async function POST(req: NextRequest) {
         -- Skip known-permanent failures so the cron doesn't bang on them daily.
         and coalesce(cu.error_message, '') not ilike '%click-through window%'
         and coalesce(cu.error_message, '') not ilike '%requires gclid%'
+        and coalesce(cu.error_message, '') not ilike '%required field was not present%'
       order by l.attempt asc, l.id asc
       limit ${max}
     `;
