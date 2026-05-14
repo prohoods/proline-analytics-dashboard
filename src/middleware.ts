@@ -21,6 +21,7 @@ export default auth((request) => {
     pathname.startsWith("/api/google-ads/import-clicks") ||
     pathname.startsWith("/api/webhooks") ||
     pathname.startsWith("/api/conversions") ||
+    pathname.startsWith("/api/identities") ||
     pathname.startsWith("/api/ai-reporting") ||
     pathname.startsWith("/api/cron")
   ) {
