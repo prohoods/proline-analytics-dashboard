@@ -53,10 +53,70 @@ interface FirstTouchBreakdownRow {
   identities: number;
 }
 
+async function loadIdentityData() {
+  const sql = getSql();
+  try {
+    const [identityTotals, firstTouchBreakdown] = await Promise.all([
+      sql<IdentityTotals[]>`
+        select
+          count(*) filter (
+            where ci.first_channel = 'shopify'
+              and abs(extract(epoch from (ci.first_seen_at - so.ordered_at))) < 60
+          )::int as cross_new,
+          count(*) filter (
+            where ci.id is not null
+              and not (
+                ci.first_channel = 'shopify'
+                and abs(extract(epoch from (ci.first_seen_at - so.ordered_at))) < 60
+              )
+          )::int as cross_returning,
+          count(*) filter (where ci.first_channel = 'shopify')::int as first_touch_shopify,
+          count(*) filter (where ci.first_channel = 'callrail')::int as first_touch_callrail
+        from shopify_orders so
+        left join customer_identities ci on ci.id = so.customer_identity_id
+        where so.ordered_at >= now() - interval '30 days'
+      `,
+      sql<FirstTouchBreakdownRow[]>`
+        select
+          ci.first_channel,
+          count(distinct so.id)::int as orders,
+          sum(so.total)::text as revenue,
+          count(distinct ci.id)::int as identities
+        from shopify_orders so
+        join customer_identities ci on ci.id = so.customer_identity_id
+        where so.ordered_at >= now() - interval '30 days'
+        group by ci.first_channel
+        order by orders desc
+      `,
+    ]);
+    return {
+      identityTotals: identityTotals[0] ?? {
+        cross_new: 0,
+        cross_returning: 0,
+        first_touch_shopify: 0,
+        first_touch_callrail: 0,
+      },
+      firstTouchBreakdown,
+      identityError: null as string | null,
+    };
+  } catch (e) {
+    return {
+      identityTotals: {
+        cross_new: 0,
+        cross_returning: 0,
+        first_touch_shopify: 0,
+        first_touch_callrail: 0,
+      },
+      firstTouchBreakdown: [] as FirstTouchBreakdownRow[],
+      identityError: e instanceof Error ? e.message : String(e),
+    };
+  }
+}
+
 async function loadData() {
   const sql = getSql();
   try {
-    const [daily, recent, campaigns, totals, clickTotal, identityTotals, firstTouchBreakdown] = await Promise.all([
+    const [daily, recent, campaigns, totals, clickTotal] = await Promise.all([
       sql<DailyRow[]>`
         select
           to_char(date_trunc('day', ordered_at), 'YYYY-MM-DD') as day,
@@ -124,41 +184,6 @@ async function loadData() {
         where ordered_at >= now() - interval '30 days'
       `,
       sql<{ total: number }[]>`select count(*)::int as total from google_ads_clicks`,
-      // Cross-channel new vs returning: an order is "new" if its identity's
-      // first_seen_at is within this order's lifetime (i.e. the order itself
-      // is what created the identity, or it created the identity within
-      // a 60-second window). Otherwise the customer existed before — returning.
-      sql<IdentityTotals[]>`
-        select
-          count(*) filter (
-            where ci.first_channel = 'shopify'
-              and abs(extract(epoch from (ci.first_seen_at - so.ordered_at))) < 60
-          )::int as cross_new,
-          count(*) filter (
-            where ci.id is not null
-              and not (
-                ci.first_channel = 'shopify'
-                and abs(extract(epoch from (ci.first_seen_at - so.ordered_at))) < 60
-              )
-          )::int as cross_returning,
-          count(*) filter (where ci.first_channel = 'shopify')::int as first_touch_shopify,
-          count(*) filter (where ci.first_channel = 'callrail')::int as first_touch_callrail
-        from shopify_orders so
-        left join customer_identities ci on ci.id = so.customer_identity_id
-        where so.ordered_at >= now() - interval '30 days'
-      `,
-      sql<FirstTouchBreakdownRow[]>`
-        select
-          ci.first_channel,
-          count(distinct so.id)::int as orders,
-          sum(so.total)::text as revenue,
-          count(distinct ci.id)::int as identities
-        from shopify_orders so
-        join customer_identities ci on ci.id = so.customer_identity_id
-        where so.ordered_at >= now() - interval '30 days'
-        group by ci.first_channel
-        order by orders desc
-      `,
     ]);
     return {
       daily,
@@ -172,13 +197,6 @@ async function loadData() {
         new_customers: 0,
       },
       clickTotal: clickTotal[0]?.total ?? 0,
-      identityTotals: identityTotals[0] ?? {
-        cross_new: 0,
-        cross_returning: 0,
-        first_touch_shopify: 0,
-        first_touch_callrail: 0,
-      },
-      firstTouchBreakdown,
       error: null as string | null,
     };
   } catch (e) {
@@ -188,13 +206,6 @@ async function loadData() {
       campaigns: [] as CampaignRow[],
       totals: { orders: 0, with_gclid: 0, verified: 0, google_source: 0, new_customers: 0 },
       clickTotal: 0,
-      identityTotals: {
-        cross_new: 0,
-        cross_returning: 0,
-        first_touch_shopify: 0,
-        first_touch_callrail: 0,
-      },
-      firstTouchBreakdown: [] as FirstTouchBreakdownRow[],
       error: e instanceof Error ? e.message : String(e),
     };
   }
@@ -226,16 +237,10 @@ function fmtDate(d: Date) {
 }
 
 export default async function AttributionPage() {
-  const {
-    daily,
-    recent,
-    campaigns,
-    totals,
-    clickTotal,
-    identityTotals,
-    firstTouchBreakdown,
-    error,
-  } = await loadData();
+  const [
+    { daily, recent, campaigns, totals, clickTotal, error },
+    { identityTotals, firstTouchBreakdown, identityError },
+  ] = await Promise.all([loadData(), loadIdentityData()]);
   // "Match quality" = how many of the GCLIDs we captured actually correspond
   // to real Google clicks. This is the trustworthy metric.
   // (utm_source=google is too unreliable as a denominator — Performance Max,
@@ -312,6 +317,22 @@ export default async function AttributionPage() {
             created the customer&apos;s first touch anywhere in our system —
             replaces Shopify&apos;s order-count-only heuristic.
           </p>
+          {identityError && (
+            <div className="mb-4 p-3 rounded-lg border border-amber-700 bg-amber-900/20 text-amber-200 text-xs">
+              <div className="font-semibold">Identity table not ready</div>
+              <div className="mt-1 text-amber-300">{identityError}</div>
+              <div className="mt-2">
+                Run{" "}
+                <code className="px-1.5 py-0.5 rounded bg-black/40">
+                  POST /api/conversions/migrate
+                </code>{" "}
+                then{" "}
+                <code className="px-1.5 py-0.5 rounded bg-black/40">
+                  POST /api/identities/backfill
+                </code>
+              </div>
+            </div>
+          )}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
             <Stat
               label="New (cross-channel)"
