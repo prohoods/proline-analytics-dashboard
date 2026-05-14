@@ -164,8 +164,12 @@ function fmtDate(d: Date) {
 
 export default async function AttributionPage() {
   const { daily, recent, campaigns, totals, clickTotal, error } = await loadData();
-  const captureRate = pct(totals.verified, totals.google_source);
-  const clickMatchRate = pct(totals.verified, totals.with_gclid);
+  // "Match quality" = how many of the GCLIDs we captured actually correspond
+  // to real Google clicks. This is the trustworthy metric.
+  // (utm_source=google is too unreliable as a denominator — Performance Max,
+  // Shopping, etc rarely set it, so verified/utm-google often exceeds 100%.)
+  const matchQuality = pct(totals.verified, totals.with_gclid);
+  const gclidShare = pct(totals.with_gclid, totals.orders);
 
   return (
     <div className="p-6 max-w-[1400px] mx-auto">
@@ -192,31 +196,31 @@ export default async function AttributionPage() {
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
         <Stat label="Orders (30d)" value={totals.orders.toString()} />
         <Stat
-          label="From Google (utm)"
-          value={totals.google_source.toString()}
-          sub={pct(totals.google_source, totals.orders)}
-        />
-        <Stat
-          label="With GCLID captured"
+          label="With GCLID"
           value={totals.with_gclid.toString()}
-          sub={pct(totals.with_gclid, totals.orders)}
+          sub={gclidShare}
           accent="text-blue-300"
         />
         <Stat
-          label="Verified in click_view"
+          label="Verified vs click_view"
           value={totals.verified.toString()}
-          sub={clickMatchRate}
+          sub={`${totals.verified} / ${totals.with_gclid}`}
           accent="text-emerald-400"
         />
         <Stat
-          label="Capture rate"
-          value={captureRate}
-          sub={`${totals.verified} / ${totals.google_source}`}
+          label="Match quality"
+          value={matchQuality}
+          sub="verified ÷ captured"
           accent={
-            totals.google_source > 0 && totals.verified / totals.google_source >= 0.9
+            totals.with_gclid > 0 && totals.verified / totals.with_gclid >= 0.9
               ? "text-emerald-400"
               : "text-amber-400"
           }
+        />
+        <Stat
+          label="From Google (utm)"
+          value={totals.google_source.toString()}
+          sub={`unreliable proxy`}
         />
       </div>
 
@@ -258,7 +262,7 @@ export default async function AttributionPage() {
                   <td className="px-4 py-2 text-right text-blue-300">{d.with_gclid}</td>
                   <td className="px-4 py-2 text-right text-emerald-300">{d.verified}</td>
                   <td className="px-4 py-2 text-right text-gray-200">
-                    {pct(d.verified, d.google_source)}
+                    {pct(d.verified, d.with_gclid)}
                   </td>
                 </tr>
               ))}

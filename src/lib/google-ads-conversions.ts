@@ -115,15 +115,24 @@ export async function executeUpload(params: {
       }
     );
 
-    const body = await res.json();
-    const partialFailure = body?.partialFailureError;
+    // Read as text first so non-JSON error pages (HTML redirects, 502 pages)
+    // surface their real content instead of failing with "Unexpected token <".
+    const rawText = await res.text();
+    type GoogleBody = { partialFailureError?: { message?: string } } & Record<string, unknown>;
+    let body: GoogleBody;
+    try {
+      body = JSON.parse(rawText) as GoogleBody;
+    } catch {
+      body = { _nonJson: true, status: res.status, snippet: rawText.slice(0, 500) };
+    }
+    const partialFailure = body.partialFailureError;
     if (!res.ok || partialFailure) {
       const msg = partialFailure
         ? partialFailure.message ?? JSON.stringify(partialFailure)
-        : `Google Ads API error ${res.status}: ${JSON.stringify(body)}`;
+        : `Google Ads API ${res.status}: ${rawText.slice(0, 300)}`;
       await sql`
         update conversion_uploads
-        set status = 'error', error_message = ${msg}, google_response = ${sql.json(body)}
+        set status = 'error', error_message = ${msg}, google_response = ${sql.json(body as never)}
         where id = ${params.uploadId}
       `;
       return { status: "error", error: msg, uploadId: params.uploadId };
@@ -131,7 +140,7 @@ export async function executeUpload(params: {
 
     await sql`
       update conversion_uploads
-      set status = 'success', google_response = ${sql.json(body)}
+      set status = 'success', google_response = ${sql.json(body as never)}
       where id = ${params.uploadId}
     `;
     return { status: "success", uploadId: params.uploadId };
