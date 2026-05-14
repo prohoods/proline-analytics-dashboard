@@ -19,6 +19,13 @@ const navSections: NavSection[] = [
       { href: "/dashboard/shopify",  label: "Shopify Live Orders",  icon: "🟢" },
       { href: "/dashboard/shl",      label: "Smart Home Luxury",    icon: "🏠" },
       { href: "/dashboard/marketplace", label: "Marketplace Sales", icon: "🏪" },
+      {
+        href: "/dashboard/products", label: "By Product", icon: "📦",
+        children: [
+          { href: "/dashboard/products/ranges",  label: "Ranges (PLSR/PLST)", icon: "🔥" },
+          { href: "/dashboard/products/bundles", label: "Bundles",            icon: "🎁" },
+        ],
+      },
     ],
   },
   {
@@ -129,6 +136,7 @@ export default function Sidebar() {
   const defaultOpenGroups = useMemo(() => ({
     "/dashboard/google-ads": ["/dashboard/pmax","/dashboard/shopping","/dashboard/search","/dashboard/demand-gen"].some(p => pathname.startsWith(p)),
     "/dashboard/email":      pathname.startsWith("/dashboard/email"),
+    "/dashboard/products":   ["/dashboard/products/ranges","/dashboard/products/bundles"].some(p => pathname.startsWith(p)),
   }), []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(defaultOpenGroups);
