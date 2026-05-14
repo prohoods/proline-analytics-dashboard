@@ -15,6 +15,7 @@ const navSections: NavSection[] = [
     items: [
       { href: "/dashboard",          label: "Overview",             icon: "⬛" },
       { href: "/dashboard/sales",    label: "Daily & Monthly Sales",icon: "📈" },
+      { href: "/dashboard/overall-mer", label: "Overall MER",       icon: "📊" },
       { href: "/dashboard/shopify",  label: "Shopify Live Orders",  icon: "🟢" },
       { href: "/dashboard/shl",      label: "Smart Home Luxury",    icon: "🏠" },
       { href: "/dashboard/marketplace", label: "Marketplace Sales", icon: "🏪" },
@@ -24,7 +25,6 @@ const navSections: NavSection[] = [
     label: "Performance", icon: "🎯",
     items: [
       { href: "/dashboard/scorecard",  label: "Scorecard",  icon: "🎯" },
-      { href: "/dashboard/google-mer", label: "Google MER", icon: "📊" },
     ],
   },
   {
@@ -51,6 +51,7 @@ const navSections: NavSection[] = [
   {
     label: "Attribution & Pipeline", icon: "🔗",
     items: [
+      { href: "/dashboard/google-mer",  label: "Google MER",          icon: "📊" },
       { href: "/dashboard/conversions", label: "Offline Conversions", icon: "📡" },
       { href: "/dashboard/gclid",       label: "GCLID Attribution",   icon: "🔗" },
       { href: "/dashboard/attribution", label: "Capture Rate",        icon: "🎯" },
