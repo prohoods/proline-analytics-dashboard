@@ -133,29 +133,33 @@ export async function POST(req: NextRequest) {
 
       if (batch.length === 0) continue;
 
-      // Batched upsert: one query per day instead of one per row.
-      // ~50× faster — keeps us well under Vercel's serverless timeout.
-      await sql`
-        insert into google_ads_clicks ${sql(
-          batch,
-          "gclid",
-          "click_date",
-          "campaign_id",
-          "campaign_name",
-          "ad_group_id",
-          "ad_group_name",
-          "device",
-          "ad_network_type"
-        )}
-        on conflict (gclid) do update set
-          click_date = excluded.click_date,
-          campaign_id = coalesce(excluded.campaign_id, google_ads_clicks.campaign_id),
-          campaign_name = coalesce(excluded.campaign_name, google_ads_clicks.campaign_name),
-          ad_group_id = coalesce(excluded.ad_group_id, google_ads_clicks.ad_group_id),
-          ad_group_name = coalesce(excluded.ad_group_name, google_ads_clicks.ad_group_name),
-          device = coalesce(excluded.device, google_ads_clicks.device),
-          ad_network_type = coalesce(excluded.ad_network_type, google_ads_clicks.ad_network_type)
-      `;
+      // Postgres caps bind parameters at 65,534 per statement. 8 cols × N rows
+      // means we need to chunk at ~4,000 rows to stay well under the limit.
+      const CHUNK = 4000;
+      for (let off = 0; off < batch.length; off += CHUNK) {
+        const slice = batch.slice(off, off + CHUNK);
+        await sql`
+          insert into google_ads_clicks ${sql(
+            slice,
+            "gclid",
+            "click_date",
+            "campaign_id",
+            "campaign_name",
+            "ad_group_id",
+            "ad_group_name",
+            "device",
+            "ad_network_type"
+          )}
+          on conflict (gclid) do update set
+            click_date = excluded.click_date,
+            campaign_id = coalesce(excluded.campaign_id, google_ads_clicks.campaign_id),
+            campaign_name = coalesce(excluded.campaign_name, google_ads_clicks.campaign_name),
+            ad_group_id = coalesce(excluded.ad_group_id, google_ads_clicks.ad_group_id),
+            ad_group_name = coalesce(excluded.ad_group_name, google_ads_clicks.ad_group_name),
+            device = coalesce(excluded.device, google_ads_clicks.device),
+            ad_network_type = coalesce(excluded.ad_network_type, google_ads_clicks.ad_network_type)
+        `;
+      }
       totalUpserted += batch.length;
     }
 
