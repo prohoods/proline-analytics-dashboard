@@ -61,16 +61,20 @@ export async function POST(req: NextRequest) {
           and dedupe_key is not null
         order by dedupe_key, attempt desc
       )
-      select id, source, source_id, conversion_action,
-             gclid, gbraid, wbraid, conversion_value, currency,
-             conversion_at, dedupe_key, attempt
+      select l.id, l.source, l.source_id, l.conversion_action,
+             l.gclid, l.gbraid, l.wbraid, l.conversion_value, l.currency,
+             l.conversion_at, l.dedupe_key, l.attempt
       from latest l
+      join conversion_uploads cu on cu.id = l.id
       where l.status = 'error'
         and l.attempt < ${MAX_ATTEMPTS}
         and not exists (
           select 1 from conversion_uploads s
           where s.dedupe_key = l.dedupe_key and s.status = 'success'
         )
+        -- Skip known-permanent failures so the cron doesn't bang on them daily.
+        and coalesce(cu.error_message, '') not ilike '%click-through window%'
+        and coalesce(cu.error_message, '') not ilike '%requires gclid%'
       order by l.attempt asc, l.id asc
       limit ${max}
     `;

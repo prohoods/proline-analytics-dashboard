@@ -223,22 +223,25 @@ export async function POST(req: NextRequest) {
   }
 
   const sql = getSql();
-  // Look back 90 days (Google Ads click-through window) for a matching call with click ID.
+  // Look back 90 days (Google Ads click-through window) for a matching call.
+  // The phone_call_sale conversion action only accepts gclid (not gbraid/wbraid),
+  // so we filter on gclid here. A call with only gbraid/wbraid is dropped — there's
+  // no equivalent phone-call action set up in Google Ads for those click types yet.
   const calls = await sql<
-    { id: string; gclid: string | null; gbraid: string | null; wbraid: string | null; call_started_at: Date }[]
+    { id: string; gclid: string; call_started_at: Date }[]
   >`
-    select id, gclid, gbraid, wbraid, call_started_at
+    select id, gclid, call_started_at
     from callrail_calls
     where phone_e164 = ${phone}
       and call_started_at >= ${new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString()}
       and call_started_at <= ${conversionAt.toISOString()}
-      and (gclid is not null or gbraid is not null or wbraid is not null)
+      and gclid is not null
     order by call_started_at desc
     limit 1
   `;
 
   if (calls.length === 0) {
-    return NextResponse.json({ ok: true, path: "skipped", reason: "no matching call" });
+    return NextResponse.json({ ok: true, path: "skipped", reason: "no matching call with gclid" });
   }
 
   const call = calls[0];
@@ -247,8 +250,6 @@ export async function POST(req: NextRequest) {
     sourceId,
     conversionAction: "phone_call_sale",
     gclid: call.gclid,
-    gbraid: call.gbraid,
-    wbraid: call.wbraid,
     conversionAt,
     value,
     currency,

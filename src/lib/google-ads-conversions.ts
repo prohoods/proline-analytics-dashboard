@@ -210,6 +210,19 @@ export async function uploadClickConversion(
     return { status: "error", error: msg, uploadId };
   }
 
+  // phone_call_sale and offline_purchase actions only accept gclid; reject
+  // upfront if we only have gbraid/wbraid, since Google will 400 anyway.
+  const gclidOnlyActions: ConversionActionKey[] = ["phone_call_sale", "offline_purchase"];
+  if (gclidOnlyActions.includes(input.conversionAction) && !input.gclid) {
+    const msg = `${input.conversionAction} requires gclid (have gbraid/wbraid only)`;
+    await sql`
+      update conversion_uploads
+      set status = 'error', error_message = ${msg}
+      where id = ${uploadId}
+    `;
+    return { status: "error", error: msg, uploadId };
+  }
+
   return executeUpload({
     uploadId,
     source: input.source,
