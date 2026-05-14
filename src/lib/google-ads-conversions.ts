@@ -1,5 +1,11 @@
 // Upload offline click conversions to Google Ads.
 // Every attempt is logged to `conversion_uploads` for audit + retry.
+//
+// Two layers of idempotency:
+//   1. Our own: dedupe_key = `{source}-{source_id}-{conversion_action}`.
+//      If a row with this key already succeeded, we never upload again.
+//   2. Google's: the API's `orderId` field dedupes purchases within 55 days
+//      on Google's side. We pass it whenever a stable per-conversion id exists.
 
 import {
   API_VERSION,
@@ -34,9 +40,14 @@ export interface UploadClickConversionInput {
 }
 
 export interface UploadClickConversionResult {
-  status: "success" | "error";
+  status: "success" | "error" | "skipped";
   error?: string;
-  uploadId: number;
+  uploadId: number | null;
+  reason?: string;
+}
+
+function dedupeKey(input: { source: string; sourceId: string; conversionAction: string }): string {
+  return `${input.source}-${input.sourceId}-${input.conversionAction}`;
 }
 
 // Google Ads expects YYYY-MM-DD HH:MM:SS+TZ (e.g. "2026-05-07 14:23:01-04:00").
@@ -54,49 +65,37 @@ function formatConversionDateTime(d: Date): string {
   );
 }
 
-export async function uploadClickConversion(
-  input: UploadClickConversionInput
-): Promise<UploadClickConversionResult> {
+// Perform the actual upload + update an existing pending row to success/error.
+// Pulled out so the retry endpoint can reuse it on a freshly-inserted attempt.
+export async function executeUpload(params: {
+  uploadId: number;
+  source: ConversionSource;
+  sourceId: string;
+  conversionAction: ConversionActionKey;
+  gclid: string | null;
+  gbraid: string | null;
+  wbraid: string | null;
+  conversionAt: Date;
+  value: number;
+  currency: string;
+}): Promise<UploadClickConversionResult> {
   const sql = getSql();
-  const conversionActionId = CONVERSION_ACTION_IDS[input.conversionAction];
-  const currency = input.currency ?? "USD";
-  const value = input.value ?? 1;
-
-  const [logRow] = await sql<{ id: number }[]>`
-    insert into conversion_uploads (
-      source, source_id, conversion_action, conversion_action_id,
-      gclid, gbraid, wbraid,
-      conversion_value, currency, conversion_at, status
-    ) values (
-      ${input.source}, ${input.sourceId}, ${input.conversionAction}, ${conversionActionId},
-      ${input.gclid ?? null}, ${input.gbraid ?? null}, ${input.wbraid ?? null},
-      ${value}, ${currency}, ${input.conversionAt.toISOString()}, 'pending'
-    )
-    returning id
-  `;
-  const uploadId = logRow.id;
-
-  if (!input.gclid && !input.gbraid && !input.wbraid) {
-    const msg = "missing gclid/gbraid/wbraid — cannot attribute click";
-    await sql`
-      update conversion_uploads
-      set status = 'error', error_message = ${msg}
-      where id = ${uploadId}
-    `;
-    return { status: "error", error: msg, uploadId };
-  }
+  const conversionActionId = CONVERSION_ACTION_IDS[params.conversionAction];
 
   try {
     const accessToken = await getAccessToken();
     const conversion: Record<string, unknown> = {
       conversionAction: `customers/${GOOGLE_ADS_CUSTOMER_ID}/conversionActions/${conversionActionId}`,
-      conversionDateTime: formatConversionDateTime(input.conversionAt),
-      conversionValue: value,
-      currencyCode: currency,
+      conversionDateTime: formatConversionDateTime(params.conversionAt),
+      conversionValue: params.value,
+      currencyCode: params.currency,
+      // orderId gives Google a stable handle to dedupe purchases on their side
+      // (55-day window). We scope it the same way as our dedupe_key.
+      orderId: `${params.source}-${params.sourceId}-${params.conversionAction}`,
     };
-    if (input.gclid) conversion.gclid = input.gclid;
-    if (input.gbraid) conversion.gbraid = input.gbraid;
-    if (input.wbraid) conversion.wbraid = input.wbraid;
+    if (params.gclid) conversion.gclid = params.gclid;
+    if (params.gbraid) conversion.gbraid = params.gbraid;
+    if (params.wbraid) conversion.wbraid = params.wbraid;
 
     const res = await fetch(
       `https://googleads.googleapis.com/${API_VERSION}/customers/${GOOGLE_ADS_CUSTOMER_ID}/googleAds:uploadClickConversions`,
@@ -125,19 +124,75 @@ export async function uploadClickConversion(
       await sql`
         update conversion_uploads
         set status = 'error', error_message = ${msg}, google_response = ${sql.json(body)}
-        where id = ${uploadId}
+        where id = ${params.uploadId}
       `;
-      return { status: "error", error: msg, uploadId };
+      return { status: "error", error: msg, uploadId: params.uploadId };
     }
 
     await sql`
       update conversion_uploads
       set status = 'success', google_response = ${sql.json(body)}
-      where id = ${uploadId}
+      where id = ${params.uploadId}
     `;
-    return { status: "success", uploadId };
+    return { status: "success", uploadId: params.uploadId };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
+    await sql`
+      update conversion_uploads
+      set status = 'error', error_message = ${msg}
+      where id = ${params.uploadId}
+    `;
+    return { status: "error", error: msg, uploadId: params.uploadId };
+  }
+}
+
+export async function uploadClickConversion(
+  input: UploadClickConversionInput
+): Promise<UploadClickConversionResult> {
+  const sql = getSql();
+  const conversionActionId = CONVERSION_ACTION_IDS[input.conversionAction];
+  const currency = input.currency ?? "USD";
+  const value = input.value ?? 1;
+  const key = dedupeKey({
+    source: input.source,
+    sourceId: input.sourceId,
+    conversionAction: input.conversionAction,
+  });
+
+  // Dedupe: if this logical conversion already succeeded, do nothing.
+  // Shopify retries webhooks aggressively on any 5xx — without this we'd
+  // double-upload on every retry storm.
+  const existing = await sql<{ id: number }[]>`
+    select id from conversion_uploads
+    where dedupe_key = ${key} and status = 'success'
+    limit 1
+  `;
+  if (existing.length > 0) {
+    return {
+      status: "skipped",
+      uploadId: existing[0].id,
+      reason: "already uploaded",
+    };
+  }
+
+  const [logRow] = await sql<{ id: number }[]>`
+    insert into conversion_uploads (
+      source, source_id, conversion_action, conversion_action_id,
+      gclid, gbraid, wbraid,
+      conversion_value, currency, conversion_at, status,
+      dedupe_key, attempt
+    ) values (
+      ${input.source}, ${input.sourceId}, ${input.conversionAction}, ${conversionActionId},
+      ${input.gclid ?? null}, ${input.gbraid ?? null}, ${input.wbraid ?? null},
+      ${value}, ${currency}, ${input.conversionAt.toISOString()}, 'pending',
+      ${key}, 1
+    )
+    returning id
+  `;
+  const uploadId = logRow.id;
+
+  if (!input.gclid && !input.gbraid && !input.wbraid) {
+    const msg = "missing gclid/gbraid/wbraid — cannot attribute click";
     await sql`
       update conversion_uploads
       set status = 'error', error_message = ${msg}
@@ -145,4 +200,17 @@ export async function uploadClickConversion(
     `;
     return { status: "error", error: msg, uploadId };
   }
+
+  return executeUpload({
+    uploadId,
+    source: input.source,
+    sourceId: input.sourceId,
+    conversionAction: input.conversionAction,
+    gclid: input.gclid ?? null,
+    gbraid: input.gbraid ?? null,
+    wbraid: input.wbraid ?? null,
+    conversionAt: input.conversionAt,
+    value,
+    currency,
+  });
 }
