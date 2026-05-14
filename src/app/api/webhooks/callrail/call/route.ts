@@ -7,6 +7,7 @@
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getSql } from "@/lib/db";
+import { resolveCustomerIdentity } from "@/lib/customer-identity";
 import {
   appBaseUrl,
   extractRecordingUrl,
@@ -98,16 +99,33 @@ export async function POST(req: NextRequest) {
   const recordingUrl = extractRecordingUrl(payload as Record<string, unknown>);
 
   const sql = getSql();
+
+  // Resolve the customer identity from the caller's phone. We don't have
+  // email at the call stage, so phone is the only key — that's fine; if a
+  // Shopify order later arrives with the same phone + an email, the resolver
+  // backfills the email onto the existing identity.
+  const identityId = await resolveCustomerIdentity({
+    phone_e164: phone,
+    channel: "callrail",
+    seen_at: startedAt,
+    gclid: payload.gclid ?? null,
+    gbraid: payload.gbraid ?? null,
+    wbraid: payload.wbraid ?? null,
+    utm_source: payload.utm_source ?? payload.source ?? null,
+  });
+
   await sql`
     insert into callrail_calls (
       id, phone_e164, call_started_at, call_ended_at, duration_seconds,
-      gclid, gbraid, wbraid, source, payload, recording_url
+      gclid, gbraid, wbraid, source, payload, recording_url,
+      customer_identity_id
     ) values (
       ${id}, ${phone}, ${startedAt.toISOString()},
       ${endedAt ? endedAt.toISOString() : null}, ${duration ?? null},
       ${payload.gclid ?? null}, ${payload.gbraid ?? null}, ${payload.wbraid ?? null},
       ${payload.source ?? payload.utm_source ?? null}, ${sql.json(payload as never)},
-      ${recordingUrl}
+      ${recordingUrl},
+      ${identityId}
     )
     on conflict (id) do update set
       phone_e164 = excluded.phone_e164,
@@ -118,7 +136,8 @@ export async function POST(req: NextRequest) {
       wbraid = coalesce(excluded.wbraid, callrail_calls.wbraid),
       source = coalesce(excluded.source, callrail_calls.source),
       payload = excluded.payload,
-      recording_url = coalesce(excluded.recording_url, callrail_calls.recording_url)
+      recording_url = coalesce(excluded.recording_url, callrail_calls.recording_url),
+      customer_identity_id = coalesce(callrail_calls.customer_identity_id, excluded.customer_identity_id)
   `;
 
   // Kick off transcription if we have a recording and haven't already.

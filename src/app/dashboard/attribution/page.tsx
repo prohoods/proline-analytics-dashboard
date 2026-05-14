@@ -39,10 +39,24 @@ interface CampaignRow {
   total_value: string | null;
 }
 
+interface IdentityTotals {
+  cross_new: number;
+  cross_returning: number;
+  first_touch_shopify: number;
+  first_touch_callrail: number;
+}
+
+interface FirstTouchBreakdownRow {
+  first_channel: string | null;
+  orders: number;
+  revenue: string | null;
+  identities: number;
+}
+
 async function loadData() {
   const sql = getSql();
   try {
-    const [daily, recent, campaigns, totals, clickTotal] = await Promise.all([
+    const [daily, recent, campaigns, totals, clickTotal, identityTotals, firstTouchBreakdown] = await Promise.all([
       sql<DailyRow[]>`
         select
           to_char(date_trunc('day', ordered_at), 'YYYY-MM-DD') as day,
@@ -110,6 +124,41 @@ async function loadData() {
         where ordered_at >= now() - interval '30 days'
       `,
       sql<{ total: number }[]>`select count(*)::int as total from google_ads_clicks`,
+      // Cross-channel new vs returning: an order is "new" if its identity's
+      // first_seen_at is within this order's lifetime (i.e. the order itself
+      // is what created the identity, or it created the identity within
+      // a 60-second window). Otherwise the customer existed before — returning.
+      sql<IdentityTotals[]>`
+        select
+          count(*) filter (
+            where ci.first_channel = 'shopify'
+              and abs(extract(epoch from (ci.first_seen_at - so.ordered_at))) < 60
+          )::int as cross_new,
+          count(*) filter (
+            where ci.id is not null
+              and not (
+                ci.first_channel = 'shopify'
+                and abs(extract(epoch from (ci.first_seen_at - so.ordered_at))) < 60
+              )
+          )::int as cross_returning,
+          count(*) filter (where ci.first_channel = 'shopify')::int as first_touch_shopify,
+          count(*) filter (where ci.first_channel = 'callrail')::int as first_touch_callrail
+        from shopify_orders so
+        left join customer_identities ci on ci.id = so.customer_identity_id
+        where so.ordered_at >= now() - interval '30 days'
+      `,
+      sql<FirstTouchBreakdownRow[]>`
+        select
+          ci.first_channel,
+          count(distinct so.id)::int as orders,
+          sum(so.total)::text as revenue,
+          count(distinct ci.id)::int as identities
+        from shopify_orders so
+        join customer_identities ci on ci.id = so.customer_identity_id
+        where so.ordered_at >= now() - interval '30 days'
+        group by ci.first_channel
+        order by orders desc
+      `,
     ]);
     return {
       daily,
@@ -123,6 +172,13 @@ async function loadData() {
         new_customers: 0,
       },
       clickTotal: clickTotal[0]?.total ?? 0,
+      identityTotals: identityTotals[0] ?? {
+        cross_new: 0,
+        cross_returning: 0,
+        first_touch_shopify: 0,
+        first_touch_callrail: 0,
+      },
+      firstTouchBreakdown,
       error: null as string | null,
     };
   } catch (e) {
@@ -132,6 +188,13 @@ async function loadData() {
       campaigns: [] as CampaignRow[],
       totals: { orders: 0, with_gclid: 0, verified: 0, google_source: 0, new_customers: 0 },
       clickTotal: 0,
+      identityTotals: {
+        cross_new: 0,
+        cross_returning: 0,
+        first_touch_shopify: 0,
+        first_touch_callrail: 0,
+      },
+      firstTouchBreakdown: [] as FirstTouchBreakdownRow[],
       error: e instanceof Error ? e.message : String(e),
     };
   }
@@ -163,7 +226,16 @@ function fmtDate(d: Date) {
 }
 
 export default async function AttributionPage() {
-  const { daily, recent, campaigns, totals, clickTotal, error } = await loadData();
+  const {
+    daily,
+    recent,
+    campaigns,
+    totals,
+    clickTotal,
+    identityTotals,
+    firstTouchBreakdown,
+    error,
+  } = await loadData();
   // "Match quality" = how many of the GCLIDs we captured actually correspond
   // to real Google clicks. This is the trustworthy metric.
   // (utm_source=google is too unreliable as a denominator — Performance Max,
@@ -232,6 +304,71 @@ export default async function AttributionPage() {
           <span className="text-gray-400">new customers (30d):</span> {totals.new_customers}
         </span>
       </div>
+
+      <Section title="Cross-channel new vs returning (last 30d)">
+        <div className="p-4">
+          <p className="text-xs text-gray-500 mb-4">
+            Identity-resolved across Shopify + CallRail. &quot;New&quot; means the order
+            created the customer&apos;s first touch anywhere in our system —
+            replaces Shopify&apos;s order-count-only heuristic.
+          </p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+            <Stat
+              label="New (cross-channel)"
+              value={identityTotals.cross_new.toString()}
+              accent="text-emerald-300"
+            />
+            <Stat
+              label="Returning (cross-channel)"
+              value={identityTotals.cross_returning.toString()}
+              accent="text-blue-300"
+            />
+            <Stat
+              label="First touch: Shopify"
+              value={identityTotals.first_touch_shopify.toString()}
+            />
+            <Stat
+              label="First touch: CallRail"
+              value={identityTotals.first_touch_callrail.toString()}
+            />
+          </div>
+          <table className="w-full text-sm">
+            <thead className="text-gray-500 text-xs uppercase tracking-wider">
+              <tr className="border-b border-gray-800">
+                <th className="text-left px-2 py-2">First-touch channel</th>
+                <th className="text-right px-2 py-2">Identities</th>
+                <th className="text-right px-2 py-2">Orders</th>
+                <th className="text-right px-2 py-2">Revenue</th>
+              </tr>
+            </thead>
+            <tbody>
+              {firstTouchBreakdown.length === 0 && !error && (
+                <tr>
+                  <td colSpan={4} className="text-center py-6 text-gray-500 text-sm">
+                    No identity-linked orders yet — run{" "}
+                    <code className="px-1 py-0.5 rounded bg-black/40">
+                      POST /api/identities/backfill
+                    </code>
+                  </td>
+                </tr>
+              )}
+              {firstTouchBreakdown.map((r) => (
+                <tr
+                  key={r.first_channel ?? "null"}
+                  className="border-b border-gray-800/60"
+                >
+                  <td className="px-2 py-2 text-gray-200">{r.first_channel ?? "—"}</td>
+                  <td className="px-2 py-2 text-right text-gray-200">{r.identities}</td>
+                  <td className="px-2 py-2 text-right text-gray-200">{r.orders}</td>
+                  <td className="px-2 py-2 text-right text-gray-200">
+                    {fmtMoney(r.revenue, "USD")}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Section>
 
       <Section title="Daily breakdown (last 30d)">
         <div className="overflow-x-auto">
