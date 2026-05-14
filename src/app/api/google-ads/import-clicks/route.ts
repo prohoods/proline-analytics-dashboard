@@ -13,6 +13,8 @@ import {
 } from "@/lib/google-ads";
 import { getSql } from "@/lib/db";
 
+export const maxDuration = 300;
+
 interface ClickRow {
   clickView?: { gclid?: string };
   campaign?: { id?: string; name?: string };
@@ -107,30 +109,54 @@ export async function POST(req: NextRequest) {
       totalFetched += rows.length;
       perDay[date] = rows.length;
 
-      for (const r of rows) {
-        const gclid = r.clickView?.gclid;
-        if (!gclid) continue;
-        await sql`
-          insert into google_ads_clicks (
-            gclid, click_date, campaign_id, campaign_name,
-            ad_group_id, ad_group_name, device, ad_network_type
-          ) values (
-            ${gclid}, ${r.segments?.date ?? date},
-            ${r.campaign?.id ?? null}, ${r.campaign?.name ?? null},
-            ${r.adGroup?.id ?? null}, ${r.adGroup?.name ?? null},
-            ${r.segments?.device ?? null}, ${r.segments?.adNetworkType ?? null}
-          )
-          on conflict (gclid) do update set
-            click_date = excluded.click_date,
-            campaign_id = coalesce(excluded.campaign_id, google_ads_clicks.campaign_id),
-            campaign_name = coalesce(excluded.campaign_name, google_ads_clicks.campaign_name),
-            ad_group_id = coalesce(excluded.ad_group_id, google_ads_clicks.ad_group_id),
-            ad_group_name = coalesce(excluded.ad_group_name, google_ads_clicks.ad_group_name),
-            device = coalesce(excluded.device, google_ads_clicks.device),
-            ad_network_type = coalesce(excluded.ad_network_type, google_ads_clicks.ad_network_type)
-        `;
-        totalUpserted++;
-      }
+      // Build a deduped batch — Google Ads can return the same gclid twice
+      // (e.g. impressions on multiple ad networks), and ON CONFLICT can't
+      // resolve dupes inside a single multi-row INSERT.
+      const seen = new Set<string>();
+      const batch = rows
+        .map((r) => {
+          const gclid = r.clickView?.gclid;
+          if (!gclid || seen.has(gclid)) return null;
+          seen.add(gclid);
+          return {
+            gclid,
+            click_date: r.segments?.date ?? date,
+            campaign_id: r.campaign?.id ?? null,
+            campaign_name: r.campaign?.name ?? null,
+            ad_group_id: r.adGroup?.id ?? null,
+            ad_group_name: r.adGroup?.name ?? null,
+            device: r.segments?.device ?? null,
+            ad_network_type: r.segments?.adNetworkType ?? null,
+          };
+        })
+        .filter((v): v is NonNullable<typeof v> => v !== null);
+
+      if (batch.length === 0) continue;
+
+      // Batched upsert: one query per day instead of one per row.
+      // ~50× faster — keeps us well under Vercel's serverless timeout.
+      await sql`
+        insert into google_ads_clicks ${sql(
+          batch,
+          "gclid",
+          "click_date",
+          "campaign_id",
+          "campaign_name",
+          "ad_group_id",
+          "ad_group_name",
+          "device",
+          "ad_network_type"
+        )}
+        on conflict (gclid) do update set
+          click_date = excluded.click_date,
+          campaign_id = coalesce(excluded.campaign_id, google_ads_clicks.campaign_id),
+          campaign_name = coalesce(excluded.campaign_name, google_ads_clicks.campaign_name),
+          ad_group_id = coalesce(excluded.ad_group_id, google_ads_clicks.ad_group_id),
+          ad_group_name = coalesce(excluded.ad_group_name, google_ads_clicks.ad_group_name),
+          device = coalesce(excluded.device, google_ads_clicks.device),
+          ad_network_type = coalesce(excluded.ad_network_type, google_ads_clicks.ad_network_type)
+      `;
+      totalUpserted += batch.length;
     }
 
     const [{ total }] = await sql<{ total: number }[]>`
