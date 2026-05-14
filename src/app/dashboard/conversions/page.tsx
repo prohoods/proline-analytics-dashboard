@@ -173,28 +173,6 @@ export default async function ConversionsPage() {
         </p>
       </div>
 
-      {/* Concept primer */}
-      <div className="mb-6 p-4 rounded-xl border border-gray-800 bg-gray-900/60">
-        <div className="text-xs uppercase tracking-wider text-gray-500 mb-2">
-          What is an &quot;offline&quot; conversion?
-        </div>
-        <p className="text-sm text-gray-300 leading-relaxed">
-          &quot;Offline&quot; doesn&apos;t mean the customer was offline — it
-          means the conversion event happened somewhere{" "}
-          <span className="text-white">Google&apos;s tracking pixel can&apos;t see</span>
-          : a Shopify order, a phone call, a refund. We capture the original
-          Google click ID (the <code className="text-gray-200">GCLID</code>) the
-          moment the visitor lands on the site or calls us, save it, and later
-          POST that ID + the order value back to Google. Google matches it to
-          the click, credits the campaign, and uses the real revenue to bid
-          better next time.
-        </p>
-        <p className="text-sm text-gray-400 leading-relaxed mt-2">
-          Every successful row in the table below is one real dollar amount
-          that&apos;s now teaching the algorithm.
-        </p>
-      </div>
-
       {error && (
         <div className="mb-6 p-4 rounded-lg border border-red-700 bg-red-900/20 text-red-200 text-sm">
           <div className="font-semibold">Database error</div>
