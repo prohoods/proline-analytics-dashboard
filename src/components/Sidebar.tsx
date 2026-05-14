@@ -52,6 +52,13 @@ const navSections: NavSection[] = [
     ],
   },
   {
+    label: "Organic & Analytics", icon: "🌐",
+    items: [
+      { href: "/dashboard/ga4",            label: "GA4 Traffic",      icon: "📊" },
+      { href: "/dashboard/search-console", label: "Search Console",   icon: "🔎" },
+    ],
+  },
+  {
     label: "Email Marketing", icon: "📧",
     items: [
       {

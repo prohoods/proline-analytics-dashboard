@@ -12,6 +12,7 @@ export async function POST() {
       "007_google_ads_clicks.sql",
       "008_conversion_uploads_dedupe.sql",
       "009_customer_identities.sql",
+      "010_ga4_search_console.sql",
     ]) {
       const ddl = await readFile(
         path.join(process.cwd(), "src/lib/migrations", name),

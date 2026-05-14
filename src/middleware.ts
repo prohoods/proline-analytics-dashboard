@@ -22,6 +22,8 @@ export default auth((request) => {
     pathname.startsWith("/api/webhooks") ||
     pathname.startsWith("/api/conversions") ||
     pathname.startsWith("/api/identities") ||
+    pathname.startsWith("/api/ga4") ||
+    pathname.startsWith("/api/search-console") ||
     pathname.startsWith("/api/ai-reporting") ||
     pathname.startsWith("/api/cron")
   ) {
