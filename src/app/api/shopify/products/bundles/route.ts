@@ -55,6 +55,20 @@ export async function GET(request: NextRequest) {
 
     const { orders } = await getOrdersWithRefundsInWindow(start, end);
 
+    function orderChannel(order: typeof orders[number]): string {
+      const tags = (order.tags ?? "").toLowerCase();
+      if (tags.includes("prolinepro b2b")) return "b2b";
+      if (tags.includes("[]")) return "phone";
+      return order.source_name === "web" || !order.source_name ? "dtc" : order.source_name;
+    }
+    function customerName(order: typeof orders[number]): string {
+      if (!order.customer) return "";
+      return (
+        `${order.customer.first_name ?? ""} ${order.customer.last_name ?? ""}`.trim() ||
+        (order.customer.email ?? "")
+      );
+    }
+
     // --- SKU'd bundles (one entry per bundle SKU) -----------------------------
     const skuMap: Record<string, {
       title: string;
@@ -66,7 +80,24 @@ export async function GET(request: NextRequest) {
       grossRevenue: number;
       refundedUnits: number;
       refundedRevenue: number;
+      firstSold: string | null;
+      lastSold: string | null;
     }> = {};
+
+    interface BundleSale {
+      date: string;
+      orderName: string;
+      kind: "skud" | "implicit";
+      bundleSku?: string;
+      rangeSku: string;
+      hoodSku: string;
+      quantity: number;
+      revenue: number;
+      customer: string;
+      state: string;
+      channel: string;
+    }
+    const bundleSales: BundleSale[] = [];
 
     // --- Implicit bundles (one entry per range+hood combo) --------------------
     type ComboKey = string; // `${range}|${hood}`
@@ -92,6 +123,11 @@ export async function GET(request: NextRequest) {
 
     for (const order of orders) {
       if (orderInWindow(order)) {
+        const orderDate = order.created_at.substring(0, 10);
+        const cust = customerName(order);
+        const state = order.shipping_address?.province_code ?? "";
+        const channel = orderChannel(order);
+
         const bundleLines = order.line_items.filter((li) => isBundleSku(li.sku));
         const rangeLines = order.line_items.filter((li) => isRangeSku(li.sku));
         const hoodLines = order.line_items.filter((li) => isHoodSku(li.sku));
@@ -119,11 +155,29 @@ export async function GET(request: NextRequest) {
               grossRevenue: 0,
               refundedUnits: 0,
               refundedRevenue: 0,
+              firstSold: null,
+              lastSold: null,
             };
           }
           skuMap[li.sku].orderNames.add(order.name);
           skuMap[li.sku].unitsSold += li.quantity;
-          skuMap[li.sku].grossRevenue += parseFloat(li.price) * li.quantity;
+          const lineRevenue = parseFloat(li.price) * li.quantity;
+          skuMap[li.sku].grossRevenue += lineRevenue;
+          if (!skuMap[li.sku].firstSold || orderDate < skuMap[li.sku].firstSold!) skuMap[li.sku].firstSold = orderDate;
+          if (!skuMap[li.sku].lastSold || orderDate > skuMap[li.sku].lastSold!) skuMap[li.sku].lastSold = orderDate;
+          bundleSales.push({
+            date: orderDate,
+            orderName: order.name,
+            kind: "skud",
+            bundleSku: li.sku,
+            rangeSku: parsed?.range ?? "",
+            hoodSku: parsed?.hood ?? "",
+            quantity: li.quantity,
+            revenue: lineRevenue,
+            customer: cust,
+            state,
+            channel,
+          });
         }
 
         // Implicit bundles: enumerate range × hood pairs within the same order.
@@ -148,8 +202,20 @@ export async function GET(request: NextRequest) {
               const pairCount = Math.min(r.quantity, h.quantity);
               comboMap[key].rangeUnits += r.quantity;
               comboMap[key].hoodUnits += h.quantity;
-              comboMap[key].grossRevenue +=
-                parseFloat(r.price) * pairCount + parseFloat(h.price) * pairCount;
+              const pairRevenue = parseFloat(r.price) * pairCount + parseFloat(h.price) * pairCount;
+              comboMap[key].grossRevenue += pairRevenue;
+              bundleSales.push({
+                date: orderDate,
+                orderName: order.name,
+                kind: "implicit",
+                rangeSku: r.sku,
+                hoodSku: h.sku,
+                quantity: pairCount,
+                revenue: pairRevenue,
+                customer: cust,
+                state,
+                channel,
+              });
             }
           }
         }
@@ -175,6 +241,8 @@ export async function GET(request: NextRequest) {
               grossRevenue: 0,
               refundedUnits: 0,
               refundedRevenue: 0,
+              firstSold: null,
+              lastSold: null,
             };
           }
           skuMap[sku].refundedUnits += ri.quantity;
@@ -217,8 +285,12 @@ export async function GET(request: NextRequest) {
         totalCOGS,
         grossProfit,
         grossMarginPct,
+        firstSold: b.firstSold,
+        lastSold: b.lastSold,
       };
     }).sort((a, b) => b.grossRevenue - a.grossRevenue);
+
+    bundleSales.sort((a, b) => b.date.localeCompare(a.date) || b.orderName.localeCompare(a.orderName));
 
     const implicitBundles = Object.values(comboMap).map((c) => ({
       rangeSku: c.rangeSku,
@@ -250,7 +322,7 @@ export async function GET(request: NextRequest) {
       tariffRate: TARIFF_RATE,
     };
 
-    return NextResponse.json({ skuBundles, implicitBundles, summary }, {
+    return NextResponse.json({ skuBundles, implicitBundles, summary, sales: bundleSales }, {
       headers: { "Cache-Control": "public, s-maxage=900, stale-while-revalidate=60" },
     });
   } catch (err: unknown) {

@@ -36,7 +36,30 @@ export async function GET(request: NextRequest) {
       grossRevenue: number;
       refundedUnits: number;
       refundedRevenue: number;
+      firstSold: string | null;
+      lastSold: string | null;
     }> = {};
+
+    interface SaleRow {
+      date: string;
+      orderName: string;
+      sku: string;
+      title: string;
+      quantity: number;
+      unitPrice: number;
+      lineRevenue: number;
+      customer: string;
+      state: string;
+      channel: string; // dtc / b2b / phone (from order tags) → source_name fallback
+    }
+    const salesDetail: SaleRow[] = [];
+
+    function orderChannel(order: typeof orders[number]): string {
+      const tags = (order.tags ?? "").toLowerCase();
+      if (tags.includes("prolinepro b2b")) return "b2b";
+      if (tags.includes("[]")) return "phone";
+      return order.source_name === "web" || !order.source_name ? "dtc" : order.source_name;
+    }
 
     const orderInWindow = (order: typeof orders[number]) => {
       const d = order.created_at.substring(0, 10);
@@ -45,6 +68,13 @@ export async function GET(request: NextRequest) {
 
     for (const order of orders) {
       if (orderInWindow(order)) {
+        const orderDate = order.created_at.substring(0, 10);
+        const customerName = order.customer
+          ? `${order.customer.first_name ?? ""} ${order.customer.last_name ?? ""}`.trim() || (order.customer.email ?? "")
+          : "";
+        const state = order.shipping_address?.province_code ?? "";
+        const channel = orderChannel(order);
+
         for (const item of order.line_items) {
           if (!isRangeSku(item.sku)) continue;
           const key = item.sku;
@@ -57,11 +87,30 @@ export async function GET(request: NextRequest) {
               grossRevenue: 0,
               refundedUnits: 0,
               refundedRevenue: 0,
+              firstSold: null,
+              lastSold: null,
             };
           }
           skuMap[key].orderNames.add(order.name);
           skuMap[key].unitsSold += item.quantity;
-          skuMap[key].grossRevenue += parseFloat(item.price) * item.quantity;
+          const unitPrice = parseFloat(item.price);
+          const lineRevenue = unitPrice * item.quantity;
+          skuMap[key].grossRevenue += lineRevenue;
+          if (!skuMap[key].firstSold || orderDate < skuMap[key].firstSold!) skuMap[key].firstSold = orderDate;
+          if (!skuMap[key].lastSold || orderDate > skuMap[key].lastSold!) skuMap[key].lastSold = orderDate;
+
+          salesDetail.push({
+            date: orderDate,
+            orderName: order.name,
+            sku: item.sku,
+            title: skuMap[key].title,
+            quantity: item.quantity,
+            unitPrice,
+            lineRevenue,
+            customer: customerName,
+            state,
+            channel,
+          });
         }
       }
 
@@ -80,6 +129,8 @@ export async function GET(request: NextRequest) {
               grossRevenue: 0,
               refundedUnits: 0,
               refundedRevenue: 0,
+              firstSold: null,
+              lastSold: null,
             };
           }
           skuMap[sku].refundedUnits += ri.quantity;
@@ -115,8 +166,12 @@ export async function GET(request: NextRequest) {
         totalCOGS,
         grossProfit,
         grossMarginPct,
+        firstSold: p.firstSold,
+        lastSold: p.lastSold,
       };
     }).sort((a, b) => b.grossRevenue - a.grossRevenue);
+
+    salesDetail.sort((a, b) => b.date.localeCompare(a.date) || b.orderName.localeCompare(a.orderName));
 
     const summary = {
       productCount: products.length,
@@ -131,7 +186,7 @@ export async function GET(request: NextRequest) {
       tariffRate: TARIFF_RATE,
     };
 
-    return NextResponse.json({ products, summary }, {
+    return NextResponse.json({ products, summary, sales: salesDetail }, {
       headers: { "Cache-Control": "public, s-maxage=900, stale-while-revalidate=60" },
     });
   } catch (err: unknown) {

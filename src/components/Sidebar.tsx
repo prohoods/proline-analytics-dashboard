@@ -6,7 +6,7 @@ import { useState, useMemo } from "react";
 import { useTheme } from "@/components/ThemeProvider";
 
 interface NavItem { href: string; label: string; icon: string; }
-interface ExpandableItem { href: string; label: string; icon: string; children?: NavItem[]; }
+interface ExpandableItem { href: string; label: string; icon: string; children?: NavItem[]; hideOverview?: boolean; }
 interface NavSection { label: string; icon: string; items: ExpandableItem[]; }
 
 const navSections: NavSection[] = [
@@ -20,7 +20,8 @@ const navSections: NavSection[] = [
       { href: "/dashboard/shl",      label: "Smart Home Luxury",    icon: "🏠" },
       { href: "/dashboard/marketplace", label: "Marketplace Sales", icon: "🏪" },
       {
-        href: "/dashboard/products", label: "By Product", icon: "📦",
+        href: "/dashboard/products/ranges", label: "Product Rev", icon: "📦",
+        hideOverview: true,
         children: [
           { href: "/dashboard/products/ranges",  label: "Ranges (PLSR/PLST)", icon: "🔥" },
           { href: "/dashboard/products/bundles", label: "Bundles",            icon: "🎁" },
@@ -134,9 +135,9 @@ export default function Sidebar() {
 
   // Item-level expandable groups (Google Ads sub-pages, Customers, Email)
   const defaultOpenGroups = useMemo(() => ({
-    "/dashboard/google-ads": ["/dashboard/pmax","/dashboard/shopping","/dashboard/search","/dashboard/demand-gen"].some(p => pathname.startsWith(p)),
-    "/dashboard/email":      pathname.startsWith("/dashboard/email"),
-    "/dashboard/products":   ["/dashboard/products/ranges","/dashboard/products/bundles"].some(p => pathname.startsWith(p)),
+    "/dashboard/google-ads":      ["/dashboard/pmax","/dashboard/shopping","/dashboard/search","/dashboard/demand-gen"].some(p => pathname.startsWith(p)),
+    "/dashboard/email":           pathname.startsWith("/dashboard/email"),
+    "/dashboard/products/ranges": ["/dashboard/products/ranges","/dashboard/products/bundles"].some(p => pathname.startsWith(p)),
   }), []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(defaultOpenGroups);
@@ -243,14 +244,16 @@ export default function Sidebar() {
                         {/* Sub-items */}
                         {hasChildren && isGroupOpen && (
                           <div className="mt-0.5 ml-4 pl-3 border-l border-gray-800 space-y-0.5">
-                            <Link
-                              href={item.href}
-                              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs transition-colors ${
-                                isActive ? "text-blue-400 font-medium" : "text-gray-500 hover:text-gray-300 hover:bg-gray-800"
-                              }`}
-                            >
-                              Overview
-                            </Link>
+                            {!item.hideOverview && (
+                              <Link
+                                href={item.href}
+                                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs transition-colors ${
+                                  isActive ? "text-blue-400 font-medium" : "text-gray-500 hover:text-gray-300 hover:bg-gray-800"
+                                }`}
+                              >
+                                Overview
+                              </Link>
+                            )}
                             {item.children!.map((child) => {
                               const childActive = pathname === child.href;
                               return (

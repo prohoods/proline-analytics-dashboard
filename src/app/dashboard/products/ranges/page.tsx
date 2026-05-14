@@ -26,6 +26,21 @@ interface RangeProduct {
   totalCOGS: number | null;
   grossProfit: number | null;
   grossMarginPct: number | null;
+  firstSold: string | null;
+  lastSold: string | null;
+}
+
+interface SaleRow {
+  date: string;
+  orderName: string;
+  sku: string;
+  title: string;
+  quantity: number;
+  unitPrice: number;
+  lineRevenue: number;
+  customer: string;
+  state: string;
+  channel: string;
 }
 
 interface Summary {
@@ -55,9 +70,11 @@ export default function RangesPage() {
   const [rangeKey, setRangeKey] = useState<RangeKey>("ytd");
   const [products, setProducts] = useState<RangeProduct[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
+  const [sales, setSales] = useState<SaleRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<"all" | "PLSR" | "PLST">("all");
+  const [showAllSales, setShowAllSales] = useState(false);
 
   const { start, end } = useMemo(() => getRange(rangeKey), [rangeKey]);
 
@@ -70,6 +87,7 @@ export default function RangesPage() {
         if (d.error) throw new Error(d.error);
         setProducts(d.products ?? []);
         setSummary(d.summary ?? null);
+        setSales(d.sales ?? []);
       })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false));
@@ -79,6 +97,13 @@ export default function RangesPage() {
     if (filter === "all") return products;
     return products.filter((p) => p.sku.toUpperCase().startsWith(filter));
   }, [products, filter]);
+
+  const filteredSales = useMemo(() => {
+    if (filter === "all") return sales;
+    return sales.filter((s) => s.sku.toUpperCase().startsWith(filter));
+  }, [sales, filter]);
+
+  const visibleSales = showAllSales ? filteredSales : filteredSales.slice(0, 50);
 
   const filteredSummary = useMemo(() => {
     return {
@@ -214,6 +239,7 @@ export default function RangesPage() {
                   <th className="text-right px-4 py-2.5 font-medium">Cost / Unit</th>
                   <th className="text-right px-4 py-2.5 font-medium">Gross Profit</th>
                   <th className="text-right px-4 py-2.5 font-medium">Margin</th>
+                  <th className="text-right px-4 py-2.5 font-medium">Last Sold</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-800">
@@ -236,6 +262,12 @@ export default function RangesPage() {
                     <td className={`px-4 py-2.5 text-right font-medium ${marginColor(p.grossMarginPct)}`}>
                       {fmtPct(p.grossMarginPct)}
                     </td>
+                    <td className="px-4 py-2.5 text-right text-gray-400 text-xs whitespace-nowrap">
+                      {p.lastSold ?? "—"}
+                      {p.firstSold && p.firstSold !== p.lastSold && (
+                        <div className="text-[10px] text-gray-600">first: {p.firstSold}</div>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -250,14 +282,92 @@ export default function RangesPage() {
                   <td className="px-4 py-2.5"></td>
                   <td className="px-4 py-2.5 text-right">{fmtC(filteredSummary.grossProfit)}</td>
                   <td className={`px-4 py-2.5 text-right ${marginColor(overallMarginPct)}`}>{fmtPct(overallMarginPct)}</td>
+                  <td className="px-4 py-2.5"></td>
                 </tr>
               </tfoot>
             </table>
           </div>
         )}
       </div>
+
+      {/* Recent sales detail */}
+      <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+        <div className="px-5 py-3 border-b border-gray-800 flex items-center justify-between">
+          <div>
+            <h2 className="text-sm font-semibold text-white">Sales detail</h2>
+            <p className="text-xs text-gray-500">
+              Every range line item sold in this window — date, order, customer, channel, state.
+              Sorted newest first.
+            </p>
+          </div>
+          <div className="text-xs text-gray-500">
+            {filteredSales.length.toLocaleString()} sales
+            {filteredSales.length > 50 && (
+              <button
+                onClick={() => setShowAllSales((v) => !v)}
+                className="ml-3 text-blue-400 hover:text-blue-300"
+              >
+                {showAllSales ? "Show top 50" : "Show all"}
+              </button>
+            )}
+          </div>
+        </div>
+        {loading ? (
+          <TableSkeleton rows={6} />
+        ) : visibleSales.length === 0 ? (
+          <div className="px-5 py-10 text-center text-sm text-gray-500">
+            No range sales in this window.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-950/50 text-gray-400 text-xs uppercase tracking-wider">
+                <tr>
+                  <th className="text-left px-4 py-2.5 font-medium">Date</th>
+                  <th className="text-left px-4 py-2.5 font-medium">Order</th>
+                  <th className="text-left px-4 py-2.5 font-medium">SKU</th>
+                  <th className="text-left px-4 py-2.5 font-medium">Customer</th>
+                  <th className="text-left px-4 py-2.5 font-medium">State</th>
+                  <th className="text-left px-4 py-2.5 font-medium">Channel</th>
+                  <th className="text-right px-4 py-2.5 font-medium">Qty</th>
+                  <th className="text-right px-4 py-2.5 font-medium">Unit Price</th>
+                  <th className="text-right px-4 py-2.5 font-medium">Revenue</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-800">
+                {visibleSales.map((s, i) => (
+                  <tr key={`${s.orderName}-${s.sku}-${i}`} className="hover:bg-gray-800/40">
+                    <td className="px-4 py-2.5 text-gray-300 whitespace-nowrap">{s.date}</td>
+                    <td className="px-4 py-2.5 font-mono text-xs text-gray-300">{s.orderName}</td>
+                    <td className="px-4 py-2.5 font-mono text-xs text-gray-200">{s.sku}</td>
+                    <td className="px-4 py-2.5 text-gray-300 max-w-[200px] truncate" title={s.customer}>{s.customer || "—"}</td>
+                    <td className="px-4 py-2.5 text-gray-400">{s.state || "—"}</td>
+                    <td className="px-4 py-2.5">
+                      <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wider ${channelPill(s.channel)}`}>
+                        {s.channel}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2.5 text-right text-gray-200">{s.quantity}</td>
+                    <td className="px-4 py-2.5 text-right text-gray-300">{fmtC(s.unitPrice)}</td>
+                    <td className="px-4 py-2.5 text-right text-gray-100 font-medium">{fmtC(s.lineRevenue)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
+}
+
+function channelPill(channel: string): string {
+  switch (channel) {
+    case "b2b":   return "bg-purple-900/40 text-purple-300";
+    case "phone": return "bg-amber-900/40 text-amber-300";
+    case "dtc":   return "bg-blue-900/40 text-blue-300";
+    default:      return "bg-gray-800 text-gray-400";
+  }
 }
 
 function marginColor(pct: number | null): string {
