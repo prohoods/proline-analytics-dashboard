@@ -32,6 +32,8 @@ interface OrderRow {
   utm_source: string | null;
   utm_medium: string | null;
   utm_campaign: string | null;
+  campaign_resolved: string | null;
+  campaign_from_click_view: boolean;
   is_new_customer: boolean | null;
   click_matched: boolean;
 }
@@ -149,6 +151,19 @@ async function loadData(start: string, end: string) {
           so.utm_source,
           so.utm_medium,
           so.utm_campaign,
+          case
+            when so.utm_campaign is not null
+              and so.utm_campaign <> ''
+              and so.utm_campaign <> '{campaignname}'
+            then so.utm_campaign
+            else gac.campaign_name
+          end as campaign_resolved,
+          (
+            (so.utm_campaign is null
+              or so.utm_campaign = ''
+              or so.utm_campaign = '{campaignname}')
+            and gac.campaign_name is not null
+          ) as campaign_from_click_view,
           so.is_new_customer,
           (so.gclid is not null and gac.gclid is not null) as click_matched
         from shopify_orders so
@@ -562,7 +577,7 @@ export default async function AttributionPage({
                 <th className="text-left px-4 py-2">Time</th>
                 <th className="text-left px-4 py-2">Order</th>
                 <th className="text-right px-4 py-2">Total</th>
-                <th className="text-left px-4 py-2">UTM</th>
+                <th className="text-left px-4 py-2">Source / Campaign</th>
                 <th className="text-left px-4 py-2">GCLID</th>
                 <th className="text-left px-4 py-2">Match</th>
                 <th className="text-left px-4 py-2">New?</th>
@@ -585,12 +600,35 @@ export default async function AttributionPage({
                   <td className="px-4 py-2 text-right text-gray-200">
                     {fmtMoney(r.total, r.currency)}
                   </td>
-                  <td className="px-4 py-2 text-gray-400 text-xs">
-                    {r.utm_source ? (
-                      <span>
-                        {r.utm_source}
-                        {r.utm_medium ? ` / ${r.utm_medium}` : ""}
-                      </span>
+                  <td className="px-4 py-2 text-xs">
+                    {r.utm_source || r.campaign_resolved ? (
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-gray-400">
+                          {r.utm_source ?? "—"}
+                          {r.utm_medium ? ` / ${r.utm_medium}` : ""}
+                        </span>
+                        {r.campaign_resolved && (
+                          <span
+                            className={
+                              r.campaign_from_click_view
+                                ? "text-emerald-300"
+                                : "text-gray-300"
+                            }
+                            title={
+                              r.campaign_from_click_view
+                                ? "Recovered from Google Ads click_view — utm_campaign was missing or the literal {campaignname}"
+                                : "From utm_campaign on the order"
+                            }
+                          >
+                            {r.campaign_resolved}
+                            {r.campaign_from_click_view && (
+                              <span className="ml-1 text-[10px] text-emerald-400/70">
+                                (click_view)
+                              </span>
+                            )}
+                          </span>
+                        )}
+                      </div>
                     ) : (
                       <span className="text-gray-600">—</span>
                     )}
