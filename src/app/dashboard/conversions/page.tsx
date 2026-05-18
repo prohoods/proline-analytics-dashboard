@@ -19,20 +19,33 @@ interface UploadRow {
   attempted_at: Date;
 }
 
+// Bucket reflects the *latest attempt per logical upload*:
+//   success    — Google accepted at some point
+//   retryable  — last attempt errored, retry cron will pick it up
+//   permanent  — last attempt errored with a known-permanent message
+//                (outside Google's attribution window, missing required field,
+//                phone_call_sale without a gclid). Will never succeed; tracked
+//                separately so it doesn't drag the success rate down.
+//   skipped    — we caught a problem before sending (no click id at all)
+type Bucket = "success" | "retryable" | "permanent" | "skipped";
+
 interface SummaryRow {
-  status: string;
+  bucket: Bucket;
   count: number;
 }
 
 interface ActionBreakdownRow {
   conversion_action: string;
-  status: string;
+  bucket: Bucket;
   count: number;
   total_value: string | null;
 }
 
 async function loadData() {
   const sql = getSql();
+  // Permanent-error patterns mirror /api/conversions/retry — keep in sync.
+  // Inlined in both queries below (postgres.js tagged templates don't accept
+  // raw SQL fragments without sql.unsafe, and duplication is clearer here).
   try {
     const [rows, summary, last24, byAction] = await Promise.all([
       sql<UploadRow[]>`
@@ -42,11 +55,31 @@ async function loadData() {
         order by attempted_at desc
         limit 200
       `,
+      // Latest attempt per dedupe_key in the last 30 days, bucketed.
       sql<SummaryRow[]>`
-        select status, count(*)::int as count
-        from conversion_uploads
-        where attempted_at >= now() - interval '30 days'
-        group by status
+        with latest as (
+          select distinct on (dedupe_key)
+            dedupe_key, status, error_message
+          from conversion_uploads
+          where attempted_at >= now() - interval '30 days'
+            and dedupe_key is not null
+          order by dedupe_key, attempt desc, id desc
+        )
+        select
+          case
+            when status = 'success' then 'success'
+            when status = 'skipped' then 'skipped'
+            when status = 'error' and (
+              coalesce(error_message, '') ilike '%click-through window%'
+              or coalesce(error_message, '') ilike '%requires gclid%'
+              or coalesce(error_message, '') ilike '%required field was not present%'
+            ) then 'permanent'
+            when status = 'error' then 'retryable'
+            else status
+          end as bucket,
+          count(*)::int as count
+        from latest
+        group by 1
       `,
       sql<{ count: number }[]>`
         select count(*)::int as count
@@ -54,15 +87,32 @@ async function loadData() {
         where attempted_at >= now() - interval '24 hours'
       `,
       sql<ActionBreakdownRow[]>`
+        with latest as (
+          select distinct on (dedupe_key)
+            dedupe_key, conversion_action, status, error_message, conversion_value
+          from conversion_uploads
+          where attempted_at >= now() - interval '30 days'
+            and dedupe_key is not null
+          order by dedupe_key, attempt desc, id desc
+        )
         select
           conversion_action,
-          status,
+          case
+            when status = 'success' then 'success'
+            when status = 'skipped' then 'skipped'
+            when status = 'error' and (
+              coalesce(error_message, '') ilike '%click-through window%'
+              or coalesce(error_message, '') ilike '%requires gclid%'
+              or coalesce(error_message, '') ilike '%required field was not present%'
+            ) then 'permanent'
+            when status = 'error' then 'retryable'
+            else status
+          end as bucket,
           count(*)::int as count,
-          sum(case when status = 'success' then conversion_value else 0 end)::text as total_value
-        from conversion_uploads
-        where attempted_at >= now() - interval '30 days'
-        group by conversion_action, status
-        order by conversion_action, status
+          sum(case when status = 'success' then conversion_value::numeric else 0 end)::text as total_value
+        from latest
+        group by conversion_action, bucket
+        order by conversion_action, bucket
       `,
     ]);
     return {
@@ -127,38 +177,55 @@ const ACTION_DESCRIPTION: Record<string, string> = {
 
 export default async function ConversionsPage() {
   const { rows, summary, byAction, last24h, error } = await loadData();
-  const total = summary.reduce((s, r) => s + r.count, 0);
-  const success = summary.find((r) => r.status === "success")?.count ?? 0;
-  const errors = summary.find((r) => r.status === "error")?.count ?? 0;
-  const skipped = summary.find((r) => r.status === "skipped")?.count ?? 0;
-  const attempted = success + errors;
+  const bucketCount = (b: Bucket) =>
+    summary.find((r) => r.bucket === b)?.count ?? 0;
+  const success = bucketCount("success");
+  const retryable = bucketCount("retryable");
+  const permanent = bucketCount("permanent");
+  const skipped = bucketCount("skipped");
+  const total = success + retryable + permanent + skipped;
+  // Pipeline health = success ÷ (success + retryable). Excludes permanents
+  // (unrecoverable data issues — order outside the 90d window, missing
+  // required field) and skipped (no click id, never sent).
+  const attempted = success + retryable;
   const successRate = attempted > 0 ? (success / attempted) * 100 : 0;
 
-  // Pivot byAction → one row per conversion_action with success/error/skipped columns.
+  // Pivot byAction → one row per conversion_action with bucket counts.
   const actionPivot = new Map<
     string,
-    { action: string; success: number; error: number; skipped: number; revenue: number }
+    {
+      action: string;
+      success: number;
+      retryable: number;
+      permanent: number;
+      skipped: number;
+      revenue: number;
+    }
   >();
   for (const r of byAction) {
     const cur = actionPivot.get(r.conversion_action) ?? {
       action: r.conversion_action,
       success: 0,
-      error: 0,
+      retryable: 0,
+      permanent: 0,
       skipped: 0,
       revenue: 0,
     };
-    if (r.status === "success") {
+    if (r.bucket === "success") {
       cur.success += r.count;
       cur.revenue += parseFloat(r.total_value ?? "0") || 0;
-    } else if (r.status === "error") {
-      cur.error += r.count;
+    } else if (r.bucket === "retryable") {
+      cur.retryable += r.count;
+    } else if (r.bucket === "permanent") {
+      cur.permanent += r.count;
     } else {
       cur.skipped += r.count;
     }
     actionPivot.set(r.conversion_action, cur);
   }
   const actions = Array.from(actionPivot.values()).sort(
-    (a, b) => b.success + b.error - (a.success + a.error)
+    (a, b) =>
+      b.success + b.retryable + b.permanent - (a.success + a.retryable + a.permanent)
   );
 
   return (
@@ -186,37 +253,57 @@ export default async function ConversionsPage() {
         </div>
       )}
 
-      {/* KPI tiles */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
+      {/* KPI tiles. Counts reflect the latest attempt per logical upload
+          (deduped on dedupe_key), not every retry row in the table. */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
         <Stat
           label="Last 24h"
           value={last24h.toString()}
-          tooltip="Every upload attempt logged in the past 24 hours, regardless of outcome."
+          tooltip="Every upload attempt logged in the past 24 hours, including retries. Counts attempts, not unique conversions."
         />
         <Stat
-          label="Last 30d (total)"
+          label="Last 30d (uploads)"
           value={total.toString()}
-          tooltip="Every upload attempt in the past 30 days. Includes successes, Google rejections, and rows we skipped on our side."
+          tooltip="Distinct conversions in the past 30 days (one count per source order/call, not per retry). Sum of success + retryable + permanent + skipped below."
         />
         <Stat
-          label="Last 30d (success)"
+          label="Success"
           value={success.toString()}
           accent="text-emerald-400"
-          tooltip="Uploads Google accepted. These are the only rows actually contributing to campaign optimization."
+          tooltip="Google accepted the upload. These are the only rows actually contributing to campaign optimization."
         />
         <Stat
-          label="Last 30d (skipped)"
-          value={skipped.toString()}
+          label="Retryable"
+          value={retryable.toString()}
+          accent={retryable > 0 ? "text-amber-400" : "text-gray-400"}
+          tooltip="Last attempt errored but the cron will retry — transient failures (network, rate limit, temporary Google API issue). These are the actionable failures."
+        />
+        <Stat
+          label="Permanent"
+          value={permanent.toString()}
           accent="text-gray-400"
-          tooltip="We refused to send these — usually because the matching CallRail call didn't have a real click ID, so Google would have rejected them anyway. Skipped rows are not failures, they're filtered noise."
+          tooltip="Errored with a message Google won't change its mind on: order outside the 90-day attribution window, missing required field, or phone-call upload without a gclid. Not retried. Excluded from success rate because they're data-quality issues, not pipeline issues."
         />
         <Stat
-          label="Success rate (30d)"
+          label="Success rate"
           value={attempted > 0 ? `${successRate.toFixed(1)}%` : "—"}
-          accent={errors > 0 ? "text-amber-400" : "text-emerald-400"}
-          tooltip="Success ÷ (success + error). Skipped rows are excluded from the denominator because we never tried to upload them to Google in the first place."
+          accent={
+            successRate >= 90
+              ? "text-emerald-400"
+              : successRate >= 70
+              ? "text-amber-400"
+              : "text-red-400"
+          }
+          tooltip="Success ÷ (success + retryable). Permanent and skipped are excluded because they represent unrecoverable data conditions, not pipeline failures."
         />
       </div>
+
+      {skipped > 0 && (
+        <div className="mb-6 text-xs text-gray-500">
+          Also {skipped.toLocaleString()} skipped in the last 30 days (no click
+          id at all — never sent to Google).
+        </div>
+      )}
 
       {/* Action types explainer */}
       <Section
@@ -232,7 +319,7 @@ export default async function ConversionsPage() {
           {actions.map((a) => {
             const label = ACTION_LABEL[a.action] ?? a.action;
             const desc = ACTION_DESCRIPTION[a.action] ?? "";
-            const att = a.success + a.error;
+            const att = a.success + a.retryable;
             const rate = att > 0 ? (a.success / att) * 100 : 0;
             return (
               <div
@@ -246,10 +333,11 @@ export default async function ConversionsPage() {
                 <p className="text-xs text-gray-400 mt-2 leading-relaxed">
                   {desc}
                 </p>
-                <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+                <div className="mt-3 grid grid-cols-4 gap-2 text-xs">
                   <Mini label="Sent" value={a.success} accent="text-emerald-300" />
-                  <Mini label="Failed" value={a.error} accent="text-red-300" />
-                  <Mini label="Skipped" value={a.skipped} accent="text-gray-400" />
+                  <Mini label="Retryable" value={a.retryable} accent="text-amber-300" />
+                  <Mini label="Permanent" value={a.permanent} accent="text-gray-400" />
+                  <Mini label="Skipped" value={a.skipped} accent="text-gray-500" />
                 </div>
                 <div className="mt-3 flex items-center justify-between text-xs">
                   <span className="text-gray-500">Success rate</span>
@@ -294,8 +382,9 @@ export default async function ConversionsPage() {
         </span>
         <span className="inline-flex items-center gap-1.5">
           <StatusBadge status="error" />
-          Google returned an error or we never got a response. Eligible for
-          auto-retry.
+          Google rejected or we didn&apos;t get a response. Retried daily unless
+          the message is permanent (outside the attribution window, missing
+          required field).
         </span>
         <span className="inline-flex items-center gap-1.5">
           <StatusBadge status="skipped" />
