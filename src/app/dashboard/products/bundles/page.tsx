@@ -4,7 +4,7 @@
 // implicit bundles (a range and a hood checked out in the same order
 // without the bundle SKU). Draft orders are filtered out upstream.
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import DateRangeDropdown from "@/components/DateRangeDropdown";
 import { RangeKey, getRange } from "@/lib/date-ranges";
 import { KPISkeleton, TableSkeleton } from "@/components/Skeleton";
@@ -150,11 +150,8 @@ export default function BundlesPage() {
     exportToCSV(
       weekly.map((w) => ({
         WeekStart: w.weekStart,
-        SkudOrders: w.skudOrders,
-        ImplicitOrders: w.implicitOrders,
-        SkudUnits: w.skudUnits,
-        ImplicitUnits: w.implicitUnits,
-        TotalUnits: w.totalUnits,
+        Orders: w.skudOrders + w.implicitOrders,
+        Units: w.totalUnits,
         Revenue: w.revenue.toFixed(2),
       })),
       `bundles-weekly-${start}-${end}.csv`
@@ -215,7 +212,7 @@ export default function BundlesPage() {
       {/* Weekly report */}
       <Section
         title="Weekly report"
-        subtitle="Bundle orders and units by ISO week (Monday-start). Stacked: SKU'd vs implicit."
+        subtitle="ISO weeks (Monday-start), newest first. Click a week to see every bundle sale in it."
         action={
           <button
             onClick={exportWeekly}
@@ -230,7 +227,7 @@ export default function BundlesPage() {
         ) : weekly.length === 0 ? (
           <Empty msg="No bundle activity in this window." />
         ) : (
-          <WeeklyChart rows={weekly} />
+          <WeeklyTable rows={weekly} sales={sales} />
         )}
       </Section>
 
@@ -427,74 +424,130 @@ export default function BundlesPage() {
   );
 }
 
-function WeeklyChart({ rows }: { rows: WeekRow[] }) {
-  const maxUnits = Math.max(1, ...rows.map((r) => r.totalUnits));
+function weekStartFromDate(isoDate: string): string {
+  const d = new Date(isoDate + "T00:00:00Z");
+  const day = d.getUTCDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setUTCDate(d.getUTCDate() + diff);
+  return d.toISOString().substring(0, 10);
+}
+
+function WeeklyTable({ rows, sales }: { rows: WeekRow[]; sales: BundleSale[] }) {
+  const [openWeek, setOpenWeek] = useState<string | null>(null);
+
+  const salesByWeek = useMemo(() => {
+    const m: Record<string, BundleSale[]> = {};
+    for (const s of sales) {
+      const wk = weekStartFromDate(s.date);
+      if (!m[wk]) m[wk] = [];
+      m[wk].push(s);
+    }
+    for (const wk of Object.keys(m)) {
+      m[wk].sort((a, b) => b.date.localeCompare(a.date));
+    }
+    return m;
+  }, [sales]);
+
   return (
-    <div className="px-5 pt-4 pb-2">
-      {/* Legend */}
-      <div className="flex items-center gap-3 mb-2 text-[11px] text-gray-400">
-        <span className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500/80" /> SKU'd
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-sm bg-sky-500/80" /> Implicit
-        </span>
-      </div>
-      <div className="flex items-end gap-2 h-40">
-        {rows.map((w) => {
-          const totalH = Math.max(4, (w.totalUnits / maxUnits) * 100);
-          const skudFrac = w.totalUnits > 0 ? w.skudUnits / w.totalUnits : 0;
-          return (
-            <div
-              key={w.weekStart}
-              className="flex-1 group relative flex flex-col items-center justify-end h-full min-w-[24px]"
-              title={`Week of ${w.weekStart} — ${w.totalUnits} units (SKU'd ${w.skudUnits} / implicit ${w.implicitUnits}), ${fmtC(w.revenue)}`}
-            >
-              <div className="text-[10px] text-gray-400 mb-1 tabular-nums">{w.totalUnits}</div>
-              <div className="w-full rounded-t overflow-hidden flex flex-col" style={{ height: `${totalH}%` }}>
-                <div className="bg-emerald-500/80" style={{ height: `${skudFrac * 100}%` }} />
-                <div className="bg-sky-500/80 flex-1" />
-              </div>
-              <div className="absolute -top-7 left-1/2 -translate-x-1/2 px-1.5 py-0.5 text-[10px] bg-gray-950 text-gray-200 rounded border border-gray-800 opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-10">
-                {w.totalUnits}u · {fmtC(w.revenue)}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      <div className="flex gap-2 mt-1.5 text-[10px] text-gray-500">
-        {rows.map((w) => (
-          <div key={w.weekStart} className="flex-1 text-center min-w-[24px] whitespace-nowrap">
-            {fmtDate(w.weekStart)}
-          </div>
-        ))}
-      </div>
-      <div className="overflow-x-auto mt-4 border-t border-gray-800">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-950/50 text-gray-400 text-xs uppercase tracking-wider">
-            <tr>
-              <th className="text-left px-4 py-2 font-medium">Week of</th>
-              <th className="text-right px-4 py-2 font-medium">SKU'd Orders</th>
-              <th className="text-right px-4 py-2 font-medium">Implicit Orders</th>
-              <th className="text-right px-4 py-2 font-medium">Total Units</th>
-              <th className="text-right px-4 py-2 font-medium">Revenue</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-800">
-            {[...rows].reverse().map((w) => (
-              <tr key={w.weekStart} className="hover:bg-gray-800/40">
-                <td className="px-4 py-2 text-gray-200 whitespace-nowrap">
-                  {fmtDate(w.weekStart)} <span className="text-gray-500 text-xs">{w.weekStart}</span>
-                </td>
-                <td className="px-4 py-2 text-right text-emerald-300">{w.skudOrders}</td>
-                <td className="px-4 py-2 text-right text-sky-300">{w.implicitOrders}</td>
-                <td className="px-4 py-2 text-right text-gray-100 font-medium">{w.totalUnits}</td>
-                <td className="px-4 py-2 text-right text-gray-200">{fmtC(w.revenue)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead className="bg-gray-950/50 text-gray-400 text-xs uppercase tracking-wider">
+          <tr>
+            <th className="w-8"></th>
+            <th className="text-left px-4 py-2 font-medium">Week of</th>
+            <th className="text-right px-4 py-2 font-medium">Orders</th>
+            <th className="text-right px-4 py-2 font-medium">Units</th>
+            <th className="text-right px-4 py-2 font-medium">Revenue</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-800">
+          {[...rows].reverse().map((w) => {
+            const open = openWeek === w.weekStart;
+            const weekSales = salesByWeek[w.weekStart] ?? [];
+            const totalOrders = w.skudOrders + w.implicitOrders;
+            return (
+              <Fragment key={w.weekStart}>
+                <tr
+                  className="hover:bg-gray-800/40 cursor-pointer"
+                  onClick={() => setOpenWeek(open ? null : w.weekStart)}
+                >
+                  <td className="pl-4 pr-1 py-2 text-gray-500">
+                    <svg
+                      className={`w-3 h-3 transition-transform ${open ? "rotate-90" : ""}`}
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                    </svg>
+                  </td>
+                  <td className="px-4 py-2 text-gray-200 whitespace-nowrap">
+                    {fmtDate(w.weekStart)} <span className="text-gray-500 text-xs">{w.weekStart}</span>
+                  </td>
+                  <td className="px-4 py-2 text-right text-gray-300">{totalOrders}</td>
+                  <td className="px-4 py-2 text-right text-gray-100 font-medium">{w.totalUnits}</td>
+                  <td className="px-4 py-2 text-right text-gray-200">{fmtC(w.revenue)}</td>
+                </tr>
+                {open && (
+                  <tr>
+                    <td colSpan={5} className="bg-gray-950/40 px-4 py-3">
+                      {weekSales.length === 0 ? (
+                        <div className="text-gray-500 text-xs">No bundle line items in this week.</div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-xs">
+                            <thead className="text-gray-500 uppercase tracking-wider">
+                              <tr>
+                                <th className="text-left px-3 py-1.5 font-medium">Date</th>
+                                <th className="text-left px-3 py-1.5 font-medium">Order</th>
+                                <th className="text-left px-3 py-1.5 font-medium">Kind</th>
+                                <th className="text-left px-3 py-1.5 font-medium">Range</th>
+                                <th className="text-left px-3 py-1.5 font-medium">Hood</th>
+                                <th className="text-left px-3 py-1.5 font-medium">Customer</th>
+                                <th className="text-left px-3 py-1.5 font-medium">Channel</th>
+                                <th className="text-right px-3 py-1.5 font-medium">Qty</th>
+                                <th className="text-right px-3 py-1.5 font-medium">Revenue</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-800/60">
+                              {weekSales.map((s, i) => (
+                                <tr key={`${s.orderName}-${s.rangeSku}-${s.hoodSku}-${i}`} className="text-gray-300">
+                                  <td className="px-3 py-1.5 whitespace-nowrap">{s.date}</td>
+                                  <td className="px-3 py-1.5 font-mono">{s.orderName}</td>
+                                  <td className="px-3 py-1.5">
+                                    <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wider ${
+                                      s.kind === "skud" ? "bg-emerald-900/40 text-emerald-300" : "bg-sky-900/40 text-sky-300"
+                                    }`}>
+                                      {s.kind === "skud" ? "SKU'd" : "Implicit"}
+                                    </span>
+                                  </td>
+                                  <td className="px-3 py-1.5 font-mono text-gray-200">{s.rangeSku}</td>
+                                  <td className="px-3 py-1.5 font-mono text-gray-200">{s.hoodSku}</td>
+                                  <td className="px-3 py-1.5 max-w-[160px] truncate" title={s.customer}>
+                                    {s.customer || "—"}
+                                  </td>
+                                  <td className="px-3 py-1.5">
+                                    <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wider ${channelPill(s.channel)}`}>
+                                      {s.channel}
+                                    </span>
+                                  </td>
+                                  <td className="px-3 py-1.5 text-right">{s.quantity}</td>
+                                  <td className="px-3 py-1.5 text-right text-gray-100 font-medium">{fmtC(s.revenue)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }

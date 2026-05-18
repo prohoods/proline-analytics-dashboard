@@ -4,7 +4,7 @@
 // Excludes 2pc- prefixed bundle SKUs (those live on the bundles page).
 // Draft orders are filtered out upstream in the API.
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import DateRangeDropdown from "@/components/DateRangeDropdown";
 import { RangeKey, getRange } from "@/lib/date-ranges";
 import { KPISkeleton, TableSkeleton } from "@/components/Skeleton";
@@ -235,7 +235,7 @@ export default function RangesPage() {
       {/* Weekly report */}
       <Section
         title="Weekly report"
-        subtitle="Units and orders by ISO week (Monday-start). Hover bars for revenue."
+        subtitle="ISO weeks (Monday-start), newest first. Click a week to see every range sale in it."
         action={
           <button
             onClick={exportWeekly}
@@ -250,7 +250,7 @@ export default function RangesPage() {
         ) : filteredWeekly.length === 0 ? (
           <Empty msg="No range sales in this window." />
         ) : (
-          <WeeklyChart rows={filteredWeekly} />
+          <WeeklyTable rows={filteredWeekly} sales={filteredSales} />
         )}
       </Section>
 
@@ -399,68 +399,113 @@ function weekStartFromDate(isoDate: string): string {
   return d.toISOString().substring(0, 10);
 }
 
-function WeeklyChart({ rows }: { rows: WeekRow[] }) {
-  const maxUnits = Math.max(1, ...rows.map((r) => r.units));
+function WeeklyTable({ rows, sales }: { rows: WeekRow[]; sales: SaleRow[] }) {
+  const [openWeek, setOpenWeek] = useState<string | null>(null);
+
+  const salesByWeek = useMemo(() => {
+    const m: Record<string, SaleRow[]> = {};
+    for (const s of sales) {
+      const wk = weekStartFromDate(s.date);
+      if (!m[wk]) m[wk] = [];
+      m[wk].push(s);
+    }
+    for (const wk of Object.keys(m)) {
+      m[wk].sort((a, b) => b.date.localeCompare(a.date));
+    }
+    return m;
+  }, [sales]);
+
   return (
-    <div className="px-5 pt-5 pb-3">
-      <div className="flex items-end gap-2 h-40">
-        {rows.map((w) => {
-          const h = Math.max(4, (w.units / maxUnits) * 100);
-          return (
-            <div
-              key={w.weekStart}
-              className="flex-1 group relative flex flex-col items-center justify-end h-full min-w-[24px]"
-              title={`Week of ${w.weekStart} — ${w.units} units, ${w.orderCount} orders, ${fmtC(w.revenue)}`}
-            >
-              <div className="text-[10px] text-gray-400 mb-1 tabular-nums">{w.units}</div>
-              <div
-                className="w-full bg-blue-500/80 group-hover:bg-blue-400 rounded-t transition-colors"
-                style={{ height: `${h}%` }}
-              />
-              <div className="absolute -top-7 left-1/2 -translate-x-1/2 px-1.5 py-0.5 text-[10px] bg-gray-950 text-gray-200 rounded border border-gray-800 opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-10">
-                {w.units}u · {fmtC(w.revenue)}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      <div className="flex gap-2 mt-1.5 text-[10px] text-gray-500">
-        {rows.map((w) => (
-          <div key={w.weekStart} className="flex-1 text-center min-w-[24px] whitespace-nowrap">
-            {fmtDate(w.weekStart)}
-          </div>
-        ))}
-      </div>
-      <div className="overflow-x-auto mt-4 border-t border-gray-800">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-950/50 text-gray-400 text-xs uppercase tracking-wider">
-            <tr>
-              <th className="text-left px-4 py-2 font-medium">Week of</th>
-              <th className="text-right px-4 py-2 font-medium">Orders</th>
-              <th className="text-right px-4 py-2 font-medium">Units</th>
-              <th className="text-right px-4 py-2 font-medium">Revenue</th>
-              <th className="text-left px-4 py-2 font-medium">Top SKUs</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-800">
-            {[...rows].reverse().map((w) => (
-              <tr key={w.weekStart} className="hover:bg-gray-800/40">
-                <td className="px-4 py-2 text-gray-200 whitespace-nowrap">
-                  {fmtDate(w.weekStart)} <span className="text-gray-500 text-xs">{w.weekStart}</span>
-                </td>
-                <td className="px-4 py-2 text-right text-gray-300">{w.orderCount}</td>
-                <td className="px-4 py-2 text-right text-gray-100 font-medium">{w.units}</td>
-                <td className="px-4 py-2 text-right text-gray-200">{fmtC(w.revenue)}</td>
-                <td className="px-4 py-2 text-xs text-gray-400">
-                  {w.topSkus.length === 0
-                    ? "—"
-                    : w.topSkus.map((s) => `${s.sku} (${s.units})`).join(", ")}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead className="bg-gray-950/50 text-gray-400 text-xs uppercase tracking-wider">
+          <tr>
+            <th className="w-8"></th>
+            <th className="text-left px-4 py-2 font-medium">Week of</th>
+            <th className="text-right px-4 py-2 font-medium">Orders</th>
+            <th className="text-right px-4 py-2 font-medium">Units</th>
+            <th className="text-right px-4 py-2 font-medium">Revenue</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-800">
+          {[...rows].reverse().map((w) => {
+            const open = openWeek === w.weekStart;
+            const weekSales = salesByWeek[w.weekStart] ?? [];
+            return (
+              <Fragment key={w.weekStart}>
+                <tr
+                  className="hover:bg-gray-800/40 cursor-pointer"
+                  onClick={() => setOpenWeek(open ? null : w.weekStart)}
+                >
+                  <td className="pl-4 pr-1 py-2 text-gray-500">
+                    <svg
+                      className={`w-3 h-3 transition-transform ${open ? "rotate-90" : ""}`}
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                    </svg>
+                  </td>
+                  <td className="px-4 py-2 text-gray-200 whitespace-nowrap">
+                    {fmtDate(w.weekStart)} <span className="text-gray-500 text-xs">{w.weekStart}</span>
+                  </td>
+                  <td className="px-4 py-2 text-right text-gray-300">{w.orderCount}</td>
+                  <td className="px-4 py-2 text-right text-gray-100 font-medium">{w.units}</td>
+                  <td className="px-4 py-2 text-right text-gray-200">{fmtC(w.revenue)}</td>
+                </tr>
+                {open && (
+                  <tr>
+                    <td colSpan={5} className="bg-gray-950/40 px-4 py-3">
+                      {weekSales.length === 0 ? (
+                        <div className="text-gray-500 text-xs">No line items in this week.</div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-xs">
+                            <thead className="text-gray-500 uppercase tracking-wider">
+                              <tr>
+                                <th className="text-left px-3 py-1.5 font-medium">Date</th>
+                                <th className="text-left px-3 py-1.5 font-medium">Order</th>
+                                <th className="text-left px-3 py-1.5 font-medium">SKU</th>
+                                <th className="text-left px-3 py-1.5 font-medium">Customer</th>
+                                <th className="text-left px-3 py-1.5 font-medium">State</th>
+                                <th className="text-left px-3 py-1.5 font-medium">Channel</th>
+                                <th className="text-right px-3 py-1.5 font-medium">Qty</th>
+                                <th className="text-right px-3 py-1.5 font-medium">Revenue</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-800/60">
+                              {weekSales.map((s, i) => (
+                                <tr key={`${s.orderName}-${s.sku}-${i}`} className="text-gray-300">
+                                  <td className="px-3 py-1.5 whitespace-nowrap">{s.date}</td>
+                                  <td className="px-3 py-1.5 font-mono">{s.orderName}</td>
+                                  <td className="px-3 py-1.5 font-mono text-gray-200">{s.sku}</td>
+                                  <td className="px-3 py-1.5 max-w-[180px] truncate" title={s.customer}>
+                                    {s.customer || "—"}
+                                  </td>
+                                  <td className="px-3 py-1.5 text-gray-400">{s.state || "—"}</td>
+                                  <td className="px-3 py-1.5">
+                                    <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wider ${channelPill(s.channel)}`}>
+                                      {s.channel}
+                                    </span>
+                                  </td>
+                                  <td className="px-3 py-1.5 text-right">{s.quantity}</td>
+                                  <td className="px-3 py-1.5 text-right text-gray-100 font-medium">{fmtC(s.lineRevenue)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }
