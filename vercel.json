@@ -7,6 +7,10 @@
     {
       "path": "/api/cron/retry-conversions",
       "schedule": "15 13 * * *"
+    },
+    {
+      "path": "/api/cron/webhook-gap-check",
+      "schedule": "30 13 * * *"
     }
   ]
 }
