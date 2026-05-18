@@ -9,137 +9,18 @@
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { uploadClickConversion } from "@/lib/google-ads-conversions";
-import { resolveCustomerIdentity } from "@/lib/customer-identity";
 import { getSql } from "@/lib/db";
+import {
+  extractAttrs,
+  normalizePhoneE164,
+  persistShopifyOrder,
+  pickPhone,
+  type PersistableShopifyOrder,
+} from "@/lib/shopify-orders-persist";
 
 const SHOPIFY_WEBHOOK_SECRET = process.env.SHOPIFY_WEBHOOK_SECRET ?? "";
 
-interface NoteAttribute {
-  name: string;
-  value: string;
-}
-
-interface ShopifyOrder {
-  id: number;
-  name: string;
-  created_at: string;
-  processed_at?: string | null;
-  total_price?: string;
-  subtotal_price?: string;
-  currency?: string;
-  email?: string | null;
-  landing_site?: string | null;
-  referring_site?: string | null;
-  note_attributes?: NoteAttribute[];
-  customer?: {
-    id?: number | null;
-    phone?: string | null;
-    orders_count?: number | null;
-  } | null;
-  billing_address?: { phone?: string | null } | null;
-  shipping_address?: { phone?: string | null } | null;
-  phone?: string | null;
-}
-
-const ATTR_FIELDS = [
-  "gclid",
-  "gbraid",
-  "wbraid",
-  "fbclid",
-  "msclkid",
-  "ttclid",
-  "utm_source",
-  "utm_medium",
-  "utm_campaign",
-  "utm_term",
-  "utm_content",
-  "landing_page",
-  "referrer",
-] as const;
-
-type AttrField = (typeof ATTR_FIELDS)[number];
-
-function extractAttrs(
-  order: ShopifyOrder
-): Record<AttrField, string | null> {
-  const out = {} as Record<AttrField, string | null>;
-  for (const f of ATTR_FIELDS) out[f] = pickAttr(order.note_attributes, f);
-  return out;
-}
-
-async function persistShopifyOrder(
-  order: ShopifyOrder,
-  attrs: Record<AttrField, string | null>,
-  phone: string | null
-): Promise<void> {
-  const sql = getSql();
-  const ordersCount = order.customer?.orders_count ?? null;
-  const isNew = ordersCount == null ? null : ordersCount <= 1;
-  const total = parseFloat(order.total_price ?? order.subtotal_price ?? "0") || null;
-  const orderedAt = new Date(order.processed_at || order.created_at);
-
-  // Resolve a cross-channel customer identity before inserting the order
-  // so we can store its FK alongside the row.
-  const identityId = await resolveCustomerIdentity({
-    email: order.email,
-    phone_e164: phone,
-    shopify_customer_id: order.customer?.id ?? null,
-    channel: "shopify",
-    seen_at: orderedAt,
-    gclid: attrs.gclid,
-    gbraid: attrs.gbraid,
-    wbraid: attrs.wbraid,
-    utm_source: attrs.utm_source,
-    utm_medium: attrs.utm_medium,
-    utm_campaign: attrs.utm_campaign,
-    landing_page: attrs.landing_page ?? order.landing_site ?? null,
-    order_value: total,
-  });
-
-  await sql`
-    insert into shopify_orders (
-      id, order_number, email, phone_e164, shopify_customer_id,
-      customer_orders_count, is_new_customer, ordered_at, total, currency,
-      gclid, gbraid, wbraid, fbclid, msclkid, ttclid,
-      utm_source, utm_medium, utm_campaign, utm_term, utm_content,
-      landing_page, referrer, note_attributes, customer_identity_id
-    ) values (
-      ${order.id}, ${order.name ?? null}, ${order.email ?? null}, ${phone},
-      ${order.customer?.id ?? null}, ${ordersCount}, ${isNew},
-      ${orderedAt.toISOString()}, ${total}, ${order.currency ?? "USD"},
-      ${attrs.gclid}, ${attrs.gbraid}, ${attrs.wbraid},
-      ${attrs.fbclid}, ${attrs.msclkid}, ${attrs.ttclid},
-      ${attrs.utm_source}, ${attrs.utm_medium}, ${attrs.utm_campaign},
-      ${attrs.utm_term}, ${attrs.utm_content},
-      ${attrs.landing_page ?? order.landing_site ?? null},
-      ${attrs.referrer ?? order.referring_site ?? null},
-      ${sql.json((order.note_attributes ?? []) as never)},
-      ${identityId}
-    )
-    on conflict (id) do update set
-      email = excluded.email,
-      phone_e164 = coalesce(excluded.phone_e164, shopify_orders.phone_e164),
-      shopify_customer_id = coalesce(excluded.shopify_customer_id, shopify_orders.shopify_customer_id),
-      customer_orders_count = coalesce(excluded.customer_orders_count, shopify_orders.customer_orders_count),
-      is_new_customer = coalesce(excluded.is_new_customer, shopify_orders.is_new_customer),
-      total = coalesce(excluded.total, shopify_orders.total),
-      gclid = coalesce(excluded.gclid, shopify_orders.gclid),
-      gbraid = coalesce(excluded.gbraid, shopify_orders.gbraid),
-      wbraid = coalesce(excluded.wbraid, shopify_orders.wbraid),
-      fbclid = coalesce(excluded.fbclid, shopify_orders.fbclid),
-      msclkid = coalesce(excluded.msclkid, shopify_orders.msclkid),
-      ttclid = coalesce(excluded.ttclid, shopify_orders.ttclid),
-      utm_source = coalesce(excluded.utm_source, shopify_orders.utm_source),
-      utm_medium = coalesce(excluded.utm_medium, shopify_orders.utm_medium),
-      utm_campaign = coalesce(excluded.utm_campaign, shopify_orders.utm_campaign),
-      utm_term = coalesce(excluded.utm_term, shopify_orders.utm_term),
-      utm_content = coalesce(excluded.utm_content, shopify_orders.utm_content),
-      landing_page = coalesce(excluded.landing_page, shopify_orders.landing_page),
-      referrer = coalesce(excluded.referrer, shopify_orders.referrer),
-      note_attributes = excluded.note_attributes,
-      customer_identity_id = coalesce(shopify_orders.customer_identity_id, excluded.customer_identity_id)
-  `;
-}
+type ShopifyOrder = PersistableShopifyOrder;
 
 function verifyHmac(rawBody: string, headerHmac: string | null): boolean {
   if (!SHOPIFY_WEBHOOK_SECRET || !headerHmac) return false;
@@ -152,34 +33,6 @@ function verifyHmac(rawBody: string, headerHmac: string | null): boolean {
   } catch {
     return false;
   }
-}
-
-function pickAttr(attrs: NoteAttribute[] | undefined, key: string): string | null {
-  if (!attrs) return null;
-  const hit = attrs.find((a) => a.name?.toLowerCase() === key.toLowerCase());
-  const v = hit?.value?.trim();
-  return v ? v : null;
-}
-
-// Normalize a US-style phone to E.164 (best-effort). Shopify phones are messy.
-function normalizePhoneE164(raw: string | null | undefined): string | null {
-  if (!raw) return null;
-  const digits = raw.replace(/\D/g, "");
-  if (!digits) return null;
-  if (raw.trim().startsWith("+")) return `+${digits}`;
-  if (digits.length === 10) return `+1${digits}`;
-  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
-  return `+${digits}`;
-}
-
-function pickPhone(order: ShopifyOrder): string | null {
-  return (
-    order.customer?.phone ||
-    order.billing_address?.phone ||
-    order.shipping_address?.phone ||
-    order.phone ||
-    null
-  );
 }
 
 export async function POST(req: NextRequest) {
