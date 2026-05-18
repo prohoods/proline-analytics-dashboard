@@ -13,6 +13,7 @@ export async function POST() {
       "008_conversion_uploads_dedupe.sql",
       "009_customer_identities.sql",
       "010_ga4_search_console.sql",
+      "011_shopify_webhook_log.sql",
     ]) {
       const ddl = await readFile(
         path.join(process.cwd(), "src/lib/migrations", name),

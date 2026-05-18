@@ -22,6 +22,42 @@ const SHOPIFY_WEBHOOK_SECRET = process.env.SHOPIFY_WEBHOOK_SECRET ?? "";
 
 type ShopifyOrder = PersistableShopifyOrder;
 
+interface WebhookLog {
+  topic: string | null;
+  shopify_order_id: number | null;
+  order_number: string | null;
+  hmac_valid: boolean;
+  parsed: boolean;
+  persisted: boolean;
+  persist_error: string | null;
+  conversion_path: string | null;
+  conversion_result: unknown;
+  http_status: number;
+}
+
+async function writeWebhookLog(log: WebhookLog): Promise<void> {
+  // Best-effort. If logging fails we still want the webhook response to
+  // succeed — Shopify will retry on non-2xx, and we don't want to flap a
+  // healthy delivery just because the audit insert failed.
+  try {
+    const sql = getSql();
+    await sql`
+      insert into shopify_webhook_log (
+        topic, shopify_order_id, order_number, hmac_valid, parsed,
+        persisted, persist_error, conversion_path, conversion_result, http_status
+      ) values (
+        ${log.topic}, ${log.shopify_order_id}, ${log.order_number},
+        ${log.hmac_valid}, ${log.parsed}, ${log.persisted}, ${log.persist_error},
+        ${log.conversion_path},
+        ${log.conversion_result == null ? null : sql.json(log.conversion_result as never)},
+        ${log.http_status}
+      )
+    `;
+  } catch (e) {
+    console.error("shopify_webhook_log insert failed", e);
+  }
+}
+
 function verifyHmac(rawBody: string, headerHmac: string | null): boolean {
   if (!SHOPIFY_WEBHOOK_SECRET || !headerHmac) return false;
   const digest = crypto
@@ -38,17 +74,41 @@ function verifyHmac(rawBody: string, headerHmac: string | null): boolean {
 export async function POST(req: NextRequest) {
   const rawBody = await req.text();
   const hmac = req.headers.get("x-shopify-hmac-sha256");
+  const topic = req.headers.get("x-shopify-topic");
+
+  const log: WebhookLog = {
+    topic,
+    shopify_order_id: null,
+    order_number: null,
+    hmac_valid: false,
+    parsed: false,
+    persisted: false,
+    persist_error: null,
+    conversion_path: null,
+    conversion_result: null,
+    http_status: 200,
+  };
+
+  const respond = async (body: unknown, init?: { status?: number }) => {
+    log.http_status = init?.status ?? 200;
+    await writeWebhookLog(log);
+    return NextResponse.json(body, init);
+  };
 
   if (!verifyHmac(rawBody, hmac)) {
-    return NextResponse.json({ ok: false, error: "invalid hmac" }, { status: 401 });
+    return respond({ ok: false, error: "invalid hmac" }, { status: 401 });
   }
+  log.hmac_valid = true;
 
   let order: ShopifyOrder;
   try {
     order = JSON.parse(rawBody);
   } catch {
-    return NextResponse.json({ ok: false, error: "invalid json" }, { status: 400 });
+    return respond({ ok: false, error: "invalid json" }, { status: 400 });
   }
+  log.parsed = true;
+  log.shopify_order_id = order.id;
+  log.order_number = order.name ?? null;
 
   const sourceId = String(order.id);
   const conversionAt = new Date(order.processed_at || order.created_at);
@@ -64,8 +124,10 @@ export async function POST(req: NextRequest) {
   // Persist before any conversion upload so we have an audit row no matter what.
   try {
     await persistShopifyOrder(order, attrs, phoneForOrder);
+    log.persisted = true;
   } catch (e) {
     // Never block the conversion upload on persistence failure — just log.
+    log.persist_error = e instanceof Error ? e.message : String(e);
     console.error("shopify_orders persist failed", e);
   }
 
@@ -87,13 +149,17 @@ export async function POST(req: NextRequest) {
       value,
       currency,
     });
-    return NextResponse.json({ ok: true, path: "direct", result });
+    log.conversion_path = "direct";
+    log.conversion_result = result;
+    return respond({ ok: true, path: "direct", result });
   }
 
   // Path 3: phone-call attribution. Match by customer phone against callrail_calls.
   const phone = phoneForOrder;
   if (!phone) {
-    return NextResponse.json({ ok: true, path: "skipped", reason: "no gclid and no phone" });
+    log.conversion_path = "skipped";
+    log.conversion_result = { reason: "no gclid and no phone" };
+    return respond({ ok: true, path: "skipped", reason: "no gclid and no phone" });
   }
 
   const sql = getSql();
@@ -116,7 +182,9 @@ export async function POST(req: NextRequest) {
   `;
 
   if (calls.length === 0) {
-    return NextResponse.json({ ok: true, path: "skipped", reason: "no matching call with gclid" });
+    log.conversion_path = "skipped";
+    log.conversion_result = { reason: "no matching call with gclid" };
+    return respond({ ok: true, path: "skipped", reason: "no matching call with gclid" });
   }
 
   const call = calls[0];
@@ -130,7 +198,9 @@ export async function POST(req: NextRequest) {
     currency,
   });
 
-  return NextResponse.json({
+  log.conversion_path = "phone_call";
+  log.conversion_result = { matchedCallId: call.id, ...result };
+  return respond({
     ok: true,
     path: "phone_call",
     matchedCallId: call.id,
